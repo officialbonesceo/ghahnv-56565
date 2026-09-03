@@ -4,83 +4,71 @@ on:
   workflow_dispatch:
     inputs:
       script_text:
-        description: "Narrator line"
+        description: "What MEZI says"
         required: true
-        default: "Welcome to the studio. Cyber host online."
+        default: "Hey! Why is the sky blue? Sunlight is made of many colors. Blue scatters in all directions — that is why we see a blue sky!"
       voice:
         description: "Edge TTS voice"
         required: true
         default: "en-US-GuyNeural"
         type: choice
         options:
-          - en-US-JennyNeural
           - en-US-GuyNeural
-          - en-GB-SoniaNeural
-          - en-NG-EzinneNeural
+          - en-US-JennyNeural
           - en-NG-AbeoNeural
-      actions:
-        description: "Comma actions: talk,idle,nod,gesture,walk"
+          - en-NG-EzinneNeural
+          - en-GB-SoniaNeural
+      room:
+        description: "Background room"
         required: true
-        default: "talk,idle,nod,gesture"
-      use_blender:
-        description: "Use .blend asset + director"
+        default: "science"
+        type: choice
+        options: [studio, science, tech]
+      actions:
+        description: "Timeline: idle,walk,point,laugh"
+        required: true
+        default: "idle,point,walk,idle"
+      use_rhubarb:
+        description: "Lip sync with Rhubarb"
         required: true
         default: true
         type: boolean
 
 env:
-  BLENDER_VERSION: "4.2.3"
-  BLENDER_DIR: ${{ github.workspace }}/.blender
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
-  ASSET_DIR: ${{ github.workspace }}/.asset-cache
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
-
       - name: System deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg xvfb unzip \
-            libegl1 libgl1 libgles2 libglx-mesa0 libgl1-mesa-dri \
-            libopengl0 libglvnd0 libxkbcommon0 libxi6 libxxf86vm1 \
-            libxfixes3 libxrender1 libsm6 libxext6 libdbus-1-3
-
-      - run: pip install -r requirements.txt
-
-      - name: Script + TTS
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip
+      - name: Python deps
+        run: pip install -r requirements.txt
+      - name: TTS
         env:
           SCRIPT_TEXT: ${{ inputs.script_text }}
           VOICE: ${{ inputs.voice }}
         run: |
           set -e
-          python scripts/expand_script.py --text "$SCRIPT_TEXT" --out script.txt
-          cat script.txt
-          TEXT=$(cat script.txt)
-          python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" \
-            --out output_ffmpeg.mp4 --audio-out speech.mp3
+          printf '%s\n' "$SCRIPT_TEXT" > script.txt
+          python scripts/render_clip.py --text "$SCRIPT_TEXT" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
-          ls -lh speech.mp3 output_ffmpeg.mp4
-
       - name: Cache Rhubarb
-        if: ${{ inputs.use_blender }}
+        if: ${{ inputs.use_rhubarb }}
         uses: actions/cache@v4
         with:
           path: ${{ env.RHUBARB_DIR }}
           key: rhubarb-${{ env.RHUBARB_VERSION }}-linux
-
       - name: Install Rhubarb
-        if: ${{ inputs.use_blender }}
+        if: ${{ inputs.use_rhubarb }}
         run: |
           set -e
           if [ ! -x "$RHUBARB_DIR/rhubarb" ]; then
@@ -93,89 +81,28 @@ jobs:
             chmod +x "$RHUBARB_DIR/rhubarb"
             cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
           fi
-          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav || true
-          head -c 400 mouth.json || echo "no mouth.json"
-
-      - name: Cache Blender
-        if: ${{ inputs.use_blender }}
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v3
-
-      - name: Install Blender
-        if: ${{ inputs.use_blender }}
-        run: |
-          set -e
-          if [ ! -x "$BLENDER_DIR/blender" ]; then
-            mkdir -p "$BLENDER_DIR"
-            URL="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-            curl -L --fail -o /tmp/blender.tar.xz "$URL"
-            tar -xJf /tmp/blender.tar.xz -C /tmp
-            SRC=$(find /tmp -maxdepth 1 -type d -name "blender-${BLENDER_VERSION}-linux-x64" | head -1)
-            cp -a "$SRC"/. "$BLENDER_DIR"/
-          fi
-          "$BLENDER_DIR/blender" --version
-
-      - name: Cache built .blend asset
-        if: ${{ inputs.use_blender }}
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ASSET_DIR }}
-          key: cyber-host-blend-v2
-
-      - name: Build cyber_host.blend if missing
-        if: ${{ inputs.use_blender }}
-        run: |
-          set -e
-          mkdir -p "$ASSET_DIR" assets
-          if [ ! -f "$ASSET_DIR/cyber_host.blend" ]; then
-            xvfb-run -a -s "-screen 0 960x540x24" \
-              "$BLENDER_DIR/blender" -b -noaudio \
-              -P assets/build_cyber_host.py -- --out "$ASSET_DIR/cyber_host.blend"
-          fi
-          cp "$ASSET_DIR/cyber_host.blend" assets/cyber_host.blend
-          ls -lh assets/cyber_host.blend
-
-      - name: Director render from .blend
-        if: ${{ inputs.use_blender }}
+      - name: Rhubarb
+        if: ${{ inputs.use_rhubarb }}
         continue-on-error: true
+        run: "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
+      - name: Render MEZI 2D
         env:
+          ROOM: ${{ inputs.room }}
           ACTIONS: ${{ inputs.actions }}
         run: |
           set -e
-          DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
           CUES=""
-          if [ -f mouth.json ]; then CUES="--cues $(pwd)/mouth.json"; fi
-          xvfb-run -a -s "-screen 0 960x540x24" \
-            "$BLENDER_DIR/blender" -b assets/cyber_host.blend -noaudio \
-            -P scripts/director_render.py -- \
-            --out "$(pwd)/blender_silent.mp4" \
-            --seconds "$DUR" \
-            --actions "$ACTIONS" \
-            $CUES
-          test -s blender_silent.mp4
-          ffmpeg -y -i blender_silent.mp4 -i speech.mp3 \
-            -c:v copy -c:a aac -b:a 128k -shortest output_blender.mp4
-          ls -lh output_blender.mp4
-
-      - name: Final
-        run: |
-          if [ -f output_blender.mp4 ] && [ -s output_blender.mp4 ]; then
-            cp output_blender.mp4 output.mp4
-            echo FINAL=blend_director
-          else
-            cp output_ffmpeg.mp4 output.mp4
-            echo FINAL=ffmpeg_fallback
-          fi
+          if [ -f mouth.json ]; then CUES="--cues mouth.json"; fi
+          PYTHONPATH=scripts python scripts/render_mezi.py \
+            --audio speech.mp3 --out output_mezi.mp4 \
+            --room "$ROOM" --actions "$ACTIONS" --fps 12 $CUES
+          cp output_mezi.mp4 output.mp4
           ls -lh output.mp4
-
       - uses: actions/upload-artifact@v4
         with:
-          name: talking-clip
+          name: mezi-clip
           path: |
             output.mp4
-            output_ffmpeg.mp4
             speech.mp3
             script.txt
             mouth.json
