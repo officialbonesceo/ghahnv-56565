@@ -1,50 +1,25 @@
 # Talking Clip Factory
 
-**Feasible, easy-to-verify** GitHub Actions pipeline:
+**prompt → TinyLlama (optional) → Edge TTS → Blender 3D (optional) → MP4**
 
-**Text → Edge TTS (speech) → ffmpeg video → downloadable MP4**
+If Blender fails, ffmpeg fallback still produces a clip.
 
-No GPU, no Blender install on free runners (those are slow/fragile there). This path is designed so you can **confirm it works** in a few minutes.
+## Verify
 
-## How to run (verify)
+1. [Actions](https://github.com/officialbonesceo/talking-clip-factory/actions)
+2. **Render talking clip** → **Run workflow**
+3. Toggle **use_llm** / **use_blender**
+4. Download artifact **talking-clip** → play `output.mp4`
 
-1. Open: https://github.com/officialbonesceo/talking-clip-factory/actions
-2. Select workflow **Render talking clip**
-3. Click **Run workflow**
-4. Optional: change the script text
-5. Wait ~1–3 minutes
-6. Open the finished run → **Artifacts** → download `talking-clip`
-7. Play `output.mp4`
+First run downloads Blender + TinyLlama (cached after that).
 
-If the artifact appears and the video has voice + on-screen text, it works.
+## Stack
 
-## What it uses (all maintained / active)
-
-| Tool | Role |
+| Step | Tool |
 |------|------|
-| [edge-tts](https://github.com/rany2/edge-tts) | Free neural TTS (Microsoft Edge voices) |
-| **ffmpeg** | Builds a simple captioned video + muxes audio |
-| **GitHub Actions** | Orchestration + artifact upload |
+| LLM | TinyLlama 1.1B Chat Q4 (llama-cpp-python) |
+| TTS | edge-tts |
+| 3D | Blender 4.2 headless |
+| Fallback | ffmpeg |
 
-No abandoned projects. No celebrity deepfakes — generic narrator voice only.
-
-## Local test (optional)
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python scripts/render_clip.py --text "Hello from Talking Clip Factory." --out output.mp4
-```
-
-Needs `ffmpeg` on your PATH.
-
-## Later upgrades (optional)
-
-- Headless **Blender** on a self-hosted / GPU runner
-- **Rhubarb** lip-sync
-- Small local LLM for script expansion (heavy on free Actions — keep off the default path)
-
-## License
-
-Your project — use as you like.
+Keep scripts short on free CPU runners.
