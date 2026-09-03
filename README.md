@@ -1,31 +1,27 @@
-# Talking Clip Factory
+# Talking Clip Factory — Profile 3 + Rhubarb
 
-**Text → offline polish → Edge TTS → ffmpeg video (+ optional Blender 3D)**
+Pipeline:
 
-No HuggingFace token. No TinyLlama download on CI.
+**text → Edge TTS → Rhubarb lip cues → Blender cyber host → MP4**
 
-## What failed in the earlier run (and what did not)
+## Lip sync: Rhubarb vs others
 
-| Step | Status |
-|------|--------|
-| TinyLlama | Worked but odd script + needs model download |
-| Edge TTS + ffmpeg | **Succeeded** (`output_ffmpeg.mp4` ~67KB, audio ~26KB) |
-| Blender | **Crashed**: missing `libEGL.so.1` on headless runner |
+| Tool | Fit for this project |
+|------|----------------------|
+| **Rhubarb Lip Sync** | Best free offline CLI for CI. Audio → mouth shapes (A–H, X). Active project. |
+| Papagayo | Older UI tool, weaker automation |
+| Wav2Lip / SadTalker | Better realism, needs GPU + heavy models — not free Actions |
+| Audio2Face | High quality, NVIDIA stack |
+| Azure visemes | Needs paid cloud TTS API |
 
-## Current design
+We use **Rhubarb** on purpose: no token, no GPU, works on GitHub runners.
 
-1. **Script polish** — local Python only (no AI download, no token)
-2. **Edge TTS** — neural voice → `speech.mp3`
-3. **ffmpeg** — always builds `output_ffmpeg.mp4` (guaranteed artifact)
-4. **Blender** — Workbench + `xvfb` + extra GL packages; silent MP4 then **ffmpeg muxes audio**
+## Character
 
-If Blender still fails, you still get the ffmpeg clip.
+Simplified **Profile 3** cyber host (head, jacket, cyan accents, headset). Not the full concept-art mesh — same vibe, CI-safe.
 
 ## Verify
 
-1. [Actions](https://github.com/officialbonesceo/talking-clip-factory/actions)
-2. **Render talking clip** → **Run workflow** (use latest `main`)
-3. Download artifact **talking-clip**
-4. Play `output.mp4` (and `output_ffmpeg.mp4` if you want the baseline)
-
-First Blender run downloads ~300MB (then cached).
+1. Actions → **Render talking clip** → Run workflow  
+2. Artifact includes `output.mp4`, `mouth.json`, `speech.mp3`  
+3. Mouth should open/close with speech (Rhubarb cues)
