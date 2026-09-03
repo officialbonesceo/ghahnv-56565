@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       script_text:
-        description: "Text the narrator will speak"
+        description: "Narrator line"
         required: true
-        default: "Welcome to Talking Clip Factory. Cyber host online with lip sync."
+        default: "Welcome to the studio. Cyber host online."
       voice:
         description: "Edge TTS voice"
         required: true
@@ -18,20 +18,27 @@ on:
           - en-GB-SoniaNeural
           - en-NG-EzinneNeural
           - en-NG-AbeoNeural
-      use_expand:
-        description: "Polish short text (offline)"
+      actions:
+        description: "Comma actions: talk,idle,nod,gesture,walk"
+        required: true
+        default: "talk,idle,nod,gesture"
+      use_blender:
+        description: "Use .blend asset + director"
         required: true
         default: true
         type: boolean
 
 env:
+  BLENDER_VERSION: "4.2.3"
+  BLENDER_DIR: ${{ github.workspace }}/.blender
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
+  ASSET_DIR: ${{ github.workspace }}/.asset-cache
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -41,77 +48,127 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install system deps
+      - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip fonts-dejavu-core
-          ffmpeg -version
+          sudo apt-get install -y ffmpeg xvfb unzip \
+            libegl1 libgl1 libgles2 libglx-mesa0 libgl1-mesa-dri \
+            libopengl0 libglvnd0 libxkbcommon0 libxi6 libxxf86vm1 \
+            libxfixes3 libxrender1 libsm6 libxext6 libdbus-1-3
 
-      - name: Install Python deps
-        run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt
 
-      - name: Expand script
+      - name: Script + TTS
         env:
           SCRIPT_TEXT: ${{ inputs.script_text }}
-          USE_EXPAND: ${{ inputs.use_expand }}
-        run: |
-          if [ "$USE_EXPAND" = "true" ]; then
-            python scripts/expand_script.py --text "$SCRIPT_TEXT" --out script.txt
-          else
-            printf '%s\n' "$SCRIPT_TEXT" > script.txt
-          fi
-          cat script.txt
-
-      - name: Edge TTS
-        env:
           VOICE: ${{ inputs.voice }}
         run: |
           set -e
+          python scripts/expand_script.py --text "$SCRIPT_TEXT" --out script.txt
+          cat script.txt
           TEXT=$(cat script.txt)
-          python scripts/render_clip.py \
-            --text "$TEXT" --voice "$VOICE" \
+          python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" \
             --out output_ffmpeg.mp4 --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
-          ls -lh speech.mp3 speech.wav output_ffmpeg.mp4
+          ls -lh speech.mp3 output_ffmpeg.mp4
 
       - name: Cache Rhubarb
+        if: ${{ inputs.use_blender }}
         uses: actions/cache@v4
         with:
           path: ${{ env.RHUBARB_DIR }}
           key: rhubarb-${{ env.RHUBARB_VERSION }}-linux
 
       - name: Install Rhubarb
+        if: ${{ inputs.use_blender }}
         run: |
           set -e
-          if [ -x "$RHUBARB_DIR/rhubarb" ]; then
-            exit 0
+          if [ ! -x "$RHUBARB_DIR/rhubarb" ]; then
+            mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
+            URL="https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
+            curl -L --fail -o /tmp/rhubarb.zip "$URL"
+            unzip -o /tmp/rhubarb.zip -d /tmp/rhubarb
+            BIN=$(find /tmp/rhubarb -type f -name rhubarb | head -1)
+            cp "$BIN" "$RHUBARB_DIR/rhubarb"
+            chmod +x "$RHUBARB_DIR/rhubarb"
+            cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
           fi
-          mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
-          URL="https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
-          curl -L --fail -o /tmp/rhubarb.zip "$URL"
-          unzip -o /tmp/rhubarb.zip -d /tmp/rhubarb
-          BIN=$(find /tmp/rhubarb -type f -name rhubarb | head -1)
-          cp "$BIN" "$RHUBARB_DIR/rhubarb"
-          chmod +x "$RHUBARB_DIR/rhubarb"
-          cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
+          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav || true
+          head -c 400 mouth.json || echo "no mouth.json"
 
-      - name: Rhubarb mouth cues
+      - name: Cache Blender
+        if: ${{ inputs.use_blender }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BLENDER_DIR }}
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v3
+
+      - name: Install Blender
+        if: ${{ inputs.use_blender }}
         run: |
           set -e
-          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
-          head -c 600 mouth.json; echo
+          if [ ! -x "$BLENDER_DIR/blender" ]; then
+            mkdir -p "$BLENDER_DIR"
+            URL="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            curl -L --fail -o /tmp/blender.tar.xz "$URL"
+            tar -xJf /tmp/blender.tar.xz -C /tmp
+            SRC=$(find /tmp -maxdepth 1 -type d -name "blender-${BLENDER_VERSION}-linux-x64" | head -1)
+            cp -a "$SRC"/. "$BLENDER_DIR"/
+          fi
+          "$BLENDER_DIR/blender" --version
 
-      - name: Render 2.5D cyber host
+      - name: Cache built .blend asset
+        if: ${{ inputs.use_blender }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ASSET_DIR }}
+          key: cyber-host-blend-v2
+
+      - name: Build cyber_host.blend if missing
+        if: ${{ inputs.use_blender }}
         run: |
           set -e
-          TEXT=$(cat script.txt)
-          python scripts/render_25d_host.py \
-            --audio speech.mp3 \
-            --cues mouth.json \
-            --text "$TEXT" \
-            --out output.mp4
+          mkdir -p "$ASSET_DIR" assets
+          if [ ! -f "$ASSET_DIR/cyber_host.blend" ]; then
+            xvfb-run -a -s "-screen 0 960x540x24" \
+              "$BLENDER_DIR/blender" -b -noaudio \
+              -P assets/build_cyber_host.py -- --out "$ASSET_DIR/cyber_host.blend"
+          fi
+          cp "$ASSET_DIR/cyber_host.blend" assets/cyber_host.blend
+          ls -lh assets/cyber_host.blend
+
+      - name: Director render from .blend
+        if: ${{ inputs.use_blender }}
+        continue-on-error: true
+        env:
+          ACTIONS: ${{ inputs.actions }}
+        run: |
+          set -e
+          DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
+          CUES=""
+          if [ -f mouth.json ]; then CUES="--cues $(pwd)/mouth.json"; fi
+          xvfb-run -a -s "-screen 0 960x540x24" \
+            "$BLENDER_DIR/blender" -b assets/cyber_host.blend -noaudio \
+            -P scripts/director_render.py -- \
+            --out "$(pwd)/blender_silent.mp4" \
+            --seconds "$DUR" \
+            --actions "$ACTIONS" \
+            $CUES
+          test -s blender_silent.mp4
+          ffmpeg -y -i blender_silent.mp4 -i speech.mp3 \
+            -c:v copy -c:a aac -b:a 128k -shortest output_blender.mp4
+          ls -lh output_blender.mp4
+
+      - name: Final
+        run: |
+          if [ -f output_blender.mp4 ] && [ -s output_blender.mp4 ]; then
+            cp output_blender.mp4 output.mp4
+            echo FINAL=blend_director
+          else
+            cp output_ffmpeg.mp4 output.mp4
+            echo FINAL=ffmpeg_fallback
+          fi
           ls -lh output.mp4
-          ffprobe -hide_banner output.mp4 2>&1 | head -20
 
       - uses: actions/upload-artifact@v4
         with:
