@@ -1,0 +1,64 @@
+name: Render talking clip
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_text:
+        description: "Text the narrator will speak"
+        required: true
+        default: "Hello from Talking Clip Factory. This run used Edge TTS and ffmpeg on GitHub Actions."
+      voice:
+        description: "Edge TTS voice id"
+        required: true
+        default: "en-US-JennyNeural"
+        type: choice
+        options:
+          - en-US-JennyNeural
+          - en-US-GuyNeural
+          - en-GB-SoniaNeural
+          - en-NG-EzinneNeural
+          - en-NG-AbeoNeural
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Render clip
+        env:
+          SCRIPT_TEXT: ${{ inputs.script_text }}
+          VOICE: ${{ inputs.voice }}
+        run: |
+          python scripts/render_clip.py \
+            --text "$SCRIPT_TEXT" \
+            --voice "$VOICE" \
+            --out output.mp4
+          ls -lh output.mp4
+
+      - name: Upload MP4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: talking-clip
+          path: output.mp4
+          if-no-files-found: error
+          retention-days: 7
