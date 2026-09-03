@@ -1,7 +1,8 @@
 """
-Blender headless scene — Workbench engine (no EGL GPU needed).
-Usage:
-  blender -b -noaudio -P blender_talking_scene.py -- --audio speech.mp3 --out out.mp4 --text Hello --seconds 4
+Blender headless Workbench scene (no GPU / no EGL required with xvfb).
+Renders silent MP4; workflow muxes TTS audio with ffmpeg afterward.
+
+  blender -b -noaudio -P blender_talking_scene.py -- --out out.mp4 --text Hello --seconds 4
 """
 from __future__ import annotations
 
@@ -14,11 +15,12 @@ import bpy
 
 def parse_args(argv):
     args = {
-        "audio": None,
-        "out": "blender_out.mp4",
+        "out": "blender_silent.mp4",
         "text": "Talking Clip Factory",
         "fps": 24,
         "seconds": 4.0,
+        "width": 960,
+        "height": 540,
     }
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
@@ -26,9 +28,14 @@ def parse_args(argv):
         argv = []
     i = 0
     while i < len(argv):
-        if argv[i] in ("--audio", "--out", "--text", "--seconds") and i + 1 < len(argv):
+        if argv[i] in ("--out", "--text", "--seconds", "--width", "--height") and i + 1 < len(argv):
             key = argv[i][2:]
-            args[key] = float(argv[i + 1]) if key == "seconds" else argv[i + 1]
+            if key in ("seconds",):
+                args[key] = float(argv[i + 1])
+            elif key in ("width", "height", "fps"):
+                args[key] = int(argv[i + 1])
+            else:
+                args[key] = argv[i + 1]
             i += 2
         else:
             i += 1
@@ -42,6 +49,8 @@ def clear_scene():
         bpy.data.meshes.remove(block)
     for block in list(bpy.data.materials):
         bpy.data.materials.remove(block)
+    for block in list(bpy.data.cameras):
+        bpy.data.cameras.remove(block)
 
 
 def make_mat(name, color):
@@ -51,21 +60,24 @@ def make_mat(name, color):
     return mat
 
 
-def build_scene(text: str, fps: int, total_frames: int):
+def build_scene(text: str, fps: int, total_frames: int, width: int, height: int):
     clear_scene()
     scene = bpy.context.scene
-    scene.render.resolution_x = 960
-    scene.render.resolution_y = 540
+
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
     scene.render.fps = fps
     scene.frame_start = 1
     scene.frame_end = total_frames
 
-    # Workbench = software-friendly on headless CI
-    scene.render.engine = "BLENDER_WORKBENCH"
-    if hasattr(scene.display, "shading"):
+    # Workbench display settings (when available)
+    try:
         scene.display.shading.light = "FLAT"
         scene.display.shading.color_type = "MATERIAL"
+    except Exception:
+        pass
 
     bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
     bpy.context.active_object.data.materials.append(make_mat("FloorMat", (0.08, 0.1, 0.16)))
@@ -115,22 +127,14 @@ def build_scene(text: str, fps: int, total_frames: int):
     txt.data.materials.append(make_mat("TextMat", (0.85, 0.9, 1.0)))
 
 
-def setup_render(out_path: Path, audio_path):
+def setup_render(out_path: Path):
     scene = bpy.context.scene
     scene.render.image_settings.file_format = "FFMPEG"
     scene.render.ffmpeg.format = "MPEG4"
     scene.render.ffmpeg.codec = "H264"
     scene.render.ffmpeg.constant_rate_factor = "MEDIUM"
-    scene.render.ffmpeg.audio_codec = "AAC"
+    scene.render.ffmpeg.audio_codec = "NONE"
     scene.render.filepath = str(out_path)
-
-    if audio_path and Path(audio_path).exists():
-        if not scene.sequence_editor:
-            scene.sequence_editor_create()
-        se = scene.sequence_editor
-        for s in list(se.sequences_all):
-            se.sequences.remove(s)
-        se.sequences.new_sound("Narration", audio_path, 1, 1)
 
 
 def main():
@@ -138,18 +142,30 @@ def main():
     fps = 24
     seconds = min(max(float(args["seconds"]), 1.0), 12.0)
     total_frames = max(fps, int(round(seconds * fps)))
-    build_scene(str(args["text"]), fps, total_frames)
+    width = int(args.get("width", 960))
+    height = int(args.get("height", 540))
+
+    build_scene(str(args["text"]), fps, total_frames, width, height)
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
-    setup_render(out, args["audio"])
-    print(f"Workbench render {total_frames} frames -> {out}")
+    setup_render(out)
+
+    print(f"Workbench silent render {total_frames}f {width}x{height} -> {out}")
     bpy.ops.render.render(animation=True)
-    if not out.exists():
-        # Blender sometimes appends frame numbers; find mp4
-        candidates = list(out.parent.glob(out.stem + "*"))
-        print("Missing exact out; candidates:", candidates)
-        raise SystemExit("Render produced no file")
-    print("Blender render done", out.stat().st_size)
+
+    if out.exists() and out.stat().st_size > 0:
+        print("OK", out, out.stat().st_size)
+        return
+
+    # Blender may write out0001-style names depending on settings
+    matches = sorted(out.parent.glob(out.stem + "*"))
+    print("Exact path missing; candidates:", matches)
+    for m in matches:
+        if m.suffix.lower() in (".mp4", ".mkv", ".avi") and m.stat().st_size > 0:
+            m.rename(out)
+            print("Renamed", m, "->", out)
+            return
+    raise SystemExit("Render produced no usable video file")
 
 
 if __name__ == "__main__":

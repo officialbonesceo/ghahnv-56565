@@ -19,12 +19,12 @@ on:
           - en-NG-EzinneNeural
           - en-NG-AbeoNeural
       use_expand:
-        description: "Polish short text into a spoken script (offline, no HF token)"
+        description: "Polish short text into a spoken script (offline, no token)"
         required: true
         default: true
         type: boolean
       use_blender:
-        description: "Render simple 3D scene with Blender (ffmpeg still always runs)"
+        description: "Render simple 3D scene with Blender"
         required: true
         default: true
         type: boolean
@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install system deps (ffmpeg + Blender headless libs)
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -54,22 +54,26 @@ jobs:
             xvfb \
             libegl1 \
             libgl1 \
+            libgles2 \
             libglx-mesa0 \
             libgl1-mesa-dri \
+            libopengl0 \
+            libglvnd0 \
             libxkbcommon0 \
             libxi6 \
             libxxf86vm1 \
             libxfixes3 \
             libxrender1 \
             libsm6 \
-            libxext6
+            libxext6 \
+            libdbus-1-3
           ffmpeg -version
-          xvfb-run -a echo "xvfb ok"
+          xvfb-run -a -s "-screen 0 960x540x24" echo xvfb_ok
 
       - name: Install Python deps
         run: pip install -r requirements.txt
 
-      - name: Expand / polish script (offline)
+      - name: Expand / polish script (offline, no HF)
         env:
           SCRIPT_TEXT: ${{ inputs.script_text }}
           USE_EXPAND: ${{ inputs.use_expand }}
@@ -86,20 +90,25 @@ jobs:
         env:
           VOICE: ${{ inputs.voice }}
         run: |
+          set -e
           TEXT=$(cat script.txt)
           python scripts/render_clip.py \
             --text "$TEXT" \
             --voice "$VOICE" \
             --out output_ffmpeg.mp4 \
             --audio-out speech.mp3
+          test -s speech.mp3
+          test -s output_ffmpeg.mp4
           ls -lh speech.mp3 output_ffmpeg.mp4
+          ffprobe -hide_banner speech.mp3 2>&1 | head -20
+          ffprobe -hide_banner output_ffmpeg.mp4 2>&1 | head -20
 
       - name: Cache Blender
         if: ${{ inputs.use_blender }}
         uses: actions/cache@v4
         with:
           path: ${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v2
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v3
 
       - name: Install Blender
         if: ${{ inputs.use_blender }}
@@ -119,7 +128,7 @@ jobs:
           cp -a "$SRC"/. "$BLENDER_DIR"/
           "$BLENDER_DIR/blender" --version
 
-      - name: Blender 3D render (xvfb + Workbench)
+      - name: Blender 3D render + ffmpeg audio mux
         if: ${{ inputs.use_blender }}
         continue-on-error: true
         run: |
@@ -127,14 +136,21 @@ jobs:
           TEXT=$(cat script.txt)
           DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
           echo "Audio duration: $DUR"
-          # Virtual display + software-friendly Workbench engine
-          xvfb-run -a "$BLENDER_DIR/blender" -b -noaudio \
+
+          xvfb-run -a -s "-screen 0 960x540x24" \
+            "$BLENDER_DIR/blender" -b -noaudio \
             -P scripts/blender_talking_scene.py -- \
-            --audio "$(pwd)/speech.mp3" \
-            --out "$(pwd)/output_blender.mp4" \
+            --out "$(pwd)/blender_silent.mp4" \
             --text "$TEXT" \
             --seconds "$DUR"
-          ls -lh output_blender.mp4 || true
+
+          test -s blender_silent.mp4
+          # Mux narration under the silent 3D video
+          ffmpeg -y -i blender_silent.mp4 -i speech.mp3 \
+            -c:v copy -c:a aac -b:a 128k -shortest \
+            output_blender.mp4
+          test -s output_blender.mp4
+          ls -lh blender_silent.mp4 output_blender.mp4
 
       - name: Pick final output
         run: |
@@ -146,6 +162,7 @@ jobs:
             echo "FINAL=ffmpeg_fallback"
           fi
           ls -lh output.mp4 speech.mp3 script.txt
+          ffprobe -hide_banner output.mp4 2>&1 | head -25
 
       - uses: actions/upload-artifact@v4
         with:

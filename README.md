@@ -1,29 +1,31 @@
 # Talking Clip Factory
 
-**Text → offline polish → Edge TTS → Blender 3D (optional) → MP4**
+**Text → offline polish → Edge TTS → ffmpeg video (+ optional Blender 3D)**
 
-No HuggingFace token. No large model download.
+No HuggingFace token. No TinyLlama download on CI.
 
-## What actually worked vs failed last run
+## What failed in the earlier run (and what did not)
 
 | Step | Status |
 |------|--------|
-| Script expand (TinyLlama) | Worked (HF warning only) |
-| Edge TTS + ffmpeg | **Worked** (`output_ffmpeg.mp4`) |
-| Blender | **Failed** — missing `libEGL.so.1` on runner |
+| TinyLlama | Worked but odd script + needs model download |
+| Edge TTS + ffmpeg | **Succeeded** (`output_ffmpeg.mp4` ~67KB, audio ~26KB) |
+| Blender | **Crashed**: missing `libEGL.so.1` on headless runner |
 
-This update fixes Blender (`libegl1` + `xvfb` + Workbench engine) and replaces TinyLlama with an **offline** expander so nothing needs an HF token.
+## Current design
 
-## Run / verify
+1. **Script polish** — local Python only (no AI download, no token)
+2. **Edge TTS** — neural voice → `speech.mp3`
+3. **ffmpeg** — always builds `output_ffmpeg.mp4` (guaranteed artifact)
+4. **Blender** — Workbench + `xvfb` + extra GL packages; silent MP4 then **ffmpeg muxes audio**
+
+If Blender still fails, you still get the ffmpeg clip.
+
+## Verify
 
 1. [Actions](https://github.com/officialbonesceo/talking-clip-factory/actions)
-2. **Render talking clip** → **Run workflow**
+2. **Render talking clip** → **Run workflow** (use latest `main`)
 3. Download artifact **talking-clip**
-4. Play `output.mp4` (and check `speech.mp3` / `script.txt`)
+4. Play `output.mp4` (and `output_ffmpeg.mp4` if you want the baseline)
 
-## Stack
-
-- **Expand:** pure Python (no AI download)
-- **TTS:** edge-tts
-- **3D:** Blender 4.2 Workbench via `xvfb-run`
-- **Fallback:** ffmpeg always builds a clip
+First Blender run downloads ~300MB (then cached).
