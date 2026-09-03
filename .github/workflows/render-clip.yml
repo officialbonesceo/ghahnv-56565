@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       script_text:
-        description: "Text or short prompt for the narrator"
+        description: "Text the narrator will speak"
         required: true
-        default: "Welcome to Talking Clip Factory. AI expands the line, Edge speaks it, Blender renders a simple 3D character."
+        default: "Welcome to Talking Clip Factory. This clip was built with Edge TTS and Blender on GitHub Actions."
       voice:
         description: "Edge TTS voice"
         required: true
@@ -18,13 +18,13 @@ on:
           - en-GB-SoniaNeural
           - en-NG-EzinneNeural
           - en-NG-AbeoNeural
-      use_llm:
-        description: "Expand script with TinyLlama"
+      use_expand:
+        description: "Polish short text into a spoken script (offline, no HF token)"
         required: true
         default: true
         type: boolean
       use_blender:
-        description: "Render with Blender 3D (ffmpeg fallback if it fails)"
+        description: "Render simple 3D scene with Blender (ffmpeg still always runs)"
         required: true
         default: true
         type: boolean
@@ -36,7 +36,7 @@ env:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
@@ -46,46 +46,52 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install system deps
+      - name: Install system deps (ffmpeg + Blender headless libs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libxkbcommon0 libxi6 libxxf86vm1 libxfixes3 libgl1 libxrender1
+          sudo apt-get install -y \
+            ffmpeg \
+            xvfb \
+            libegl1 \
+            libgl1 \
+            libglx-mesa0 \
+            libgl1-mesa-dri \
+            libxkbcommon0 \
+            libxi6 \
+            libxxf86vm1 \
+            libxfixes3 \
+            libxrender1 \
+            libsm6 \
+            libxext6
           ffmpeg -version
+          xvfb-run -a echo "xvfb ok"
 
       - name: Install Python deps
         run: pip install -r requirements.txt
 
-      - name: Cache TinyLlama GGUF
-        if: ${{ inputs.use_llm }}
-        uses: actions/cache@v4
-        with:
-          path: models
-          key: tinyllama-q4km-v1
-
-      - name: Expand script (TinyLlama)
-        if: ${{ inputs.use_llm }}
+      - name: Expand / polish script (offline)
         env:
           SCRIPT_TEXT: ${{ inputs.script_text }}
+          USE_EXPAND: ${{ inputs.use_expand }}
         run: |
-          python scripts/expand_script.py --text "$SCRIPT_TEXT" --model-dir models --out script.txt || {
-            echo "LLM soft-failed; using original text"
+          if [ "$USE_EXPAND" = "true" ]; then
+            python scripts/expand_script.py --text "$SCRIPT_TEXT" --out script.txt
+          else
             printf '%s\n' "$SCRIPT_TEXT" > script.txt
-          }
-          echo "--- script ---"
+          fi
+          echo "--- script.txt ---"
           cat script.txt
-
-      - name: Write script without LLM
-        if: ${{ !inputs.use_llm }}
-        env:
-          SCRIPT_TEXT: ${{ inputs.script_text }}
-        run: printf '%s\n' "$SCRIPT_TEXT" > script.txt && cat script.txt
 
       - name: Edge TTS + ffmpeg baseline
         env:
           VOICE: ${{ inputs.voice }}
         run: |
           TEXT=$(cat script.txt)
-          python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" --out output_ffmpeg.mp4 --audio-out speech.mp3
+          python scripts/render_clip.py \
+            --text "$TEXT" \
+            --voice "$VOICE" \
+            --out output_ffmpeg.mp4 \
+            --audio-out speech.mp3
           ls -lh speech.mp3 output_ffmpeg.mp4
 
       - name: Cache Blender
@@ -93,7 +99,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v2
 
       - name: Install Blender
         if: ${{ inputs.use_blender }}
@@ -113,7 +119,7 @@ jobs:
           cp -a "$SRC"/. "$BLENDER_DIR"/
           "$BLENDER_DIR/blender" --version
 
-      - name: Blender 3D render
+      - name: Blender 3D render (xvfb + Workbench)
         if: ${{ inputs.use_blender }}
         continue-on-error: true
         run: |
@@ -121,21 +127,23 @@ jobs:
           TEXT=$(cat script.txt)
           DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
           echo "Audio duration: $DUR"
-          "$BLENDER_DIR/blender" -b -noaudio -P scripts/blender_talking_scene.py -- \
+          # Virtual display + software-friendly Workbench engine
+          xvfb-run -a "$BLENDER_DIR/blender" -b -noaudio \
+            -P scripts/blender_talking_scene.py -- \
             --audio "$(pwd)/speech.mp3" \
             --out "$(pwd)/output_blender.mp4" \
             --text "$TEXT" \
             --seconds "$DUR"
-          ls -lh output_blender.mp4
+          ls -lh output_blender.mp4 || true
 
       - name: Pick final output
         run: |
           if [ -f output_blender.mp4 ] && [ -s output_blender.mp4 ]; then
             cp output_blender.mp4 output.mp4
-            echo "Using Blender output"
+            echo "FINAL=blender"
           else
             cp output_ffmpeg.mp4 output.mp4
-            echo "Using ffmpeg fallback"
+            echo "FINAL=ffmpeg_fallback"
           fi
           ls -lh output.mp4 speech.mp3 script.txt
 

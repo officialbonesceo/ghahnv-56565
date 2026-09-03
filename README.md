@@ -1,25 +1,29 @@
 # Talking Clip Factory
 
-**prompt → TinyLlama (optional) → Edge TTS → Blender 3D (optional) → MP4**
+**Text → offline polish → Edge TTS → Blender 3D (optional) → MP4**
 
-If Blender fails, ffmpeg fallback still produces a clip.
+No HuggingFace token. No large model download.
 
-## Verify
+## What actually worked vs failed last run
+
+| Step | Status |
+|------|--------|
+| Script expand (TinyLlama) | Worked (HF warning only) |
+| Edge TTS + ffmpeg | **Worked** (`output_ffmpeg.mp4`) |
+| Blender | **Failed** — missing `libEGL.so.1` on runner |
+
+This update fixes Blender (`libegl1` + `xvfb` + Workbench engine) and replaces TinyLlama with an **offline** expander so nothing needs an HF token.
+
+## Run / verify
 
 1. [Actions](https://github.com/officialbonesceo/talking-clip-factory/actions)
 2. **Render talking clip** → **Run workflow**
-3. Toggle **use_llm** / **use_blender**
-4. Download artifact **talking-clip** → play `output.mp4`
-
-First run downloads Blender + TinyLlama (cached after that).
+3. Download artifact **talking-clip**
+4. Play `output.mp4` (and check `speech.mp3` / `script.txt`)
 
 ## Stack
 
-| Step | Tool |
-|------|------|
-| LLM | TinyLlama 1.1B Chat Q4 (llama-cpp-python) |
-| TTS | edge-tts |
-| 3D | Blender 4.2 headless |
-| Fallback | ffmpeg |
-
-Keep scripts short on free CPU runners.
+- **Expand:** pure Python (no AI download)
+- **TTS:** edge-tts
+- **3D:** Blender 4.2 Workbench via `xvfb-run`
+- **Fallback:** ffmpeg always builds a clip

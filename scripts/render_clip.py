@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Text -> Edge TTS -> ffmpeg captioned MP4 (baseline / fallback)."""
+"""Text -> Edge TTS -> ffmpeg captioned MP4 (reliable baseline)."""
 from __future__ import annotations
 
 import argparse
@@ -18,27 +18,41 @@ def which_or_die(name: str) -> str:
     return path
 
 
-def safe_drawtext(text: str, max_chars: int = 120) -> str:
+def safe_drawtext(text: str, max_chars: int = 140) -> str:
     t = " ".join(text.split())
     if len(t) > max_chars:
         t = t[: max_chars - 1] + "..."
-    return t.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
+    return (
+        t.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace(":", "\\:")
+        .replace("%", "%%")
+    )
 
 
 async def synthesize(text: str, voice: str, mp3_path: Path) -> None:
     import edge_tts
 
-    await edge_tts.Communicate(text, voice).save(str(mp3_path))
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(str(mp3_path))
 
 
 def probe_duration_seconds(audio_path: Path) -> float:
     out = subprocess.check_output(
-        [which_or_die("ffprobe"), "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
+        [
+            which_or_die("ffprobe"),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(audio_path),
+        ],
         text=True,
     ).strip()
     try:
-        return max(0.5, float(out))
+        return max(0.8, float(out))
     except ValueError:
         return 3.0
 
@@ -47,17 +61,37 @@ def render_ffmpeg(audio: Path, text: str, out_mp4: Path) -> None:
     duration = probe_duration_seconds(audio)
     label = safe_drawtext(text)
     vf = (
-        f"drawtext=text='{label}':fontcolor=white:fontsize=36:line_spacing=8:"
-        f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=0x0b0e17@0.75:boxborderw=24,"
-        f"drawtext=text='Talking Clip Factory':fontcolor=0x67e8f9:fontsize=20:x=(w-text_w)/2:y=h-48"
+        f"drawtext=text='{label}':fontcolor=white:fontsize=32:line_spacing=10:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=0x0b0e17@0.8:boxborderw=28,"
+        f"drawtext=text='Talking Clip Factory':fontcolor=0x67e8f9:fontsize=20:"
+        f"x=(w-text_w)/2:y=h-48"
     )
-    subprocess.check_call([
-        which_or_die("ffmpeg"), "-y",
-        "-f", "lavfi", "-i", f"color=c=0x0b0e17:s=1280x720:d={duration:.3f}",
-        "-i", str(audio), "-vf", vf,
-        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k", "-shortest", str(out_mp4),
-    ])
+    subprocess.check_call(
+        [
+            which_or_die("ffmpeg"),
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=0x0b0e17:s=1280x720:d={duration:.3f}",
+            "-i",
+            str(audio),
+            "-vf",
+            vf,
+            "-c:v",
+            "libx264",
+            "-tune",
+            "stillimage",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-shortest",
+            str(out_mp4),
+        ]
+    )
 
 
 def main() -> None:
@@ -67,14 +101,30 @@ def main() -> None:
     parser.add_argument("--out", default="output.mp4")
     parser.add_argument("--audio-out", default="speech.mp3")
     args = parser.parse_args()
-    text = args.text.strip()[:800]
+
+    text = " ".join(args.text.split()).strip()
+    if not text:
+        print("ERROR: empty text", file=sys.stderr)
+        sys.exit(1)
+    if len(text) > 900:
+        text = text[:900]
+
     audio = Path(args.audio_out).resolve()
     out_mp4 = Path(args.out).resolve()
     audio.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"TTS voice={args.voice} chars={len(text)}")
     asyncio.run(synthesize(text, args.voice, audio))
-    print(f"Audio: {audio} ({audio.stat().st_size} bytes)")
+    if not audio.exists() or audio.stat().st_size < 500:
+        print(f"ERROR: TTS audio too small ({audio})", file=sys.stderr)
+        sys.exit(1)
+    print(f"Audio bytes={audio.stat().st_size} duration~{probe_duration_seconds(audio):.2f}s")
+
     render_ffmpeg(audio, text, out_mp4)
-    print(f"OK {out_mp4}")
+    if not out_mp4.exists() or out_mp4.stat().st_size < 1000:
+        print("ERROR: ffmpeg output missing/empty", file=sys.stderr)
+        sys.exit(1)
+    print(f"OK {out_mp4} ({out_mp4.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
