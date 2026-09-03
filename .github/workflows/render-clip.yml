@@ -6,7 +6,7 @@ on:
       script_text:
         description: "Text the narrator will speak"
         required: true
-        default: "Welcome to Talking Clip Factory. Cyber host online. Edge TTS and Rhubarb lip sync on GitHub Actions."
+        default: "Welcome to Talking Clip Factory. Cyber host online with lip sync."
       voice:
         description: "Edge TTS voice"
         required: true
@@ -23,22 +23,15 @@ on:
         required: true
         default: true
         type: boolean
-      use_blender:
-        description: "Profile-3 cyber host + Rhubarb lips"
-        required: true
-        default: true
-        type: boolean
 
 env:
-  BLENDER_VERSION: "4.2.3"
-  BLENDER_DIR: ${{ github.workspace }}/.blender
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -51,11 +44,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg xvfb \
-            libegl1 libgl1 libgles2 libglx-mesa0 libgl1-mesa-dri \
-            libopengl0 libglvnd0 libxkbcommon0 libxi6 libxxf86vm1 \
-            libxfixes3 libxrender1 libsm6 libxext6 libdbus-1-3 unzip
+          sudo apt-get install -y ffmpeg unzip fonts-dejavu-core
           ffmpeg -version
 
       - name: Install Python deps
@@ -73,7 +62,7 @@ jobs:
           fi
           cat script.txt
 
-      - name: Edge TTS + ffmpeg baseline
+      - name: Edge TTS
         env:
           VOICE: ${{ inputs.voice }}
         run: |
@@ -82,104 +71,47 @@ jobs:
           python scripts/render_clip.py \
             --text "$TEXT" --voice "$VOICE" \
             --out output_ffmpeg.mp4 --audio-out speech.mp3
-          # WAV for Rhubarb (it prefers wav)
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
           ls -lh speech.mp3 speech.wav output_ffmpeg.mp4
 
       - name: Cache Rhubarb
-        if: ${{ inputs.use_blender }}
         uses: actions/cache@v4
         with:
           path: ${{ env.RHUBARB_DIR }}
           key: rhubarb-${{ env.RHUBARB_VERSION }}-linux
 
-      - name: Install Rhubarb Lip Sync
-        if: ${{ inputs.use_blender }}
+      - name: Install Rhubarb
         run: |
           set -e
           if [ -x "$RHUBARB_DIR/rhubarb" ]; then
-            "$RHUBARB_DIR/rhubarb" --version || true
             exit 0
           fi
           mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
           URL="https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
-          echo "Downloading $URL"
           curl -L --fail -o /tmp/rhubarb.zip "$URL"
           unzip -o /tmp/rhubarb.zip -d /tmp/rhubarb
-          # binary may be nested
           BIN=$(find /tmp/rhubarb -type f -name rhubarb | head -1)
           cp "$BIN" "$RHUBARB_DIR/rhubarb"
           chmod +x "$RHUBARB_DIR/rhubarb"
-          # copy data files next to binary if present
-          DATADIR=$(dirname "$BIN")
-          cp -a "$DATADIR"/. "$RHUBARB_DIR"/ || true
-          "$RHUBARB_DIR/rhubarb" --version || true
+          cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
 
       - name: Rhubarb mouth cues
-        if: ${{ inputs.use_blender }}
-        continue-on-error: true
         run: |
           set -e
           "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
-          echo "--- mouth.json (head) ---"
-          head -c 800 mouth.json || true
-          echo
+          head -c 600 mouth.json; echo
 
-      - name: Cache Blender
-        if: ${{ inputs.use_blender }}
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.BLENDER_DIR }}
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-v3
-
-      - name: Install Blender
-        if: ${{ inputs.use_blender }}
-        run: |
-          set -e
-          if [ -x "$BLENDER_DIR/blender" ]; then
-            "$BLENDER_DIR/blender" --version
-            exit 0
-          fi
-          mkdir -p "$BLENDER_DIR"
-          URL="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          curl -L --fail -o /tmp/blender.tar.xz "$URL"
-          tar -xJf /tmp/blender.tar.xz -C /tmp
-          SRC=$(find /tmp -maxdepth 1 -type d -name "blender-${BLENDER_VERSION}-linux-x64" | head -1)
-          cp -a "$SRC"/. "$BLENDER_DIR"/
-          "$BLENDER_DIR/blender" --version
-
-      - name: Blender cyber host + lip sync
-        if: ${{ inputs.use_blender }}
-        continue-on-error: true
+      - name: Render 2.5D cyber host
         run: |
           set -e
           TEXT=$(cat script.txt)
-          DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
-          CUES_ARG=""
-          if [ -f mouth.json ]; then CUES_ARG="--cues $(pwd)/mouth.json"; fi
-          xvfb-run -a -s "-screen 0 960x540x24" \
-            "$BLENDER_DIR/blender" -b -noaudio \
-            -P scripts/blender_talking_scene.py -- \
-            --out "$(pwd)/blender_silent.mp4" \
+          python scripts/render_25d_host.py \
+            --audio speech.mp3 \
+            --cues mouth.json \
             --text "$TEXT" \
-            --seconds "$DUR" \
-            $CUES_ARG
-          test -s blender_silent.mp4
-          ffmpeg -y -i blender_silent.mp4 -i speech.mp3 \
-            -c:v copy -c:a aac -b:a 128k -shortest output_blender.mp4
-          ls -lh output_blender.mp4
-
-      - name: Pick final output
-        run: |
-          if [ -f output_blender.mp4 ] && [ -s output_blender.mp4 ]; then
-            cp output_blender.mp4 output.mp4
-            echo "FINAL=blender_cyber_host"
-          else
-            cp output_ffmpeg.mp4 output.mp4
-            echo "FINAL=ffmpeg_fallback"
-          fi
-          ls -lh output.mp4 speech.mp3 script.txt
-          ls -lh mouth.json 2>/dev/null || true
+            --out output.mp4
+          ls -lh output.mp4
+          ffprobe -hide_banner output.mp4 2>&1 | head -20
 
       - uses: actions/upload-artifact@v4
         with:

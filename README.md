@@ -1,27 +1,19 @@
-# Talking Clip Factory — Profile 3 + Rhubarb
+# Talking Clip Factory
 
-Pipeline:
+**2.5D Profile-3 cyber host** (full frame) + **Rhubarb lip sync** + Edge TTS.
 
-**text → Edge TTS → Rhubarb lip cues → Blender cyber host → MP4**
+## Why not the scary Blender blob?
 
-## Lip sync: Rhubarb vs others
+That was **true 3D geometry** but only **primitive meshes + flat Workbench shading** on a free CPU runner — so it looked like a grey mask, cropped, and uncanny.
 
-| Tool | Fit for this project |
-|------|----------------------|
-| **Rhubarb Lip Sync** | Best free offline CLI for CI. Audio → mouth shapes (A–H, X). Active project. |
-| Papagayo | Older UI tool, weaker automation |
-| Wav2Lip / SadTalker | Better realism, needs GPU + heavy models — not free Actions |
-| Audio2Face | High quality, NVIDIA stack |
-| Azure visemes | Needs paid cloud TTS API |
+This version is **2.5D illustration-style**:
+- Full head + shoulders in frame
+- Cyan headset / eyes (Profile 3 vibe)
+- Mouth opens from **Rhubarb** cues tied to real audio
+- Runs reliably on GitHub Actions
 
-We use **Rhubarb** on purpose: no token, no GPU, works on GitHub runners.
+Real cinematic 3D humans need a proper `.blend` character + GPU. That is a later step, not CI primitives.
 
-## Character
+## Run
 
-Simplified **Profile 3** cyber host (head, jacket, cyan accents, headset). Not the full concept-art mesh — same vibe, CI-safe.
-
-## Verify
-
-1. Actions → **Render talking clip** → Run workflow  
-2. Artifact includes `output.mp4`, `mouth.json`, `speech.mp3`  
-3. Mouth should open/close with speech (Rhubarb cues)
+Actions → **Render talking clip** → download `output.mp4`
