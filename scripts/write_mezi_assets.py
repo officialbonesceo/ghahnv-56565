@@ -1,118 +1,124 @@
 #!/usr/bin/env python3
-"""Generate MEZI sprite PNGs into assets/mezi/ (layered puppet parts)."""
+"""Build MEZI RGBA sprite layers into assets/mezi/."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+W, H = 400, 700
+HOODIE = (255, 196, 40, 255)
+HOODIE_S = (255, 220, 100, 255)
 SKIN = (210, 155, 115, 255)
 HAIR = (28, 24, 30, 255)
-HOODIE = (255, 196, 40, 255)
-HOODIE_S = (255, 215, 90, 255)
 PANTS = (32, 36, 48, 255)
-SHOE = (22, 22, 28, 255)
+SHOE = (20, 20, 26, 255)
 WHITE = (255, 255, 255, 255)
-BLACK = (28, 24, 30, 255)
-MOUTH_C = (90, 35, 45, 255)
+BLACK = (25, 22, 28, 255)
+MOUTH_IN = (95, 35, 45, 255)
+TEETH = (250, 245, 240, 255)
 
 
-def new(w, h):
-    return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+def blank():
+    return Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
 
-def oval(d, xy, fill, outline=None, w=2):
-    d.ellipse(xy, fill=fill, outline=outline, width=w if outline else 0)
+def oval(d, xy, fill, outline=None, width=2):
+    d.ellipse(xy, fill=fill, outline=outline, width=width if outline else 0)
 
 
-def make_body():
-    im = new(400, 700)
-    d = ImageDraw.Draw(im)
-    cx = 200
-    oval(d, [cx - 55, 620, cx - 5, 660], SHOE)
-    oval(d, [cx + 5, 620, cx + 55, 660], SHOE)
-    d.rounded_rectangle([cx - 42, 520, cx - 12, 630], 14, fill=PANTS)
-    d.rounded_rectangle([cx + 12, 520, cx + 42, 630], 14, fill=PANTS)
-    d.rounded_rectangle([cx - 75, 300, cx + 75, 530], 36, fill=HOODIE)
-    d.rounded_rectangle([cx - 50, 340, cx + 50, 500], 28, fill=HOODIE_S)
-    d.rounded_rectangle([cx - 42, 420, cx + 42, 495], 18, fill=HOODIE)
-    oval(d, [cx - 20, 350, cx + 20, 390], None, BLACK, 3)
-    d.line([(cx - 60, 320), (cx - 50, 470)], fill=(45, 45, 55, 255), width=6)
-    d.line([(cx + 60, 320), (cx + 50, 470)], fill=(45, 45, 55, 255), width=6)
-    d.line([(cx - 70, 360), (cx - 105, 500)], fill=HOODIE, width=22)
-    d.line([(cx + 70, 360), (cx + 105, 500)], fill=HOODIE, width=22)
-    oval(d, [cx - 125, 485, cx - 90, 520], SKIN)
-    oval(d, [cx + 90, 485, cx + 125, 520], SKIN)
-    d.rectangle([cx - 18, 270, cx + 18, 310], fill=SKIN)
-    oval(d, [cx - 90, 120, cx + 90, 300], SKIN)
-    oval(d, [cx - 95, 90, cx + 95, 200], HAIR)
-    oval(d, [cx - 80, 160, cx + 80, 280], SKIN)
-    for ox, oy, r in [(-55, -20, 28), (-15, -35, 30), (25, -38, 32), (60, -25, 26), (75, 0, 20)]:
-        oval(d, [cx + ox - r, 100 + oy, cx + ox + r, 100 + oy + r * 2], HAIR)
-    oval(d, [cx - 100, 190, cx - 78, 230], SKIN)
-    oval(d, [cx + 78, 190, cx + 100, 230], SKIN)
-    oval(d, [cx - 48, 195, cx - 12, 235], WHITE, BLACK, 3)
-    oval(d, [cx + 12, 195, cx + 48, 235], WHITE, BLACK, 3)
-    oval(d, [cx - 38, 205, cx - 20, 225], BLACK)
-    oval(d, [cx + 20, 205, cx + 38, 225], BLACK)
-    oval(d, [cx - 35, 208, cx - 27, 216], WHITE)
-    oval(d, [cx + 23, 208, cx + 31, 216], WHITE)
-    d.arc([cx - 50, 175, cx - 10, 200], 200, 340, fill=BLACK, width=4)
-    d.arc([cx + 10, 175, cx + 50, 200], 200, 340, fill=BLACK, width=4)
-    blush = new(400, 700)
-    bd = ImageDraw.Draw(blush)
-    bd.ellipse([cx - 70, 235, cx - 40, 255], fill=(255, 140, 130, 80))
-    bd.ellipse([cx + 40, 235, cx + 70, 255], fill=(255, 140, 130, 80))
-    return Image.alpha_composite(im, blush)
-
-
-def make_mouth(open_amt: float):
-    im = new(400, 700)
-    d = ImageDraw.Draw(im)
-    cx, my = 200, 268
-    if open_amt < 0.15:
-        d.arc([cx - 22, my - 10, cx + 22, my + 12], 20, 160, fill=BLACK, width=5)
+def draw_body(arm_mode="normal"):
+    img = blank()
+    d = ImageDraw.Draw(img)
+    cx, cy = W // 2, 380
+    d.rounded_rectangle([cx - 42, cy + 90, cx - 12, cy + 175], 14, fill=PANTS)
+    d.rounded_rectangle([cx + 12, cy + 90, cx + 42, cy + 175], 14, fill=PANTS)
+    oval(d, [cx - 52, cy + 162, cx - 5, cy + 192], SHOE)
+    oval(d, [cx + 5, cy + 162, cx + 52, cy + 192], SHOE)
+    d.rounded_rectangle([cx - 70, cy - 10, cx + 70, cy + 115], 32, fill=HOODIE)
+    d.rounded_rectangle([cx - 48, cy + 15, cx + 48, cy + 95], 24, fill=HOODIE_S)
+    d.rounded_rectangle([cx - 40, cy + 55, cx + 40, cy + 100], 18, fill=HOODIE)
+    oval(d, [cx - 18, cy + 18, cx + 18, cy + 54], None, BLACK, 3)
+    d.line([(cx - 58, cy + 5), (cx - 48, cy + 80)], fill=(45, 45, 55, 255), width=6)
+    d.line([(cx + 58, cy + 5), (cx + 48, cy + 80)], fill=(45, 45, 55, 255), width=6)
+    if arm_mode == "point":
+        d.line([(cx + 62, cy + 25), (cx + 120, cy - 50)], fill=HOODIE, width=22)
+        oval(d, [cx + 108, cy - 68, cx + 138, cy - 38], SKIN)
+        d.line([(cx + 132, cy - 55), (cx + 165, cy - 80)], fill=SKIN, width=8)
+        d.line([(cx - 62, cy + 30), (cx - 90, cy + 100)], fill=HOODIE, width=20)
+        oval(d, [cx - 108, cy + 90, cx - 78, cy + 120], SKIN)
     else:
-        mw = 14 + int(22 * open_amt)
-        mh = 4 + int(30 * open_amt)
-        oval(d, [cx - mw, my - mh // 4, cx + mw, my + mh], MOUTH_C, BLACK, 3)
-        if open_amt > 0.3:
-            oval(d, [cx - mw + 4, my - 1, cx + mw - 4, my + 6 + int(5 * open_amt)], (245, 240, 235, 255))
-        if open_amt > 0.5:
-            oval(d, [cx - mw + 6, my + 8, cx + mw - 6, my + mh - 3], (50, 15, 25, 255))
-    return im
+        d.line([(cx - 62, cy + 25), (cx - 95, cy + 105)], fill=HOODIE, width=20)
+        d.line([(cx + 62, cy + 25), (cx + 95, cy + 105)], fill=HOODIE, width=20)
+        oval(d, [cx - 112, cy + 95, cx - 82, cy + 125], SKIN)
+        oval(d, [cx + 82, cy + 95, cx + 112, cy + 125], SKIN)
+    d.rectangle([cx - 16, cy - 35, cx + 16, cy], fill=SKIN)
+    hy = cy - 110
+    oval(d, [cx - 78, hy - 85, cx + 78, hy + 25], HAIR)
+    oval(d, [cx - 70, hy - 65, cx + 70, hy + 65], SKIN)
+    oval(d, [cx - 76, hy - 95, cx + 76, hy - 10], HAIR)
+    oval(d, [cx - 62, hy - 40, cx + 62, hy + 60], SKIN)
+    for ox, oy, r in [(-48, -95, 26), (-15, -108, 28), (20, -110, 30), (52, -98, 26)]:
+        oval(d, [cx + ox - r, hy + oy - r // 2, cx + ox + r, hy + oy + r], HAIR)
+    oval(d, [cx - 85, hy - 15, cx - 62, hy + 25], SKIN)
+    oval(d, [cx + 62, hy - 15, cx + 85, hy + 25], SKIN)
+    ey = hy - 5
+    oval(d, [cx - 42, ey - 20, cx - 8, ey + 18], WHITE, BLACK, 3)
+    oval(d, [cx + 8, ey - 20, cx + 42, ey + 18], WHITE, BLACK, 3)
+    oval(d, [cx - 32, ey - 8, cx - 16, ey + 10], BLACK)
+    oval(d, [cx + 16, ey - 8, cx + 32, ey + 10], BLACK)
+    oval(d, [cx - 30, ey - 6, cx - 22, ey + 2], WHITE)
+    oval(d, [cx + 18, ey - 6, cx + 26, ey + 2], WHITE)
+    d.arc([cx - 44, ey - 36, cx - 6, ey - 8], 200, 340, fill=BLACK, width=4)
+    d.arc([cx + 6, ey - 36, cx + 44, ey - 8], 200, 340, fill=BLACK, width=4)
+    return img
 
 
-def make_arm_point():
-    im = new(400, 700)
-    d = ImageDraw.Draw(im)
-    cx = 200
-    d.line([(cx + 70, 360), (cx + 130, 220)], fill=HOODIE, width=24)
-    oval(d, [cx + 115, 195, cx + 150, 230], SKIN)
-    d.line([(cx + 140, 210), (cx + 175, 175)], fill=SKIN, width=8)
-    return im
+def draw_mouth(kind: str):
+    img = blank()
+    d = ImageDraw.Draw(img)
+    cx, cy = W // 2, 380
+    hy = cy - 110
+    my = hy + 35
+    if kind == "closed":
+        d.arc([cx - 22, my - 8, cx + 22, my + 12], 20, 160, fill=BLACK, width=5)
+    elif kind == "open":
+        oval(d, [cx - 28, my - 5, cx + 28, my + 32], MOUTH_IN, BLACK, 3)
+        oval(d, [cx - 22, my - 1, cx + 22, my + 10], TEETH)
+        oval(d, [cx - 20, my + 12, cx + 20, my + 28], (55, 18, 28, 255))
+    else:
+        oval(d, [cx - 36, my - 6, cx + 36, my + 42], MOUTH_IN, BLACK, 3)
+        oval(d, [cx - 28, my - 2, cx + 28, my + 12], TEETH)
+        oval(d, [cx - 26, my + 14, cx + 26, my + 36], (55, 18, 28, 255))
+    return img
 
 
-def make_eyes_laugh():
-    im = new(400, 700)
-    d = ImageDraw.Draw(im)
-    cx = 200
-    d.arc([cx - 48, 200, cx - 12, 230], 200, 340, fill=BLACK, width=5)
-    d.arc([cx + 12, 200, cx + 48, 230], 200, 340, fill=BLACK, width=5)
-    return im
+def draw_eyes_laugh():
+    img = blank()
+    d = ImageDraw.Draw(img)
+    cx, cy = W // 2, 380
+    hy = cy - 110
+    ey = hy - 5
+    d.arc([cx - 42, ey - 8, cx - 8, ey + 16], 200, 340, fill=BLACK, width=5)
+    d.arc([cx + 8, ey - 8, cx + 42, ey + 16], 200, 340, fill=BLACK, width=5)
+    return img
 
 
-def main():
+def main() -> None:
     out = Path(__file__).resolve().parents[1] / "assets" / "mezi"
     out.mkdir(parents=True, exist_ok=True)
-    make_body().save(out / "body.png")
-    make_mouth(0.05).save(out / "mouth_closed.png")
-    make_mouth(0.55).save(out / "mouth_open.png")
-    make_mouth(0.95).save(out / "mouth_wide.png")
-    make_arm_point().save(out / "arm_point.png")
-    make_eyes_laugh().save(out / "eyes_laugh.png")
-    for p in sorted(out.glob("*.png")):
-        print("wrote", p.name, p.stat().st_size)
+    items = {
+        "body.png": draw_body("normal"),
+        "arm_point.png": draw_body("point"),
+        "mouth_closed.png": draw_mouth("closed"),
+        "mouth_open.png": draw_mouth("open"),
+        "mouth_wide.png": draw_mouth("wide"),
+        "eyes_laugh.png": draw_eyes_laugh(),
+    }
+    for name, im in items.items():
+        path = out / name
+        im.save(path, "PNG")
+        print("wrote", path, path.stat().st_size)
 
 
 if __name__ == "__main__":

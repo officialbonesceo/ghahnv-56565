@@ -18,7 +18,6 @@ FPS = 12
 HOODIE = (255, 196, 40)
 WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
-
 MOUTH = {
     "X": 0.02, "A": 1.0, "B": 0.08, "C": 0.55,
     "D": 0.7, "E": 0.85, "F": 0.4, "G": 0.9, "H": 1.0,
@@ -33,7 +32,7 @@ def asset_dir() -> Path:
 def load_rgba(name: str) -> Image.Image:
     p = asset_dir() / name
     if not p.exists():
-        raise SystemExit(f"missing sprite {p} — run scripts/write_mezi_assets.py")
+        raise SystemExit(f"missing sprite {p} - run scripts/write_mezi_assets.py")
     return Image.open(p).convert("RGBA")
 
 
@@ -88,7 +87,7 @@ def make_bg(kind: str) -> Image.Image:
             d.line([(0, y), (bw, y)], fill=(c, c + 2, 18 + c))
         for _ in range(220):
             x, y = rnd.randint(0, bw - 1), rnd.randint(0, bh - 1)
-            r = rnd.choice([1, 1, 2, 3])
+            r = rnd.choice([1, 1, 2, 2, 3])
             b = rnd.randint(180, 255)
             d.ellipse([x, y, x + r, y + r], fill=(b, b, 255))
         d.ellipse([bw - 280, 120, bw - 40, 360], fill=(50, 80, 160))
@@ -131,11 +130,9 @@ def crop_ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
 
 
 def composite_mezi(action: str, mouth_open: float) -> Image.Image:
-    body = load_rgba("body.png")
+    body = load_rgba("arm_point.png" if action == "point" else "body.png")
     mouth = load_rgba(mouth_sprite(mouth_open))
     char = Image.alpha_composite(body, mouth)
-    if action == "point":
-        char = Image.alpha_composite(char, load_rgba("arm_point.png"))
     if action == "laugh":
         char = Image.alpha_composite(char, load_rgba("eyes_laugh.png"))
     return char
@@ -190,7 +187,8 @@ def main():
 
     dur_s = subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)], text=True
+         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)],
+        text=True,
     ).strip()
     duration = min(max(float(dur_s), 1.0), 45.0)
     actions = [a.strip().lower() for a in args.actions.split(",") if a.strip()]
