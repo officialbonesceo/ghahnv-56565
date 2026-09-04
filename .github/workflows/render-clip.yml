@@ -3,10 +3,6 @@ name: Render talking clip
 on:
   workflow_dispatch:
     inputs:
-      script_text:
-        description: "What MEZI says"
-        required: true
-        default: "Hey! I am Mezi, the curious explorer. Let us walk, point things out, and laugh while we learn something new together."
       voice:
         description: "Edge TTS voice"
         required: true
@@ -15,15 +11,14 @@ on:
         options:
           - en-US-GuyNeural
           - en-US-JennyNeural
-          - en-GB-SoniaNeural
-          - en-NG-EzinneNeural
           - en-NG-AbeoNeural
+          - en-NG-EzinneNeural
       actions:
-        description: "Action timeline (all in one video)"
+        description: "Action timeline"
         required: true
         default: "talk,walk,point,laugh"
-      use_expand:
-        description: "Polish short text offline"
+      use_llm:
+        description: "Use Qwen2-0.5B for script (else template)"
         required: true
         default: true
         type: boolean
@@ -31,11 +26,15 @@ on:
 env:
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
+  MODEL_DIR: ${{ github.workspace }}/models
+  # Qwen2 0.5B Instruct Q4 — small, public
+  MODEL_URL: https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf
+  MODEL_FILE: qwen2-0_5b-instruct-q4_k_m.gguf
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -45,26 +44,59 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install system deps
+      - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip fonts-dejavu-core
+          sudo apt-get install -y ffmpeg unzip fonts-dejavu-core build-essential
           ffmpeg -version
 
-      - name: Install Python deps
-        run: pip install -r requirements.txt
-
-      - name: Expand script
-        env:
-          SCRIPT_TEXT: ${{ inputs.script_text }}
-          USE_EXPAND: ${{ inputs.use_expand }}
+      - name: Python deps
         run: |
-          if [ "$USE_EXPAND" = "true" ] && [ -f scripts/expand_script.py ]; then
-            python scripts/expand_script.py --text "$SCRIPT_TEXT" --out script.txt
-          else
-            printf '%s\n' "$SCRIPT_TEXT" > script.txt
+          pip install --upgrade pip
+          pip install edge-tts Pillow requests
+          # llama-cpp may take a few minutes to build
+          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || \
+            pip install llama-cpp-python
+
+      - name: Fetch topic (Wikipedia, no seed)
+        run: python scripts/fetch_topics.py topic.json
+
+      - name: Cache Qwen GGUF
+        if: ${{ inputs.use_llm }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MODEL_DIR }}
+          key: qwen2-0.5b-q4km-v1
+
+      - name: Download Qwen2-0.5B GGUF
+        if: ${{ inputs.use_llm }}
+        run: |
+          set -e
+          mkdir -p "$MODEL_DIR"
+          if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
+            echo "Downloading model..."
+            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || \
+              curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" \
+                "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_0.gguf"
           fi
+          ls -lh "$MODEL_DIR" || true
+
+      - name: Generate script (Qwen or template)
+        env:
+          USE_LLM: ${{ inputs.use_llm }}
+        run: |
+          set -e
+          MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
+          if [ "$USE_LLM" != "true" ]; then
+            MODEL_PATH="/nonexistent"
+          fi
+          python scripts/generate_script.py \
+            --topic topic.json \
+            --model "$MODEL_PATH" \
+            --out script_job.json
+          echo "--- script ---"
           cat script.txt
+          echo "bg=$(cat bg.txt)"
 
       - name: Edge TTS
         env:
@@ -72,10 +104,8 @@ jobs:
         run: |
           set -e
           TEXT=$(cat script.txt)
-          # TTS only — no --out video flag
           python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
-          ls -lh speech.mp3 speech.wav
 
       - name: Cache Rhubarb
         uses: actions/cache@v4
@@ -96,38 +126,41 @@ jobs:
           chmod +x "$RHUBARB_DIR/rhubarb"
           cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
 
-      - name: Rhubarb mouth cues
+      - name: Rhubarb
         continue-on-error: true
-        run: |
-          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
-          head -c 500 mouth.json || true
+        run: "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: Render MEZI 2D (all actions)
+      - name: Render MEZI TikTok
         env:
           ACTIONS: ${{ inputs.actions }}
         run: |
           set -e
           TEXT=$(cat script.txt)
+          BG=$(cat bg.txt 2>/dev/null || echo studio)
+          TITLE=$(python -c "import json;print(json.load(open('script_job.json')).get('title','Mezi'))")
           CUES=""
           if [ -f mouth.json ]; then CUES="--cues mouth.json"; fi
           python scripts/render_mezi.py \
             --audio speech.mp3 \
             --text "$TEXT" \
-            --out output_mezi.mp4 \
+            --title "$TITLE" \
+            --bg "$BG" \
+            --out output.mp4 \
             --actions "$ACTIONS" \
             $CUES
-          test -s output_mezi.mp4
-          cp output_mezi.mp4 output.mp4
           ls -lh output.mp4
-          ffprobe -hide_banner output.mp4 2>&1 | head -15
+          ffprobe -hide_banner output.mp4 2>&1 | head -20
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mezi-clip
+          name: mezi-tiktok
           path: |
             output.mp4
-            speech.mp3
             script.txt
+            script_job.json
+            topic.json
+            speech.mp3
             mouth.json
+            bg.txt
           if-no-files-found: error
           retention-days: 7

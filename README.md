@@ -1,28 +1,29 @@
-# Talking Clip Factory — MEZI 2D
+# MEZI TikTok factory (GitHub Actions)
 
-**MEZI-style cartoon explorer** (yellow hoodie), not Blender geometry.
+Fully automated short explainer pipeline:
 
 ```
-text → Edge TTS → Rhubarb mouths → MEZI 2D frames → mp4
+Wikipedia (free, no seed)
+  → Qwen2-0.5B GGUF script (or template fallback)
+  → Edge TTS + Rhubarb
+  → MEZI 2D vertical video + topic background + Ken Burns camera
+  → artifact mp4
 ```
 
-## Actions
+## Run
 
-| Action | What you see |
-|--------|----------------|
-| `talk` | Idle bob + lip sync |
-| `walk` | Side-to-side walk cycle + lips |
-| `point` | Points while talking |
-| `laugh` | Laugh expression + open mouth |
+Actions → **Render talking clip** → Run workflow (no topic input needed).
 
-## Verify
+Download artifact **mezi-tiktok**.
 
-1. Actions → **Render talking clip** → Run workflow  
-2. Pick action (try `talk` or `point`)  
-3. Download **talking-clip** → `output.mp4`  
+## Backgrounds
 
-Expect cartoon MEZI in a simple room, mouth moving with speech — closer to the MEZI sheet than the old cyber sphere.
+Auto from topic keywords: `space` · `ocean` · `money` · `tech` · `science` · `studio`
 
-## Honest note
+Slow zoom/pan applied every run.
 
-This is a **procedural 2D puppet** inspired by MEZI (Pillow-drawn), not the full polished character-sheet illustration. It is the feasible automated path on free GitHub Actions. Upgrading to the exact sheet art means dropping real PNG layers into `assets/` later.
+## Notes
+
+- Character is still a procedural puppet (not the full illustrated sheet).
+- First run downloads ~300MB model (then cached).
+- If LLM fails, template script from Wikipedia extract is used.
