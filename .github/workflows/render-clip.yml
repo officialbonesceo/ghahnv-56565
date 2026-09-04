@@ -8,26 +8,24 @@ on:
 
 env:
   RHUBARB_VERSION: "1.13.0"
-  RHUBARB_DIR: "${{ github.workspace }}/.rhubarb"
-  MODEL_DIR: "${{ github.workspace }}/models"
-  MODEL_URL: "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf"
-  MODEL_FILE: "qwen2-0_5b-instruct-q4_k_m.gguf"
-  VOICE: "en-US-GuyNeural"
-  ACTIONS: "talk,walk,point,laugh"
+  RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
+  MODEL_DIR: ${{ github.workspace }}/models
+  MODEL_URL: https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf
+  MODEL_FILE: qwen2-0_5b-instruct-q4_k_m.gguf
+  VOICE: en-US-GuyNeural
+  ACTIONS: talk,walk,point,laugh
 
 jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+          cache: pip
 
       - name: System deps
         run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip fonts-dejavu-core build-essential
@@ -36,10 +34,10 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install edge-tts Pillow requests
-          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python
+          pip install llama-cpp-python || true
 
       - name: Build MEZI sprites
-        run: python scripts/write_mezi_assets.py && ls -lh assets/mezi/
+        run: python scripts/write_mezi_assets.py
 
       - name: Fetch topic
         run: python scripts/fetch_topics.py topic.json
@@ -51,26 +49,14 @@ jobs:
           key: qwen2-05b-q4km-v1
 
       - name: Download Qwen model
-        run: |
-          mkdir -p "$MODEL_DIR"
-          if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
-            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || true
-          fi
-          if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
-            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_0.gguf"
-          fi
-          ls -lh "$MODEL_DIR" || true
+        run: bash scripts/ci_download_model.sh
 
       - name: Generate script
-        run: |
-          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$MODEL_FILE" --out script_job.json
-          cat script.txt
-          cat bg.txt || echo studio
+        run: python scripts/generate_script.py --topic topic.json --model ${{ env.MODEL_DIR }}/${{ env.MODEL_FILE }} --out script_job.json
 
       - name: Edge TTS
         run: |
-          TEXT=$(cat script.txt)
-          python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" --audio-out speech.mp3
+          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
 
       - name: Cache Rhubarb
@@ -80,33 +66,14 @@ jobs:
           key: rhubarb-1-13-0-linux
 
       - name: Install Rhubarb
-        run: |
-          if [ -x "$RHUBARB_DIR/rhubarb" ]; then exit 0; fi
-          mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
-          curl -L --fail -o /tmp/rhubarb.zip "https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
-          unzip -o /tmp/rhubarb.zip -d /tmp/rhubarb
-          BIN=$(find /tmp/rhubarb -type f -name rhubarb | head -1)
-          cp "$BIN" "$RHUBARB_DIR/rhubarb"
-          chmod +x "$RHUBARB_DIR/rhubarb"
-          cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
+        run: bash scripts/ci_install_rhubarb.sh
 
       - name: Rhubarb lip cues
         continue-on-error: true
-        run: "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
+        run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
 
       - name: Render MEZI sprites
-        run: |
-          TEXT=$(cat script.txt)
-          BG=studio
-          test -f bg.txt && BG=$(cat bg.txt)
-          TITLE=Mezi
-          test -f script_job.json && TITLE=$(python scripts/print_title.py)
-          if test -f mouth.json; then
-            python scripts/render_mezi.py --audio speech.mp3 --text "$TEXT" --title "$TITLE" --bg "$BG" --out output.mp4 --actions "$ACTIONS" --cues mouth.json
-          else
-            python scripts/render_mezi.py --audio speech.mp3 --text "$TEXT" --title "$TITLE" --bg "$BG" --out output.mp4 --actions "$ACTIONS"
-          fi
-          ls -lh output.mp4
+        run: bash scripts/ci_render.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
