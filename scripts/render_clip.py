@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Text -> Edge TTS -> speech.mp3"""
+"""Text -> Edge TTS -> speech.mp3 only (no --out video flag)."""
 from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 from pathlib import Path
 
 
 async def synthesize(text: str, voice: str, mp3_path: Path) -> None:
     import edge_tts
+
     await edge_tts.Communicate(text, voice).save(str(mp3_path))
 
 
@@ -23,6 +23,8 @@ def main() -> None:
     audio = Path(args.audio_out).resolve()
     audio.parent.mkdir(parents=True, exist_ok=True)
     asyncio.run(synthesize(text, args.voice, audio))
+    if not audio.exists() or audio.stat().st_size < 100:
+        raise SystemExit("TTS produced empty audio")
     print(f"Audio: {audio} ({audio.stat().st_size} bytes)")
 
 
