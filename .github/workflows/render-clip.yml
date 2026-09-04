@@ -67,13 +67,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg unzip fonts-dejavu-core build-essential
-          ffmpeg -version
 
       - name: Python deps
         run: |
           pip install --upgrade pip
           pip install edge-tts Pillow requests
           pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python
+
+      - name: Build MEZI sprites
+        run: python scripts/write_mezi_assets.py
 
       - name: Fetch topic from Wikipedia
         run: python scripts/fetch_topics.py topic.json
@@ -91,10 +93,8 @@ jobs:
           set -e
           mkdir -p "$MODEL_DIR"
           if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
-            echo "Downloading model..."
             curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_0.gguf"
           fi
-          ls -lh "$MODEL_DIR" || true
 
       - name: Generate script
         run: |
@@ -104,9 +104,7 @@ jobs:
             MODEL_PATH="/nonexistent"
           fi
           python scripts/generate_script.py --topic topic.json --model "$MODEL_PATH" --out script_job.json
-          echo "--- script ---"
           cat script.txt
-          echo "bg=$(cat bg.txt)"
 
       - name: Edge TTS
         run: |
@@ -125,9 +123,7 @@ jobs:
       - name: Install Rhubarb
         run: |
           set -e
-          if [ -x "$RHUBARB_DIR/rhubarb" ]; then
-            exit 0
-          fi
+          if [ -x "$RHUBARB_DIR/rhubarb" ]; then exit 0; fi
           mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
           URL="https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
           curl -L --fail -o /tmp/rhubarb.zip "$URL"
@@ -139,10 +135,9 @@ jobs:
 
       - name: Rhubarb lip cues
         continue-on-error: true
-        run: |
-          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
+        run: "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: Render MEZI TikTok
+      - name: Render MEZI TikTok sprites
         run: |
           set -e
           TEXT=$(cat script.txt)
@@ -150,19 +145,9 @@ jobs:
           TITLE=$(python -c "import json; print(json.load(open('script_job.json')).get('title', 'Mezi'))")
           ACTIONS="${{ steps.opts.outputs.actions }}"
           CUES_ARG=""
-          if [ -f mouth.json ]; then
-            CUES_ARG="--cues mouth.json"
-          fi
-          python scripts/render_mezi.py \
-            --audio speech.mp3 \
-            --text "$TEXT" \
-            --title "$TITLE" \
-            --bg "$BG" \
-            --out output.mp4 \
-            --actions "$ACTIONS" \
-            $CUES_ARG
+          if [ -f mouth.json ]; then CUES_ARG="--cues mouth.json"; fi
+          python scripts/render_mezi.py --audio speech.mp3 --text "$TEXT" --title "$TITLE" --bg "$BG" --out output.mp4 --actions "$ACTIONS" $CUES_ARG
           ls -lh output.mp4
-          ffprobe -hide_banner output.mp4 2>&1 | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
