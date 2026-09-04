@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEZI vertical short: stronger bgs, Ken Burns, clearer lip sync."""
+"""MEZI sprite compositor: body + mouth layers + bg + Ken Burns."""
 from __future__ import annotations
 
 import argparse
@@ -11,36 +11,30 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 
 W, H = 720, 1280
 FPS = 12
-
 HOODIE = (255, 196, 40)
-HOODIE_D = (235, 170, 25)
-HOODIE_S = (255, 215, 90)
-SKIN = (210, 155, 115)
-HAIR = (28, 24, 30)
-PANTS = (32, 36, 48)
-SHOE = (22, 22, 28)
-MOUTH_IN = (90, 35, 45)
-TEETH = (245, 240, 235)
 WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
 
-# More separation between closed / open for visible lip sync
 MOUTH = {
-    "X": 0.02,
-    "A": 1.0,
-    "B": 0.08,
-    "C": 0.55,
-    "D": 0.7,
-    "E": 0.85,
-    "F": 0.4,
-    "G": 0.9,
-    "H": 1.0,
+    "X": 0.02, "A": 1.0, "B": 0.08, "C": 0.55,
+    "D": 0.7, "E": 0.85, "F": 0.4, "G": 0.9, "H": 1.0,
 }
 ALL_ACTIONS = ["talk", "walk", "point", "laugh"]
+
+
+def asset_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "assets" / "mezi"
+
+
+def load_rgba(name: str) -> Image.Image:
+    p = asset_dir() / name
+    if not p.exists():
+        raise SystemExit(f"missing sprite {p} — run scripts/write_mezi_assets.py")
+    return Image.open(p).convert("RGBA")
 
 
 def load_cues(path: Path | None):
@@ -52,12 +46,19 @@ def load_cues(path: Path | None):
 
 def open_at(cues, t: float) -> float:
     if not cues:
-        # strong idle chatter so lips still move without cues
-        return 0.05 + 0.75 * max(0.0, math.sin(t * 14))
+        return 0.05 + 0.8 * max(0.0, math.sin(t * 14))
     for c in cues:
         if float(c["start"]) <= t < float(c["end"]):
             return MOUTH.get(str(c["value"]).upper(), 0.45)
     return 0.02
+
+
+def mouth_sprite(open_amt: float) -> str:
+    if open_amt >= 0.7:
+        return "mouth_wide.png"
+    if open_amt >= 0.25:
+        return "mouth_open.png"
+    return "mouth_closed.png"
 
 
 def font(size: int):
@@ -81,69 +82,40 @@ def make_bg(kind: str) -> Image.Image:
     d = ImageDraw.Draw(img)
     k = (kind or "studio").lower().strip()
     rnd = random.Random(hash(k) & 0xFFFFFFFF)
-
     if k == "space":
         for y in range(bh):
             c = 6 + y // 80
             d.line([(0, y), (bw, y)], fill=(c, c + 2, 18 + c))
         for _ in range(220):
             x, y = rnd.randint(0, bw - 1), rnd.randint(0, bh - 1)
-            r = rnd.choice([1, 1, 1, 2, 2, 3])
-            bright = rnd.randint(180, 255)
-            d.ellipse([x, y, x + r, y + r], fill=(bright, bright, 255))
-        # planet
+            r = rnd.choice([1, 1, 2, 3])
+            b = rnd.randint(180, 255)
+            d.ellipse([x, y, x + r, y + r], fill=(b, b, 255))
         d.ellipse([bw - 280, 120, bw - 40, 360], fill=(50, 80, 160))
-        d.ellipse([bw - 250, 150, bw - 70, 330], fill=(30, 50, 110))
-        d.arc([bw - 300, 180, bw - 20, 320], 200, 340, fill=(180, 200, 255), width=6)
     elif k == "ocean":
         for y in range(int(bh * 0.42)):
             d.line([(0, y), (bw, y)], fill=(120 + y // 30, 190, 235))
         for y in range(int(bh * 0.42), bh):
             depth = y - int(bh * 0.42)
-            d.line([(0, y), (bw, y)], fill=(15, 70 + depth // 20, 120 + depth // 25))
-        for i in range(12):
-            y = int(bh * 0.42) + i * 28
-            d.arc([10, y, bw - 10, y + 50], 0, 180, fill=(60, 160, 200), width=4)
+            d.line([(0, y), (bw, y)], fill=(15, 70 + depth // 20, 120))
     elif k == "money":
         d.rectangle([0, 0, bw, bh], fill=(236, 250, 236))
         d.rectangle([0, int(bh * 0.68), bw, bh], fill=(25, 110, 65))
-        for i in range(10):
-            x = 30 + (i % 5) * 150
-            y = 120 + (i // 5) * 160
-            d.ellipse([x, y, x + 90, y + 90], fill=(200, 230, 200), outline=(20, 100, 50), width=5)
-            d.text((x + 30, y + 28), "$", fill=(20, 90, 45))
     elif k == "tech":
-        for y in range(bh):
-            d.line([(0, y), (bw, y)], fill=(12, 18, 32))
-        # grid
+        d.rectangle([0, 0, bw, bh], fill=(12, 18, 32))
         for x in range(0, bw, 40):
-            d.line([(x, 0), (x, bh)], fill=(25, 40, 60), width=1)
-        for y in range(0, bh, 40):
-            d.line([(0, y), (bw, y)], fill=(25, 40, 60), width=1)
-        for i in range(14):
-            x = 40 + i * 55
-            h = 40 + (i * 37) % 120
-            d.rectangle([x, 180, x + 36, 180 + h], outline=(0, 220, 255), width=2)
-            d.ellipse([x + 8, 150, x + 28, 170], outline=(0, 255, 200), width=2)
-        d.rectangle([0, int(bh * 0.78), bw, bh], fill=(18, 28, 48))
+            d.line([(x, 0), (x, bh)], fill=(25, 40, 60))
+        for i in range(12):
+            x = 40 + i * 60
+            d.rectangle([x, 160, x + 40, 280], outline=(0, 220, 255), width=2)
     elif k == "science":
-        for y in range(bh):
-            d.line([(0, y), (bw, y)], fill=(220, 238, 255))
+        d.rectangle([0, 0, bw, bh], fill=(220, 238, 255))
         d.ellipse([bw - 260, 40, bw - 40, 260], fill=(255, 210, 70))
-        d.ellipse([bw - 230, 70, bw - 70, 230], fill=(255, 230, 120))
-        # orbit rings
-        d.arc([80, 160, 320, 400], 0, 360, fill=(80, 140, 200), width=3)
-        d.ellipse([180, 260, 210, 290], fill=(60, 120, 180))
         d.rectangle([0, int(bh * 0.72), bw, bh], fill=(160, 210, 160))
     else:
-        for y in range(int(bh * 0.6)):
-            c = 250 - y // 40
-            d.line([(0, y), (bw, y)], fill=(c, c - 3, c - 10))
+        d.rectangle([0, 0, bw, int(bh * 0.6)], fill=(245, 240, 230))
         d.rectangle([0, int(bh * 0.6), bw, bh], fill=(200, 190, 175))
         d.rounded_rectangle([60, 80, 300, 320], 20, fill=(160, 210, 245), outline=(100, 140, 170), width=5)
-        d.line([180, 80, 180, 320], fill=(100, 140, 170), width=4)
-        d.line([60, 200, 300, 200], fill=(100, 140, 170), width=4)
-
     return img
 
 
@@ -158,79 +130,15 @@ def crop_ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
     return bg.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.BILINEAR)
 
 
-def oval(d, xy, fill, outline=None, width=2):
-    d.ellipse(xy, fill=fill, outline=outline, width=width if outline else 0)
-
-
-def draw_mezi(img, cx, cy, mouth_open, phase, action):
-    d = ImageDraw.Draw(img)
-    swing = int(12 * math.sin(phase * 2.2)) if action == "walk" else 0
-    bob = int(4 * math.sin(phase * 3))
-
-    oval(d, [cx - 78, cy + 168, cx + 78, cy + 198], (20, 20, 30))
-
-    ly = cy + 100
-    d.rounded_rectangle([cx - 38 + swing, ly, cx - 10 + swing, cy + 170], 12, fill=PANTS)
-    d.rounded_rectangle([cx + 10 - swing, ly, cx + 38 - swing, cy + 170], 12, fill=PANTS)
-    oval(d, [cx - 48 + swing, cy + 158, cx - 2 + swing, cy + 182], SHOE)
-    oval(d, [cx + 2 - swing, cy + 158, cx + 48 - swing, cy + 182], SHOE)
-
-    d.rounded_rectangle([cx - 62, cy + 8, cx + 62, cy + 118], 28, fill=HOODIE)
-    d.rounded_rectangle([cx - 40, cy + 30, cx + 40, cy + 100], 22, fill=HOODIE_S)
-    d.rounded_rectangle([cx - 34, cy + 62, cx + 34, cy + 98], 14, fill=HOODIE)
-    oval(d, [cx - 16, cy + 28, cx + 16, cy + 60], None, BLACK, 3)
-
+def composite_mezi(action: str, mouth_open: float) -> Image.Image:
+    body = load_rgba("body.png")
+    mouth = load_rgba(mouth_sprite(mouth_open))
+    char = Image.alpha_composite(body, mouth)
     if action == "point":
-        d.line([(cx + 55, cy + 40), (cx + 105, cy - 25)], fill=HOODIE, width=18)
-        oval(d, [cx + 95, cy - 40, cx + 122, cy - 14], SKIN)
-        d.line([(cx + 118, cy - 28), (cx + 145, cy - 48)], fill=SKIN, width=7)
-        d.line([(cx - 55, cy + 42), (cx - 78, cy + 100)], fill=HOODIE, width=16)
-        oval(d, [cx - 92, cy + 92, cx - 68, cy + 116], SKIN)
-    elif action == "laugh":
-        d.line([(cx - 55, cy + 45), (cx - 100, cy + 15)], fill=HOODIE, width=16)
-        d.line([(cx + 55, cy + 45), (cx + 100, cy + 15)], fill=HOODIE, width=16)
-        oval(d, [cx - 115, cy + 2, cx - 90, cy + 26], SKIN)
-        oval(d, [cx + 90, cy + 2, cx + 115, cy + 26], SKIN)
-    else:
-        ay = int(7 * math.sin(phase * 2 + 0.4))
-        d.line([(cx - 55, cy + 40), (cx - 80, cy + 95 + ay)], fill=HOODIE, width=16)
-        d.line([(cx + 55, cy + 40), (cx + 80, cy + 95 - ay)], fill=HOODIE, width=16)
-        oval(d, [cx - 95, cy + 88 + ay, cx - 70, cy + 112 + ay], SKIN)
-        oval(d, [cx + 70, cy + 88 - ay, cx + 95, cy + 112 - ay], SKIN)
-
-    d.rectangle([cx - 14, cy - 8, cx + 14, cy + 20], fill=SKIN)
-    hy = cy - 78 + bob
-    oval(d, [cx - 72, hy - 78, cx + 72, hy + 20], HAIR)
-    oval(d, [cx - 64, hy - 58, cx + 64, hy + 58], SKIN)
-    oval(d, [cx - 70, hy - 85, cx + 70, hy - 15], HAIR)
-    oval(d, [cx - 58, hy - 35, cx + 58, hy + 55], SKIN)
-    for ox, oy, r in [(-42, -88, 22), (-12, -98, 24), (18, -100, 26), (48, -90, 22)]:
-        oval(d, [cx + ox - r, hy + oy - r // 2, cx + ox + r, hy + oy + r], HAIR)
-
-    ey = hy - 8
+        char = Image.alpha_composite(char, load_rgba("arm_point.png"))
     if action == "laugh":
-        d.arc([cx - 36, ey - 6, cx - 8, ey + 14], 200, 340, fill=BLACK, width=4)
-        d.arc([cx + 8, ey - 6, cx + 36, ey + 14], 200, 340, fill=BLACK, width=4)
-    else:
-        oval(d, [cx - 38, ey - 18, cx - 6, ey + 16], WHITE, BLACK, 3)
-        oval(d, [cx + 6, ey - 18, cx + 38, ey + 16], WHITE, BLACK, 3)
-        oval(d, [cx - 30, ey - 8, cx - 14, ey + 10], BLACK)
-        oval(d, [cx + 14, ey - 8, cx + 30, ey + 10], BLACK)
-
-    # BIG mouth for visible lip sync
-    my = hy + 30
-    mw = 14 + int(20 * mouth_open)
-    mh = 2 + int(34 * mouth_open)
-    if action == "laugh":
-        mw, mh = max(mw, 34), max(mh, 26)
-    x0, y0, x1, y1 = cx - mw, my - max(2, mh // 5), cx + mw, my + mh
-    oval(d, [x0, y0, x1, y1], MOUTH_IN, BLACK, 3)
-    if mouth_open > 0.25:
-        # teeth bar
-        oval(d, [x0 + 5, y0 + 2, x1 - 5, y0 + 8 + int(6 * mouth_open)], TEETH)
-        # inner cavity
-        if mouth_open > 0.45:
-            oval(d, [x0 + 6, y0 + 10, x1 - 6, y1 - 4], (50, 15, 25))
+        char = Image.alpha_composite(char, load_rgba("eyes_laugh.png"))
+    return char
 
 
 def draw_ui(d, text, action, title):
@@ -240,10 +148,8 @@ def draw_ui(d, text, action, title):
     tw = bb[2] - bb[0]
     d.rounded_rectangle([24, 36, 36 + tw + 20, 84], 14, fill=(0, 0, 0))
     d.text((36, 46), t, font=f, fill=WHITE)
-
     cf = font(24)
-    cap = " ".join(text.split())
-    words = cap.split()
+    words = " ".join(text.split()).split()
     lines, cur = [], ""
     for w in words:
         test = (cur + " " + w).strip()
@@ -261,7 +167,6 @@ def draw_ui(d, text, action, title):
     for line in lines:
         d.text((40, y), line, font=cf, fill=WHITE)
         y += 30
-
     af = font(16)
     label = f"MEZI · {action.upper()}"
     d.rounded_rectangle([W - 190, 44, W - 24, 82], 12, fill=HOODIE)
@@ -285,8 +190,7 @@ def main():
 
     dur_s = subprocess.check_output(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)],
-        text=True,
+         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)], text=True
     ).strip()
     duration = min(max(float(dur_s), 1.0), 45.0)
     actions = [a.strip().lower() for a in args.actions.split(",") if a.strip()]
@@ -294,7 +198,7 @@ def main():
     cues = load_cues(Path(args.cues)) if args.cues else []
     n = max(FPS, int(math.ceil(duration * FPS)))
     bg_full = make_bg(args.bg)
-    print(f"duration={duration:.2f}s frames={n} bg={args.bg} cues={len(cues)}")
+    print(f"SPRITE mode duration={duration:.2f}s frames={n} bg={args.bg} cues={len(cues)}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -302,15 +206,23 @@ def main():
             t = i / float(FPS)
             action = action_at(t, duration, actions)
             phase = t * (2.5 if action == "walk" else 1.2)
-            frame = crop_ken_burns(bg_full, t, duration)
-            cx = W // 2 + (int(28 * math.sin(t * 1.5)) if action == "walk" else 0)
-            cy = int(H * 0.40)
+            frame = crop_ken_burns(bg_full, t, duration).convert("RGBA")
             mouth = open_at(cues, t)
             if action == "laugh":
-                mouth = max(mouth, 0.75)
-            draw_mezi(frame, cx, cy, mouth, phase, action)
-            draw_ui(ImageDraw.Draw(frame), args.text, action, args.title)
-            frame.save(tmp_path / f"frame_{i:05d}.png")
+                mouth = max(mouth, 0.85)
+            char = composite_mezi(action, mouth)
+            target_h = int(H * 0.55)
+            scale = target_h / char.height
+            nw, nh = int(char.width * scale), int(char.height * scale)
+            char = char.resize((nw, nh), Image.Resampling.LANCZOS)
+            bob = int(6 * math.sin(phase * 3))
+            x_off = int(28 * math.sin(t * 1.5)) if action == "walk" else 0
+            x = (W - nw) // 2 + x_off
+            y = int(H * 0.22) + bob
+            frame.paste(char, (x, y), char)
+            rgb = frame.convert("RGB")
+            draw_ui(ImageDraw.Draw(rgb), args.text, action, args.title)
+            rgb.save(tmp_path / f"frame_{i:05d}.png")
 
         out_mp4 = Path(args.out).resolve()
         subprocess.check_call([
