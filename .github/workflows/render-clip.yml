@@ -1,12 +1,15 @@
 name: Render talking clip
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       voice:
-        description: "Edge TTS voice"
-        required: true
-        default: "en-US-GuyNeural"
+        description: Edge TTS voice
+        required: false
+        default: en-US-GuyNeural
         type: choice
         options:
           - en-US-GuyNeural
@@ -14,12 +17,12 @@ on:
           - en-NG-AbeoNeural
           - en-NG-EzinneNeural
       actions:
-        description: "Action timeline"
-        required: true
-        default: "talk,walk,point,laugh"
+        description: Action timeline
+        required: false
+        default: talk,walk,point,laugh
       use_llm:
-        description: "Use Qwen2-0.5B for script (else template)"
-        required: true
+        description: Use Qwen2-0.5B for script
+        required: false
         default: true
         type: boolean
 
@@ -27,9 +30,10 @@ env:
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
   MODEL_DIR: ${{ github.workspace }}/models
-  # Qwen2 0.5B Instruct Q4 — small, public
   MODEL_URL: https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf
   MODEL_FILE: qwen2-0_5b-instruct-q4_k_m.gguf
+  DEFAULT_VOICE: en-US-GuyNeural
+  DEFAULT_ACTIONS: talk,walk,point,laugh
 
 jobs:
   render:
@@ -37,12 +41,27 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+          cache: pip
+
+      - name: Resolve inputs
+        id: opts
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "voice=${{ inputs.voice }}" >> "$GITHUB_OUTPUT"
+            echo "actions=${{ inputs.actions }}" >> "$GITHUB_OUTPUT"
+            echo "use_llm=${{ inputs.use_llm }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "voice=${DEFAULT_VOICE}" >> "$GITHUB_OUTPUT"
+            echo "actions=${DEFAULT_ACTIONS}" >> "$GITHUB_OUTPUT"
+            echo "use_llm=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: System deps
         run: |
@@ -54,56 +73,46 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install edge-tts Pillow requests
-          # llama-cpp may take a few minutes to build
-          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || \
-            pip install llama-cpp-python
+          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python
 
-      - name: Fetch topic (Wikipedia, no seed)
+      - name: Fetch topic from Wikipedia
         run: python scripts/fetch_topics.py topic.json
 
       - name: Cache Qwen GGUF
-        if: ${{ inputs.use_llm }}
+        if: steps.opts.outputs.use_llm == 'true'
         uses: actions/cache@v4
         with:
           path: ${{ env.MODEL_DIR }}
           key: qwen2-0.5b-q4km-v1
 
       - name: Download Qwen2-0.5B GGUF
-        if: ${{ inputs.use_llm }}
+        if: steps.opts.outputs.use_llm == 'true'
         run: |
           set -e
           mkdir -p "$MODEL_DIR"
           if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
             echo "Downloading model..."
-            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || \
-              curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" \
-                "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_0.gguf"
+            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_0.gguf"
           fi
           ls -lh "$MODEL_DIR" || true
 
-      - name: Generate script (Qwen or template)
-        env:
-          USE_LLM: ${{ inputs.use_llm }}
+      - name: Generate script
         run: |
           set -e
           MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
-          if [ "$USE_LLM" != "true" ]; then
+          if [ "${{ steps.opts.outputs.use_llm }}" != "true" ]; then
             MODEL_PATH="/nonexistent"
           fi
-          python scripts/generate_script.py \
-            --topic topic.json \
-            --model "$MODEL_PATH" \
-            --out script_job.json
+          python scripts/generate_script.py --topic topic.json --model "$MODEL_PATH" --out script_job.json
           echo "--- script ---"
           cat script.txt
           echo "bg=$(cat bg.txt)"
 
       - name: Edge TTS
-        env:
-          VOICE: ${{ inputs.voice }}
         run: |
           set -e
           TEXT=$(cat script.txt)
+          VOICE="${{ steps.opts.outputs.voice }}"
           python scripts/render_clip.py --text "$TEXT" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
 
@@ -116,7 +125,9 @@ jobs:
       - name: Install Rhubarb
         run: |
           set -e
-          if [ -x "$RHUBARB_DIR/rhubarb" ]; then exit 0; fi
+          if [ -x "$RHUBARB_DIR/rhubarb" ]; then
+            exit 0
+          fi
           mkdir -p "$RHUBARB_DIR" /tmp/rhubarb
           URL="https://github.com/DanielSWolf/rhubarb-lip-sync/releases/download/v${RHUBARB_VERSION}/Rhubarb-Lip-Sync-${RHUBARB_VERSION}-Linux.zip"
           curl -L --fail -o /tmp/rhubarb.zip "$URL"
@@ -126,20 +137,22 @@ jobs:
           chmod +x "$RHUBARB_DIR/rhubarb"
           cp -a "$(dirname "$BIN")"/. "$RHUBARB_DIR"/ || true
 
-      - name: Rhubarb
+      - name: Rhubarb lip cues
         continue-on-error: true
-        run: "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
+        run: |
+          "$RHUBARB_DIR/rhubarb" -f json -o mouth.json --extendedShapes "" speech.wav
 
       - name: Render MEZI TikTok
-        env:
-          ACTIONS: ${{ inputs.actions }}
         run: |
           set -e
           TEXT=$(cat script.txt)
           BG=$(cat bg.txt 2>/dev/null || echo studio)
-          TITLE=$(python -c "import json;print(json.load(open('script_job.json')).get('title','Mezi'))")
-          CUES=""
-          if [ -f mouth.json ]; then CUES="--cues mouth.json"; fi
+          TITLE=$(python -c "import json; print(json.load(open('script_job.json')).get('title', 'Mezi'))")
+          ACTIONS="${{ steps.opts.outputs.actions }}"
+          CUES_ARG=""
+          if [ -f mouth.json ]; then
+            CUES_ARG="--cues mouth.json"
+          fi
           python scripts/render_mezi.py \
             --audio speech.mp3 \
             --text "$TEXT" \
@@ -147,11 +160,12 @@ jobs:
             --bg "$BG" \
             --out output.mp4 \
             --actions "$ACTIONS" \
-            $CUES
+            $CUES_ARG
           ls -lh output.mp4
           ffprobe -hide_banner output.mp4 2>&1 | head -20
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: mezi-tiktok
           path: |
