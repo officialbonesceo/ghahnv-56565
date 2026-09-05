@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Text -> Edge TTS -> speech.mp3 only (no --out video flag)."""
+"""Text -> Edge TTS -> speech.mp3"""
 from __future__ import annotations
 
 import argparse
@@ -19,7 +19,8 @@ def main() -> None:
     parser.add_argument("--voice", default="en-US-GuyNeural")
     parser.add_argument("--audio-out", default="speech.mp3")
     args = parser.parse_args()
-    text = args.text.strip()[:800]
+    # allow longer shorts (~45-60s speech)
+    text = args.text.strip()[:2500]
     audio = Path(args.audio_out).resolve()
     audio.parent.mkdir(parents=True, exist_ok=True)
     asyncio.run(synthesize(text, args.voice, audio))

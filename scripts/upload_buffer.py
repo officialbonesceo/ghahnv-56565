@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Buffer GraphQL: account -> org -> channels -> optional createPost."""
+"""Buffer: org -> channel -> temp-host mp4 -> createPost with video asset."""
 from __future__ import annotations
 
 import json
@@ -21,76 +21,79 @@ def gql(key: str, query: str) -> dict:
             "Content-Type": "application/json",
         },
         json={"query": query},
-        timeout=60,
+        timeout=90,
     )
-    print("gql status", r.status_code, file=sys.stderr)
+    print("gql", r.status_code, file=sys.stderr)
     try:
         data = r.json()
     except Exception:
         print(r.text[:400], file=sys.stderr)
         return {}
     if data.get("errors"):
-        print("gql errors", json.dumps(data["errors"])[:600], file=sys.stderr)
+        print("errors", json.dumps(data["errors"])[:500], file=sys.stderr)
     return data
-
-
-def rest_profiles(key: str) -> list[dict]:
-    """Legacy REST fallback (some keys still work)."""
-    try:
-        r = requests.get(
-            f"{REST}/profiles.json",
-            params={"access_token": key},
-            timeout=30,
-        )
-        print("rest status", r.status_code, file=sys.stderr)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list):
-                return data
-    except Exception as e:
-        print("rest fail", e, file=sys.stderr)
-    return []
 
 
 def get_org_id(key: str) -> str | None:
     env = os.environ.get("BUFFER_ORG_ID", "").strip()
     if env:
         return env
-    data = gql(
-        key,
-        """query { account { id email organizations { id name } } }""",
-    )
+    data = gql(key, "query { account { organizations { id name } } }")
     orgs = ((data.get("data") or {}).get("account") or {}).get("organizations") or []
     Path("buffer_orgs.json").write_text(json.dumps(orgs, indent=2), encoding="utf-8")
-    print("ORGS", json.dumps(orgs, indent=2))
-    if orgs:
-        return orgs[0].get("id")
-    return None
+    return orgs[0]["id"] if orgs else None
 
 
 def get_channels(key: str, org_id: str) -> list[dict]:
-    q = f"""
-    query {{
-      channels(input: {{ organizationId: "{org_id}" }}) {{
-        id
-        name
-        displayName
-        service
-      }}
-    }}
-    """
+    q = f'query {{ channels(input: {{ organizationId: "{org_id}" }}) {{ id name displayName service }} }}'
     data = gql(key, q)
-    ch = (data.get("data") or {}).get("channels") or []
-    return ch
+    return (data.get("data") or {}).get("channels") or []
 
 
-def pick_channel(channels: list[dict], prefer: str = "tiktok") -> str | None:
-    prefer = prefer.lower()
+def pick_channel(channels: list[dict]) -> str | None:
     for c in channels:
-        blob = f"{c.get('service','')} {c.get('name','')} {c.get('displayName','')}".lower()
-        if prefer in blob:
+        blob = f"{c.get('service','')} {c.get('name','')}".lower()
+        if "tiktok" in blob:
             return c.get("id")
     return channels[0].get("id") if channels else None
+
+
+def host_video(path: Path) -> str | None:
+    """Buffer needs a public URL — try free temporary hosts."""
+    if not path.exists():
+        return None
+    # 1) catbox
+    try:
+        with path.open("rb") as f:
+            r = requests.post(
+                "https://catbox.moe/user/api.php",
+                data={"reqtype": "fileupload"},
+                files={"fileToUpload": (path.name, f, "video/mp4")},
+                timeout=120,
+            )
+        url = r.text.strip()
+        if r.status_code == 200 and url.startswith("http"):
+            print("hosted catbox", url, file=sys.stderr)
+            return url
+        print("catbox", r.status_code, r.text[:200], file=sys.stderr)
+    except Exception as e:
+        print("catbox fail", e, file=sys.stderr)
+    # 2) litterbox (temporary)
+    try:
+        with path.open("rb") as f:
+            r = requests.post(
+                "https://litterbox.catbox.moe/resources/internals/api.php",
+                data={"reqtype": "fileupload", "time": "24h"},
+                files={"fileToUpload": (path.name, f, "video/mp4")},
+                timeout=120,
+            )
+        url = r.text.strip()
+        if r.status_code == 200 and url.startswith("http"):
+            print("hosted litterbox", url, file=sys.stderr)
+            return url
+    except Exception as e:
+        print("litterbox fail", e, file=sys.stderr)
+    return None
 
 
 def main() -> None:
@@ -99,48 +102,41 @@ def main() -> None:
         print("No BUFFER_API_KEY")
         return
 
-    channels: list[dict] = []
-    org_id = get_org_id(key)
-    if org_id:
-        channels = get_channels(key, org_id)
-
-    if not channels:
-        # legacy REST
-        profiles = rest_profiles(key)
-        channels = [
-            {
-                "id": p.get("id"),
-                "name": p.get("formatted_username") or p.get("service_username"),
-                "service": p.get("service"),
-            }
-            for p in profiles
-            if p.get("id")
-        ]
-
-    Path("buffer_channels.json").write_text(json.dumps(channels, indent=2), encoding="utf-8")
-    print("CHANNELS:", json.dumps(channels, indent=2))
-
     channel = os.environ.get("BUFFER_CHANNEL_ID", "").strip()
     if not channel:
-        channel = pick_channel(channels, "tiktok") or pick_channel(channels, "") or ""
+        org = get_org_id(key)
+        channels = get_channels(key, org) if org else []
+        Path("buffer_channels.json").write_text(json.dumps(channels, indent=2), encoding="utf-8")
+        channel = pick_channel(channels) or ""
         print("AUTO_CHANNEL", channel)
 
     if not channel:
-        print("No channel id — set BUFFER_ORG_ID / BUFFER_CHANNEL_ID secrets after checking artifact JSON")
+        print("No channel id")
         return
 
-    text = os.environ.get("BUFFER_TEXT", "").strip()
-    if not text and Path("script.txt").exists():
-        text = Path("script.txt").read_text(encoding="utf-8").strip()[:350]
+    text = ""
+    if Path("title_short.txt").exists():
+        text = Path("title_short.txt").read_text(encoding="utf-8").strip()
+    if Path("script.txt").exists():
+        body = Path("script.txt").read_text(encoding="utf-8").strip()[:280]
+        text = f"{text}\n\n{body}".strip() if text else body
     if not text:
         text = "New classroom explainer!"
-    if Path("title_short.txt").exists():
-        t = Path("title_short.txt").read_text(encoding="utf-8").strip()
-        if t:
-            text = f"{t}\n\n{text}"
 
     video_url = os.environ.get("VIDEO_PUBLIC_URL", "").strip()
-    media = f'assets: [{{ url: "{video_url}" }}]' if video_url else ""
+    if not video_url and Path("output.mp4").exists():
+        video_url = host_video(Path("output.mp4")) or ""
+
+    assets = ""
+    if video_url:
+        # current Buffer shape: assets: [{ video: { url } }]
+        assets = (
+            "assets: [{ video: { url: %s, metadata: { thumbnailOffset: 1500 } } }]"
+            % json.dumps(video_url)
+        )
+        print("VIDEO_URL", video_url)
+    else:
+        print("No public video URL — posting text only")
 
     mutation = f"""
     mutation {{
@@ -149,7 +145,7 @@ def main() -> None:
         channelId: {json.dumps(channel)}
         schedulingType: automatic
         mode: addToQueue
-        {media}
+        {assets}
       }}) {{
         ... on PostActionSuccess {{ post {{ id status dueAt }} }}
         ... on MutationError {{ message }}

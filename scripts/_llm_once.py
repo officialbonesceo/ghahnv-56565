@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Child process GGUF inference — isolate SIGILL from the main job."""
 from __future__ import annotations
 
 import json
@@ -12,26 +11,22 @@ def main() -> None:
     out_path = Path(sys.argv[2])
     from llama_cpp import Llama
 
-    llm = Llama(
-        model_path=inp["model"],
-        n_ctx=2048,
-        n_threads=2,
-        verbose=False,
-    )
+    llm = Llama(model_path=inp["model"], n_ctx=2048, n_threads=2, verbose=False)
     title = inp.get("title") or "science"
     ctx = inp.get("extract") or ""
     prompt = f"""<start_of_turn>user
-Write spoken classroom TikTok lines for teens. Simple English. No math symbols. No labels.
+Write a spoken classroom TikTok lesson for teens, about 130 words total.
+Simple English only. No markdown. No stage directions like (on a whiteboard).
 Topic: {title}
 Facts: {ctx}
-Write about 30 words introducing the topic at a board, then about 80 words with two simple facts and a friendly ending.
+Start with a short welcome naming the topic, then three clear facts, then invite them back next time.
 <end_of_turn>
 <start_of_turn>model
 """
-    out = llm(prompt, max_tokens=220, temperature=0.55, stop=["<end_of_turn>", "<start_of_turn>"])
+    out = llm(prompt, max_tokens=280, temperature=0.5, stop=["<end_of_turn>", "<start_of_turn>"])
     text = out["choices"][0]["text"].strip()
     words = text.split()
-    mid = max(22, min(42, len(words) // 3))
+    mid = max(28, min(48, len(words) // 4))
     intro = " ".join(words[:mid])
     body = " ".join(words[mid:]) if len(words) > mid else text
     out_path.write_text(json.dumps({"intro": intro, "body": body}), encoding="utf-8")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Topic -> scripts. Order: Gemma GGUF -> OpenRouter -> template."""
+"""Longer classroom shorts. Gemma -> OpenRouter -> template."""
 from __future__ import annotations
 
 import argparse
@@ -15,10 +15,14 @@ import requests
 
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
+    # strip markdown / stage directions Gemma sometimes emits
+    t = re.sub(r"\*\*[^*]+\*\*", " ", t)
+    t = re.sub(r"\([^)]*(whiteboard|board|write|camera)[^)]*\)", " ", t, flags=re.I)
     for p in [
         r"INTRO:\s*", r"BODY:\s*", r"Hook:\s*", r"Facts?:\s*",
         r"Friendly Closure:\s*", r"Closing:\s*", r"Script:\s*",
         r"###.*?\n", r"Please note.*", r"You write.*",
+        r"Okay, guys,?\s*", r"Alright, guys,?\s*",
     ]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\d+\.\s*", "", t)
@@ -29,10 +33,10 @@ def clean_spoken(text: str) -> str:
     if t.count("=") > 1:
         return ""
     words = t.split()
-    if len(words) < 25:
+    if len(words) < 40:
         return ""
-    if len(words) > 140:
-        t = " ".join(words[:130])
+    if len(words) > 220:
+        t = " ".join(words[:200])
     if t and t[-1] not in ".!?":
         t += "!"
     return t
@@ -41,6 +45,9 @@ def clean_spoken(text: str) -> str:
 def short_title(title: str) -> str:
     t = title or "This idea"
     t = re.sub(r"^\d{4}(-\d{2})?\s*", "", t).strip() or title
+    # disambiguation pages
+    if t.lower() in {"battery", "wave", "cell"}:
+        pass
     return t[:36] + ("..." if len(t) > 36 else "")
 
 
@@ -48,37 +55,41 @@ def pick_sentences(extract: str) -> list[str]:
     parts = [
         s.strip()
         for s in re.split(r"(?<=[.!?])\s+", extract or "")
-        if len(s.strip()) > 45 and "=" not in s
+        if len(s.strip()) > 40 and "crime" not in s.lower() and "unlawful" not in s.lower()
     ]
-    return parts[:4]
+    return parts[:5]
 
 
 def template_scripts(topic: dict) -> dict:
     title = topic.get("title") or "this idea"
     short = short_title(title)
     sents = pick_sentences(topic.get("extract") or "")
-    while len(sents) < 3:
-        sents.append("Researchers still study this idea and share clear examples.")
-    f1, f2, f3 = sents[0], sents[1], sents[2]
-    for i, f in enumerate((f1, f2, f3)):
-        if len(f) > 130:
-            sents[i] = f[:127].rsplit(" ", 1)[0] + "."
-    f1, f2, f3 = sents[0], sents[1], sents[2]
+    while len(sents) < 4:
+        sents.append("People still study this idea and use simple examples to explain it.")
+    facts = []
+    for s in sents[:4]:
+        if len(s) > 140:
+            s = s[:137].rsplit(" ", 1)[0] + "."
+        facts.append(s)
+
     intro = (
-        f"Look at the board. Today our lesson is {short}. "
-        f"We will keep it simple and useful. Stay with the class."
+        f"Welcome to the board. Today we are learning about {short}. "
+        f"Stay with me for a clear, simple explanation you can actually remember."
     )
     body = (
-        f"What is {short}? {f1} "
-        f"Next point. {f2} "
-        f"One more thing. {f3} "
-        f"That is the core idea in plain words. Come back next time for another classroom lesson!"
+        f"Let us start with the big idea. {facts[0]} "
+        f"Here is the next point. {facts[1]} "
+        f"Another useful detail. {facts[2]} "
+        f"And one more thing. {facts[3]} "
+        f"So when someone asks about {short}, you can explain it in plain words. "
+        f"That is our classroom lesson. Follow for more short science explainers!"
     )
+    full = re.sub(r"\s+", " ", (intro + " " + body).strip())
     return {
         "title": title,
         "short_title": short,
         "intro_script": re.sub(r"\s+", " ", intro).strip(),
-        "script": re.sub(r"\s+", " ", body).strip(),
+        "script": full,  # full spoken short (intro+body) for longer video
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": "template",
@@ -86,17 +97,26 @@ def template_scripts(topic: dict) -> dict:
 
 
 def pack(topic: dict, intro: str, body: str, engine: str) -> dict | None:
-    body = clean_spoken(body)
-    if not body:
+    intro_c = clean_spoken(intro) if intro else ""
+    body_c = clean_spoken(body)
+    if not body_c:
         return None
     title = topic.get("title") or "Lesson"
     short = short_title(title)
-    intro = clean_spoken(intro) or f"Look at the board. Today we learn about {short}. Stay with the class."
+    if not intro_c:
+        intro_c = (
+            f"Welcome to the board. Today we are learning about {short}. "
+            f"Stay with me for a simple explanation."
+        )
+    full = clean_spoken(intro_c + " " + body_c) or body_c
+    # ensure length for a real short
+    if len(full.split()) < 70:
+        return None
     return {
         "title": title,
         "short_title": short,
-        "intro_script": intro,
-        "script": body,
+        "intro_script": intro_c,
+        "script": full,
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": engine,
@@ -105,7 +125,6 @@ def pack(topic: dict, intro: str, body: str, engine: str) -> dict | None:
 
 def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     if not model.exists() or model.stat().st_size < 10_000_000:
-        print("gguf missing/small", model, file=sys.stderr)
         return None
     helper = Path(__file__).resolve().parent / "_llm_once.py"
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
@@ -114,7 +133,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
             {
                 "model": str(model),
                 "title": topic.get("title") or "",
-                "extract": (topic.get("extract") or "")[:420],
+                "extract": (topic.get("extract") or "")[:450],
             }
         ),
         encoding="utf-8",
@@ -124,13 +143,12 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     try:
         r = subprocess.run(
             [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=240,
+            timeout=300,
             capture_output=True,
             text=True,
         )
-        print(r.stderr[-300:] if r.stderr else "", file=sys.stderr)
         if r.returncode != 0 or not outp.exists():
-            print("gguf child failed", r.returncode, file=sys.stderr)
+            print("gguf failed", r.returncode, file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
         return pack(topic, data.get("intro") or "", data.get("body") or "", engine_name)
@@ -142,17 +160,16 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
 def run_openrouter(topic: dict) -> dict | None:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
-        print("no OPENROUTER_API_KEY", file=sys.stderr)
         return None
     title = topic.get("title") or "science"
-    extract = (topic.get("extract") or "")[:400]
+    extract = (topic.get("extract") or "")[:420]
     model = os.environ.get("OPENROUTER_MODEL", "google/gemma-2-2b-it:free").strip()
     prompt = (
-        "Write spoken TikTok classroom lines for teens. Simple English only. "
-        "No math symbols. No labels like INTRO or BODY.\n"
+        "Write a spoken TikTok classroom lesson for teens, 120 to 160 words total. "
+        "Simple English. No markdown. No stage directions. No math symbols.\n"
         f"Topic: {title}\nFacts: {extract}\n\n"
-        "First 35 words: introduce the topic while pointing at a board.\n"
-        "Then 80 words: two simple facts and a friendly ending."
+        "Start with a warm welcome to the board and name the topic. "
+        "Then give three clear facts. End by inviting them back next time."
     )
     try:
         r = requests.post(
@@ -166,22 +183,18 @@ def run_openrouter(topic: dict) -> dict | None:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 220,
-                "temperature": 0.6,
+                "max_tokens": 320,
+                "temperature": 0.55,
             },
             timeout=60,
         )
-        print("openrouter status", r.status_code, file=sys.stderr)
-        data = r.json()
         if r.status_code != 200:
-            print(json.dumps(data)[:400], file=sys.stderr)
+            print("openrouter", r.status_code, r.text[:300], file=sys.stderr)
             return None
-        text = data["choices"][0]["message"]["content"].strip()
+        text = r.json()["choices"][0]["message"]["content"].strip()
         words = text.split()
-        mid = max(25, min(45, len(words) // 3))
-        intro = " ".join(words[:mid])
-        body = " ".join(words[mid:]) if len(words) > mid else text
-        return pack(topic, intro, body, f"openrouter:{model}")
+        mid = max(30, min(50, len(words) // 4))
+        return pack(topic, " ".join(words[:mid]), " ".join(words[mid:]), f"openrouter:{model}")
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
@@ -190,29 +203,21 @@ def run_openrouter(topic: dict) -> dict | None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--topic", required=True)
-    p.add_argument("--model", default="", help="Primary GGUF path (Gemma preferred)")
-    p.add_argument("--model-fallback", default="", help="Optional second GGUF e.g. TinyLlama")
+    p.add_argument("--model", default="")
+    p.add_argument("--model-fallback", default="")
     p.add_argument("--out", default="script_job.json")
     p.add_argument("--try-llm", action="store_true")
     args = p.parse_args()
 
     topic = json.loads(Path(args.topic).read_text(encoding="utf-8"))
     result = None
-
     if args.try_llm:
         if args.model:
             result = run_gguf(Path(args.model), topic, "gemma-gguf")
-            if result:
-                print("engine=gemma-gguf", file=sys.stderr)
         if result is None and args.model_fallback:
             result = run_gguf(Path(args.model_fallback), topic, "tinyllama-gguf")
-            if result:
-                print("engine=tinyllama-gguf", file=sys.stderr)
         if result is None:
             result = run_openrouter(topic)
-            if result:
-                print("engine=openrouter", file=sys.stderr)
-
     if result is None:
         result = template_scripts(topic)
         print("engine=template", file=sys.stderr)
