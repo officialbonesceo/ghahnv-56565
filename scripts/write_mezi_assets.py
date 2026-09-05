@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Host layers: continuous limbs, solid neck."""
+"""Mike host layers: front, side walk, point, present (open arms)."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-W, H = 400, 700
+W, H = 420, 720
 HOODIE = (255, 196, 40, 255)
 HOODIE_S = (255, 220, 100, 255)
 HOODIE_D = (230, 165, 25, 255)
@@ -20,9 +20,9 @@ MOUTH_IN = (95, 35, 45, 255)
 TEETH = (250, 245, 240, 255)
 
 CX = W // 2
-CY = 385
-HY = CY - 68
-MOUTH_Y = HY + 24
+CY = 400
+HY = CY - 70
+MOUTH_Y = HY + 26
 
 
 def blank():
@@ -40,54 +40,7 @@ def limb(d, x0, y0, x1, y1, width, color):
     oval(d, [x1 - r, y1 - r, x1 + r, y1 + r], color)
 
 
-def draw_body(mode: str = "front") -> Image.Image:
-    img = blank()
-    d = ImageDraw.Draw(img)
-    cx, cy = CX, CY
-    hy = HY  # bind before any use
-
-    oval(d, [cx - 65, cy + 155, cx + 65, cy + 180], (0, 0, 0, 45))
-
-    if mode == "walk":
-        limb(d, cx - 18, cy + 78, cx - 22, cy + 155, 28, PANTS)
-        limb(d, cx + 16, cy + 70, cx + 28, cy + 148, 28, PANTS)
-        oval(d, [cx - 42, cy + 148, cx - 2, cy + 178], SHOE)
-        oval(d, [cx + 10, cy + 140, cx + 52, cy + 172], SHOE)
-        d.rounded_rectangle([cx - 52, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 36, cy + 28, cx + 36, cy + 82], 16, fill=HOODIE_S)
-        limb(d, cx - 42, cy + 30, cx - 72, cy + 88, 26, HOODIE_D)
-        oval(d, [cx - 90, cy + 76, cx - 64, cy + 102], SKIN)
-        limb(d, cx + 40, cy + 32, cx + 78, cy + 18, 26, HOODIE)
-        oval(d, [cx + 70, cy + 4, cx + 96, cy + 30], SKIN)
-    elif mode == "point":
-        limb(d, cx - 18, cy + 78, cx - 18, cy + 155, 28, PANTS)
-        limb(d, cx + 18, cy + 78, cx + 18, cy + 155, 28, PANTS)
-        oval(d, [cx - 40, cy + 148, cx + 0, cy + 178], SHOE)
-        oval(d, [cx + 0, cy + 148, cx + 40, cy + 178], SHOE)
-        d.rounded_rectangle([cx - 52, cy + 2, cx + 52, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 36, cy + 28, cx + 36, cy + 82], 16, fill=HOODIE_S)
-        limb(d, cx + 42, cy + 28, cx + 100, cy - 28, 28, HOODIE)
-        oval(d, [cx + 90, cy - 44, cx + 116, cy - 18], SKIN)
-        limb(d, cx + 108, cy - 32, cx + 135, cy - 50, 12, SKIN)
-        limb(d, cx - 42, cy + 32, cx - 72, cy + 90, 26, HOODIE)
-        oval(d, [cx - 90, cy + 78, cx - 64, cy + 104], SKIN)
-    else:
-        limb(d, cx - 18, cy + 78, cx - 18, cy + 155, 28, PANTS)
-        limb(d, cx + 18, cy + 78, cx + 18, cy + 155, 28, PANTS)
-        oval(d, [cx - 40, cy + 148, cx + 0, cy + 178], SHOE)
-        oval(d, [cx + 0, cy + 148, cx + 40, cy + 178], SHOE)
-        d.rounded_rectangle([cx - 52, cy + 2, cx + 52, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 36, cy + 28, cx + 36, cy + 82], 16, fill=HOODIE_S)
-        oval(d, [cx - 12, cy + 20, cx + 12, cy + 44], None, BLACK, 3)
-        limb(d, cx - 42, cy + 30, cx - 72, cy + 90, 26, HOODIE)
-        limb(d, cx + 42, cy + 30, cx + 72, cy + 90, 26, HOODIE)
-        oval(d, [cx - 90, cy + 78, cx - 64, cy + 104], SKIN)
-        oval(d, [cx + 64, cy + 78, cx + 90, cy + 104], SKIN)
-
-    # Solid neck — hy already set
-    d.rectangle([cx - 20, cy - 8, cx + 20, cy + 18], fill=SKIN)
-    d.rounded_rectangle([cx - 22, hy + 40, cx + 22, cy + 16], 8, fill=SKIN)
-
+def draw_head_front(d, cx, hy):
     oval(d, [cx - 58, hy - 66, cx + 58, hy + 10], HAIR)
     oval(d, [cx - 50, hy - 50, cx + 50, hy + 46], SKIN)
     oval(d, [cx - 56, hy - 76, cx + 56, hy - 8], HAIR)
@@ -101,6 +54,110 @@ def draw_body(mode: str = "front") -> Image.Image:
     oval(d, [cx + 8, ey - 12, cx + 30, ey + 10], WHITE, BLACK, 3)
     oval(d, [cx - 24, ey - 4, cx - 14, ey + 6], BLACK)
     oval(d, [cx + 14, ey - 4, cx + 24, ey + 6], BLACK)
+
+
+def draw_head_side(d, cx, hy, facing: str = "left"):
+    """Side profile: one ear, one eye, nose toward direction of travel."""
+    # facing left means nose points left (walk toward left of screen)
+    sign = -1 if facing == "left" else 1
+    # hair
+    oval(d, [cx - 48, hy - 70, cx + 48, hy + 8], HAIR)
+    oval(d, [cx - 42, hy - 52, cx + 42, hy + 44], SKIN)
+    oval(d, [cx - 50, hy - 78, cx + 40, hy - 10], HAIR)
+    # ear (visible on side)
+    ear_x = cx - sign * 40
+    oval(d, [ear_x - 12, hy - 8, ear_x + 12, hy + 22], SKIN, BLACK, 2)
+    oval(d, [ear_x - 6, hy - 2, ear_x + 6, hy + 14], (190, 140, 105, 255))
+    # eye
+    eye_x = cx + sign * 12
+    oval(d, [eye_x - 10, hy - 14, eye_x + 10, hy + 8], WHITE, BLACK, 2)
+    oval(d, [eye_x - 4, hy - 6, eye_x + 4, hy + 2], BLACK)
+    # nose tip
+    nx = cx + sign * 38
+    oval(d, [nx - 6, hy + 2, nx + 6, hy + 16], SKIN)
+
+
+def draw_body(mode: str = "front") -> Image.Image:
+    img = blank()
+    d = ImageDraw.Draw(img)
+    cx, cy, hy = CX, CY, HY
+
+    oval(d, [cx - 60, cy + 155, cx + 60, cy + 178], (0, 0, 0, 40))
+
+    if mode == "side_left":
+        # legs staggered (walk)
+        limb(d, cx - 6, cy + 78, cx - 28, cy + 155, 26, PANTS)
+        limb(d, cx + 8, cy + 78, cx + 22, cy + 150, 26, PANTS)
+        oval(d, [cx - 48, cy + 148, cx - 8, cy + 176], SHOE)
+        oval(d, [cx + 4, cy + 142, cx + 44, cy + 172], SHOE)
+        d.rounded_rectangle([cx - 36, cy + 2, cx + 36, cy + 92], 22, fill=HOODIE)
+        # near arm swing back, far arm forward
+        limb(d, cx + 10, cy + 28, cx + 40, cy + 80, 24, HOODIE)
+        oval(d, [cx + 32, cy + 72, cx + 56, cy + 96], SKIN)
+        limb(d, cx - 8, cy + 30, cx - 45, cy + 20, 24, HOODIE)
+        oval(d, [cx - 58, cy + 8, cx - 34, cy + 32], SKIN)
+        d.rectangle([cx - 16, cy - 6, cx + 16, cy + 16], fill=SKIN)
+        draw_head_side(d, cx, hy, "left")
+
+    elif mode == "side_right":
+        limb(d, cx + 6, cy + 78, cx + 28, cy + 155, 26, PANTS)
+        limb(d, cx - 8, cy + 78, cx - 22, cy + 150, 26, PANTS)
+        oval(d, [cx + 8, cy + 148, cx + 48, cy + 176], SHOE)
+        oval(d, [cx - 44, cy + 142, cx - 4, cy + 172], SHOE)
+        d.rounded_rectangle([cx - 36, cy + 2, cx + 36, cy + 92], 22, fill=HOODIE)
+        limb(d, cx - 10, cy + 28, cx - 40, cy + 80, 24, HOODIE)
+        oval(d, [cx - 56, cy + 72, cx - 32, cy + 96], SKIN)
+        limb(d, cx + 8, cy + 30, cx + 45, cy + 20, 24, HOODIE)
+        oval(d, [cx + 34, cy + 8, cx + 58, cy + 32], SKIN)
+        d.rectangle([cx - 16, cy - 6, cx + 16, cy + 16], fill=SKIN)
+        draw_head_side(d, cx, hy, "right")
+
+    elif mode == "point":
+        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
+        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
+        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
+        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
+        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
+        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
+        # arm up-right pointing
+        limb(d, cx + 40, cy + 28, cx + 105, cy - 30, 26, HOODIE)
+        oval(d, [cx + 96, cy - 48, cx + 122, cy - 22], SKIN)
+        limb(d, cx + 114, cy - 36, cx + 145, cy - 55, 11, SKIN)
+        limb(d, cx - 40, cy + 32, cx - 70, cy + 88, 24, HOODIE)
+        oval(d, [cx - 88, cy + 78, cx - 64, cy + 102], SKIN)
+        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
+        draw_head_front(d, cx, hy)
+
+    elif mode == "present":
+        # open arms, teacher stage pose
+        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
+        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
+        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
+        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
+        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
+        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
+        limb(d, cx - 42, cy + 30, cx - 100, cy + 10, 26, HOODIE)
+        oval(d, [cx - 118, cy - 2, cx - 92, cy + 24], SKIN)
+        limb(d, cx + 42, cy + 30, cx + 100, cy + 10, 26, HOODIE)
+        oval(d, [cx + 92, cy - 2, cx + 118, cy + 24], SKIN)
+        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
+        draw_head_front(d, cx, hy)
+
+    else:  # front talk
+        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
+        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
+        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
+        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
+        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
+        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
+        oval(d, [cx - 12, cy + 22, cx + 12, cy + 44], None, BLACK, 3)
+        limb(d, cx - 40, cy + 30, cx - 70, cy + 88, 24, HOODIE)
+        limb(d, cx + 40, cy + 30, cx + 70, cy + 88, 24, HOODIE)
+        oval(d, [cx - 88, cy + 78, cx - 64, cy + 102], SKIN)
+        oval(d, [cx + 64, cy + 78, cx + 88, cy + 102], SKIN)
+        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
+        draw_head_front(d, cx, hy)
+
     return img
 
 
@@ -134,8 +191,10 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     items = {
         "body.png": draw_body("front"),
-        "body_walk.png": draw_body("walk"),
+        "body_side_left.png": draw_body("side_left"),
+        "body_side_right.png": draw_body("side_right"),
         "arm_point.png": draw_body("point"),
+        "body_present.png": draw_body("present"),
         "mouth_closed.png": draw_mouth("closed"),
         "mouth_open.png": draw_mouth("open"),
         "mouth_wide.png": draw_mouth("wide"),
