@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Host mp4 (keep URL alive) -> Buffer video post. No invalid firstComment field."""
+"""Host mp4 -> Buffer video post scheduled 2 minutes after workflow."""
 from __future__ import annotations
 
 import json
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
 
 API = "https://api.buffer.com"
+
+# TikTok-friendly windows (UTC). WAT = UTC+1 → local peaks ~12, 15, 19, 21 WAT
+# Used only for logging / caption tip; publish is always now+2min per request.
+PEAK_UTC_HOURS = (11, 14, 18, 20)
 
 
 def gql(key: str, query: str) -> dict:
@@ -28,6 +33,13 @@ def gql(key: str, query: str) -> dict:
     if data.get("errors"):
         print("errors", json.dumps(data["errors"])[:700], file=sys.stderr)
     return data
+
+
+def schedule_due_at() -> str:
+    """Always 2 minutes after workflow start (gives Buffer time to fetch video)."""
+    due = datetime.now(timezone.utc) + timedelta(minutes=2)
+    # ISO 8601 with Z
+    return due.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def host_0x0(path: Path) -> str | None:
@@ -68,7 +80,6 @@ def host_litterbox(path: Path) -> str | None:
 
 
 def host_github_release(path: Path) -> tuple[str | None, str | None]:
-    """Public repo release URL. KEEP the release so Buffer can fetch later."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not token or not repo:
@@ -83,7 +94,7 @@ def host_github_release(path: Path) -> tuple[str | None, str | None]:
         json={
             "tag_name": tag,
             "name": f"Mike clip {tag}",
-            "body": "Media for Buffer/TikTok — do not delete until Buffer publishes",
+            "body": "Media for Buffer — keep until TikTok publishes",
             "draft": False,
             "prerelease": True,
         },
@@ -130,9 +141,9 @@ def main() -> None:
             else "Science"
         )
         text = (
-            f"{title} explained in plain words by Mike\n\n"
-            f"Follow @mike.the.tutor\n\n"
-            f"#learntok #science #fyp #stem #studytok"
+            f"{title} explained in 60 seconds\n\n"
+            f"Follow @mike.the.tutor for daily lessons\n\n"
+            f"#learntok #sciencefacts #fyp #stem"
         )
 
     first_comment = ""
@@ -140,14 +151,13 @@ def main() -> None:
         first_comment = Path("tiktok_comment.txt").read_text(encoding="utf-8").strip()
         Path("FIRST_COMMENT.txt").write_text(
             first_comment
-            + "\n\nPin this manually on TikTok (Buffer API has no firstComment field).\n",
+            + "\n\nPin manually on TikTok (API has no TikTok firstComment).\n",
             encoding="utf-8",
         )
 
     video_url = os.environ.get("VIDEO_PUBLIC_URL", "").strip()
     release_id = None
     if not video_url and Path("output.mp4").exists():
-        # Prefer long-lived hosts; GitHub Release works because repo is public
         video_url = host_0x0(Path("output.mp4")) or ""
         if not video_url:
             video_url = host_litterbox(Path("output.mp4")) or ""
@@ -156,26 +166,29 @@ def main() -> None:
             video_url = video_url or ""
 
     if not video_url:
-        print("No public video URL — abort video post (text-only not useful)")
+        print("No public video URL")
         Path("buffer_result.json").write_text(
             json.dumps({"error": "no_public_video_url"}, indent=2), encoding="utf-8"
         )
         return
 
+    due_at = schedule_due_at()
     print("VIDEO_URL", video_url)
+    print("DUE_AT", due_at, "(now + 2 minutes UTC)")
+
     assets = (
         "assets: [{ video: { url: %s, metadata: { thumbnailOffset: 2500 } } }]"
         % json.dumps(video_url)
     )
 
-    # NO firstComment — Buffer schema rejects it
     mutation = f"""
     mutation {{
       createPost(input: {{
         text: {json.dumps(text)}
         channelId: {json.dumps(channel)}
         schedulingType: automatic
-        mode: addToQueue
+        mode: customScheduled
+        dueAt: {json.dumps(due_at)}
         {assets}
       }}) {{
         ... on PostActionSuccess {{ post {{ id status dueAt }} }}
@@ -185,12 +198,36 @@ def main() -> None:
     """
     data = gql(key, mutation)
     print(json.dumps(data, indent=2))
+
+    post = ((data.get("data") or {}).get("createPost") or {}).get("post")
+    # Fallback to queue if customScheduled rejected
+    if not post:
+        print("retry addToQueue", file=sys.stderr)
+        mutation2 = f"""
+        mutation {{
+          createPost(input: {{
+            text: {json.dumps(text)}
+            channelId: {json.dumps(channel)}
+            schedulingType: automatic
+            mode: addToQueue
+            {assets}
+          }}) {{
+            ... on PostActionSuccess {{ post {{ id status dueAt }} }}
+            ... on MutationError {{ message }}
+          }}
+        }}
+        """
+        data = gql(key, mutation2)
+        print(json.dumps(data, indent=2))
+        post = ((data.get("data") or {}).get("createPost") or {}).get("post")
+
     Path("buffer_result.json").write_text(
         json.dumps(
             {
                 "result": data,
                 "caption": text,
                 "video_url": video_url,
+                "due_at": due_at,
                 "release_id": release_id,
                 "first_comment_manual": first_comment,
             },
@@ -199,12 +236,10 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    post = ((data.get("data") or {}).get("createPost") or {}).get("post")
     if post:
         print("BUFFER_OK", post.get("id"), post.get("status"), post.get("dueAt"))
-        # DO NOT delete GitHub release — Buffer fetches the file later
         if release_id:
-            print("Keeping release", release_id, "for Buffer download", file=sys.stderr)
+            print("Keeping release", release_id, file=sys.stderr)
     else:
         print("BUFFER_FAIL")
 

@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Optional daily peak-ish runs (WAT ≈ UTC+1 → 11:00 & 18:00 UTC ≈ 12:00 & 19:00 WAT)
+  schedule:
+    - cron: "0 11 * * *"
+    - cron: "0 18 * * *"
 
 permissions:
   contents: write
@@ -65,7 +69,7 @@ jobs:
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
           python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'))"
-          cat tiktok_caption.txt || true
+          echo "--- CAPTION ---"; cat tiktok_caption.txt || true
           cat script.txt
 
       - name: tts
@@ -94,7 +98,7 @@ jobs:
           ls -lh output.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
 
-      - name: buffer
+      - name: buffer-schedule-plus-2min
         continue-on-error: true
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}

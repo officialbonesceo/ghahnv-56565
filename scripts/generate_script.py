@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike scripts: openrouter/free first, then local Gemma, then template."""
+"""Mike scripts + TikTok-optimized caption/hashtags."""
 from __future__ import annotations
 
 import argparse
@@ -108,7 +108,6 @@ def run_openrouter(topic: dict) -> dict | None:
         return None
     short = display_title(topic.get("title") or "science")
     extract = (topic.get("extract") or "")[:450]
-    # Auto-pick any available free model
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
         "You are Mike, a friendly science tutor on TikTok (@mike.the.tutor). "
@@ -175,6 +174,27 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
         return None
 
 
+def write_tiktok_pack(short: str, script: str) -> None:
+    """Caption tuned for TikTok discovery: hook, CTA, niche + broad tags."""
+    slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:20] or "science"
+    # Keep under ~2200 chars; front-load keywords
+    caption = (
+        f"{short} explained in plain words \n\n"
+        f"Save this for class \n"
+        f"Comment YES for part 2 \n\n"
+        f"Follow @mike.the.tutor for daily board lessons\n\n"
+        f"#{slug} #sciencefacts #learntok #stemtok #studytok "
+        f"#fyp #foryou #foryoupage #science #education "
+        f"#mikethetutor #classroom #explained #facts "
+        f"#viral #trending #learnontiktok"
+    )
+    Path("tiktok_caption.txt").write_text(caption.strip() + "\n", encoding="utf-8")
+    Path("tiktok_comment.txt").write_text(
+        f"YES = part 2 on {short}. I reply to every comment \n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--topic", required=True)
@@ -200,21 +220,7 @@ def main() -> None:
     Path("intro.txt").write_text((result.get("intro_script") or "") + "\n", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
     Path("title_short.txt").write_text(result["short_title"], encoding="utf-8")
-
-    short = result["short_title"]
-    hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
-    caption = (
-        f"{short} explained in plain words by Mike\n\n"
-        f"Watch to the end — save this for class\n\n"
-        f"Follow @mike.the.tutor for daily board lessons\n\n"
-        f"#{hashtag_slug} #learntok #science #fyp #foryou "
-        f"#stem #studytok #mikethetutor #classroom #explained"
-    )
-    Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
-    Path("tiktok_comment.txt").write_text(
-        f"Comment YES if you want part 2 on {short} — I reply to every one",
-        encoding="utf-8",
-    )
+    write_tiktok_pack(result["short_title"], result["script"])
     print(json.dumps(result, indent=2))
 
 
