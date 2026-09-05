@@ -58,38 +58,14 @@ jobs:
 
       - name: Generate script
         run: |
-          python scripts/generate_script.py \
-            --topic topic.json \
-            --model "$MODEL_DIR/$MODEL_FILE" \
-            --try-llm \
-            --out script_job.json
+          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$MODEL_FILE" --try-llm --out script_job.json
           echo INTRO:; cat intro.txt || true
           echo BODY:; cat script.txt
-
-      - name: Cache backgrounds
-        uses: actions/cache@v4
-        with:
-          path: assets/bg
-          key: mezi-bg-v1
-
-      - name: Generate background
-        run: |
-          BG=science
-          test -f bg.txt && BG=$(cat bg.txt)
-          python scripts/generate_bg.py --bg "$BG" --out-dir assets/bg
 
       - name: Edge TTS body
         run: |
           python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
-
-      - name: Edge TTS intro
-        run: |
-          if [ -s intro.txt ]; then
-            python scripts/render_clip.py --text "$(cat intro.txt)" --voice "$VOICE" --audio-out intro.mp3
-          else
-            cp speech.mp3 intro.mp3
-          fi
 
       - name: Cache Rhubarb
         uses: actions/cache@v4
@@ -104,8 +80,16 @@ jobs:
         continue-on-error: true
         run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: Render MEZI sprites
+      - name: Render classroom board
         run: bash scripts/ci_render.sh
+
+      - name: Buffer list channels and optional post
+        continue-on-error: true
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+          VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
+        run: python scripts/upload_buffer.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -118,17 +102,8 @@ jobs:
             script_job.json
             topic.json
             speech.mp3
-            mouth.json
-            bg.txt
+            buffer_channels.json
+            buffer_result.json
+            title_short.txt
           if-no-files-found: error
           retention-days: 7
-
-      - name: Buffer upload optional
-        continue-on-error: true
-        env:
-          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
-          VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
-        run: |
-          pip install requests >/dev/null
-          python scripts/upload_buffer.py || echo "Buffer skipped or failed"
