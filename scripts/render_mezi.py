@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike classroom 1080x1920: board, Ken Burns, karaoke captions."""
+"""Mike classroom 1080x1920 + faststart-friendly frames."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-# TikTok vertical HD
 W, H = 1080, 1920
 FPS = 24
 ACCENT = (255, 196, 40)
@@ -81,12 +80,10 @@ def draw_classroom_large(topic: str) -> Image.Image:
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, bw, int(bh * 0.72)], fill=(232, 222, 205))
     d.rectangle([0, int(bh * 0.72), bw, bh], fill=(166, 140, 105))
-
     bx0, by0 = 48, 90
     bx1, by1 = bw - 48, int(bh * 0.46)
     d.rounded_rectangle([bx0 - 14, by0 - 14, bx1 + 14, by1 + 14], 18, fill=(90, 70, 45))
     d.rounded_rectangle([bx0, by0, bx1, by1], 14, fill=(34, 85, 55))
-
     topic = (topic or "Today's lesson").strip() or "Today's lesson"
     tf = font(72)
     while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 36:
@@ -110,7 +107,6 @@ def draw_classroom_large(topic: str) -> Image.Image:
         d.text((bx0 + (bx1 - bx0 - tw) // 2 + 3, y + 3), line, font=tf, fill=(20, 50, 35))
         d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(250, 255, 245))
         y += tf.size + 16
-
     icon_y = y + 24
     if icon_y + 120 < by1:
         d.ellipse([bx0 + 60, icon_y, bx0 + 160, icon_y + 100], outline=(200, 230, 200), width=5)
@@ -119,7 +115,6 @@ def draw_classroom_large(topic: str) -> Image.Image:
             [(bx0 + 420, icon_y + 90), (bx0 + 480, icon_y + 20), (bx0 + 540, icon_y + 90)],
             outline=(200, 230, 200),
         )
-
     d.rectangle([bx0, by1 + 6, bx1, by1 + 22], fill=(120, 95, 60))
     return img
 
@@ -170,7 +165,6 @@ def draw_karaoke(rgb, text, t, duration, action):
     label = f"MIKE · {action.upper()}"
     d.rounded_rectangle([W - 260, 28, W - 24, 78], 14, fill=ACCENT)
     d.text((W - 245, 40), label, font=af, fill=BLACK)
-
     windows = word_windows(text, duration)
     chunk, active = active_caption(windows, t)
     cf = font(44)
@@ -279,9 +273,14 @@ def main():
             "-i", str(tmp_path / "frame_%05d.png"), "-i", str(audio),
             "-c:v", "libx264", "-preset", "medium", "-crf", "18",
             "-pix_fmt", "yuv420p", "-profile:v", "high",
+            "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_mp4),
         ])
-        print("OK", out_mp4, out_mp4.stat().st_size)
+        # verify not empty
+        sz = out_mp4.stat().st_size
+        if sz < 50_000:
+            raise SystemExit(f"output too small: {sz}")
+        print("OK", out_mp4, sz)
 
 
 if __name__ == "__main__":

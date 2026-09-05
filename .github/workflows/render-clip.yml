@@ -9,7 +9,6 @@ permissions:
   contents: write
 
 env:
-  RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
   MODEL_DIR: ${{ github.workspace }}/models
   GEMMA_FILE: gemma-2-2b-it-Q4_K_M.gguf
@@ -18,7 +17,7 @@ env:
   TINY_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
   VOICE: en-US-GuyNeural
   ACTIONS: talk,walk,point,laugh
-  OPENROUTER_MODEL: google/gemma-2-9b-it:free
+  OPENROUTER_MODEL: openrouter/free
 
 jobs:
   build:
@@ -66,8 +65,7 @@ jobs:
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
           python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'))"
-          echo CAPTION:; cat tiktok_caption.txt || true
-          echo COMMENT:; cat tiktok_comment.txt || true
+          cat tiktok_caption.txt || true
           cat script.txt
 
       - name: tts
@@ -91,6 +89,11 @@ jobs:
       - name: render-1080
         run: bash scripts/ci_render.sh
 
+      - name: verify-video
+        run: |
+          ls -lh output.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
+
       - name: buffer
         continue-on-error: true
         env:
@@ -99,7 +102,6 @@ jobs:
           BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
           VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DELETE_RELEASE_AFTER: "1"
         run: python scripts/upload_buffer.py
 
       - name: pack
