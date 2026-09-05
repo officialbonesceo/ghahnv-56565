@@ -4,10 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Optional daily peak-ish runs (WAT ≈ UTC+1 → 11:00 & 18:00 UTC ≈ 12:00 & 19:00 WAT)
+  # ~5 videos / day (UTC). Adjust if you need local time.
   schedule:
-    - cron: "0 11 * * *"
-    - cron: "0 18 * * *"
+    - cron: "0 7,11,15,19,23 * * *"
 
 permissions:
   contents: write
@@ -19,7 +18,8 @@ env:
   GEMMA_URL: https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
   TINY_FILE: TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
   TINY_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
-  VOICE: en-US-GuyNeural
+  VOICE: en-US-ChristopherNeural
+  RATE: "+22%"
   ACTIONS: talk,walk,point,laugh
   OPENROUTER_MODEL: openrouter/free
 
@@ -50,6 +50,15 @@ jobs:
       - name: topic
         run: python scripts/fetch_topics.py topic.json
 
+      - name: commit-seen-topics
+        continue-on-error: true
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/seen_topics.json
+          git diff --cached --quiet || git commit -m "chore: mark topic seen"
+          git push || true
+
       - name: cache-models
         uses: actions/cache@v4
         with:
@@ -68,13 +77,12 @@ jobs:
           OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
-          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'))"
-          echo "--- CAPTION ---"; cat tiktok_caption.txt || true
+          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), len(d.get('script','').split()), 'words')"
           cat script.txt
 
       - name: tts
         run: |
-          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --audio-out speech.mp3
+          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate "$RATE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
 
       - name: cache-lips
@@ -98,7 +106,7 @@ jobs:
           ls -lh output.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
 
-      - name: buffer-schedule-plus-2min
+      - name: buffer
         continue-on-error: true
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}

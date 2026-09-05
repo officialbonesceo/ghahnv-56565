@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike scripts + TikTok-optimized caption/hashtags."""
+"""Mike scripts: OpenRouter free -> Gemma -> tight template (on-topic, not slow)."""
 from __future__ import annotations
 
 import argparse
@@ -29,10 +29,11 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"^(back into|into the|so that the|and then)\b[^.]{0,50}\.\s*", "", t, flags=re.I)
     words = t.split()
-    if len(words) < 55:
+    # TikTok attention: keep ~90-140 words (faster delivery with +22% rate)
+    if len(words) < 50:
         return ""
-    if len(words) > 210:
-        t = " ".join(words[:200])
+    if len(words) > 150:
+        t = " ".join(words[:140])
     if t and t[-1] not in ".!?":
         t += "!"
     return t
@@ -42,37 +43,35 @@ def pick_sentences(extract: str) -> list[str]:
     parts = []
     for s in re.split(r"(?<=[.!?])\s+", extract or ""):
         s = s.strip()
-        if len(s) < 50 or not re.match(r"^[A-Z0-9]", s):
+        if len(s) < 45 or not re.match(r"^[A-Z0-9]", s):
             continue
         if re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
             continue
         parts.append(s)
-    return parts[:5]
+    return parts[:4]
 
 
 def template_scripts(topic: dict) -> dict:
     short = display_title(topic.get("title") or "this idea")
     sents = pick_sentences(topic.get("extract") or "")
-    while len(sents) < 4:
-        sents.append(f"Everyday examples make {short} easier to understand.")
+    while len(sents) < 3:
+        sents.append(f"Simple examples make {short} easier to remember.")
     facts = []
-    for s in sents[:4]:
-        if len(s) > 130:
-            s = s[:127].rsplit(" ", 1)[0] + "."
+    for s in sents[:3]:
+        if len(s) > 110:
+            s = s[:107].rsplit(" ", 1)[0] + "."
         facts.append(s)
     script = (
-        f"Hey, I am Mike. Welcome to the board. Today we learn about {short}. "
-        f"Here is the big idea. {facts[0]} "
-        f"Next point. {facts[1]} "
-        f"Another detail. {facts[2]} "
-        f"One more thing. {facts[3]} "
-        f"Now you can explain {short} in plain words. "
-        f"Follow mike.the.tutor for more short classroom lessons. See you next time!"
+        f"Hey, I am Mike. Quick board lesson on {short}. "
+        f"{facts[0]} "
+        f"{facts[1]} "
+        f"{facts[2]} "
+        f"That is {short} in plain words. Follow mike.the.tutor for the next one!"
     )
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Welcome to the board. Today we learn about {short}.",
+        "intro_script": f"Hey, I am Mike. Quick board lesson on {short}.",
         "script": re.sub(r"\s+", " ", script).strip(),
         "bg": "classroom",
         "source": topic.get("url") or "",
@@ -87,14 +86,15 @@ def pack(topic: dict, text: str, engine: str) -> dict | None:
         return None
     if re.match(r"^(back into|into the|so that|and then)\b", cleaned, re.I):
         return None
+    # must stay on topic
     if short.lower() not in cleaned.lower():
-        cleaned = f"Hey, I am Mike. Today we learn about {short}. " + cleaned
+        cleaned = f"Hey, I am Mike. Quick lesson on {short}. " + cleaned
     if "mike.the.tutor" not in cleaned.lower():
-        cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor for more lessons!"
+        cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor!"
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Welcome to the board. Today we learn about {short}.",
+        "intro_script": f"Hey, I am Mike. Quick board lesson on {short}.",
         "script": cleaned,
         "bg": "classroom",
         "source": topic.get("url") or "",
@@ -107,14 +107,14 @@ def run_openrouter(topic: dict) -> dict | None:
     if not key:
         return None
     short = display_title(topic.get("title") or "science")
-    extract = (topic.get("extract") or "")[:450]
+    extract = (topic.get("extract") or "")[:400]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
-        "You are Mike, a friendly science tutor on TikTok (@mike.the.tutor). "
-        "Write 150 to 180 spoken words for a vertical classroom short. "
-        "Complete sentences only. No markdown. No parentheses.\n"
+        "You are Mike, a fast TikTok science tutor (@mike.the.tutor). "
+        "Write 100 to 130 spoken words ONLY about this topic. "
+        "Stay on topic. No tangents. Complete sentences. No markdown.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
-        "Greet as Mike, name the topic, three clear facts, one everyday example, "
+        "Greet as Mike, name the topic once, give three tight facts, one everyday example, "
         "end with follow mike.the.tutor."
     )
     try:
@@ -129,14 +129,14 @@ def run_openrouter(topic: dict) -> dict | None:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 400,
-                "temperature": 0.45,
+                "max_tokens": 280,
+                "temperature": 0.35,
             },
             timeout=90,
         )
         print("openrouter", r.status_code, model, file=sys.stderr)
         if r.status_code != 200:
-            print(r.text[:400], file=sys.stderr)
+            print(r.text[:300], file=sys.stderr)
             return None
         text = r.json()["choices"][0]["message"]["content"].strip()
         used = r.json().get("model") or model
@@ -153,7 +153,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(
-        json.dumps({"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:450]}),
+        json.dumps({"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:400]}),
         encoding="utf-8",
     )
     if outp.exists():
@@ -161,7 +161,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     try:
         r = subprocess.run(
             [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=300,
+            timeout=240,
             capture_output=True,
             text=True,
         )
@@ -172,27 +172,6 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     except Exception as e:
         print("gguf error", e, file=sys.stderr)
         return None
-
-
-def write_tiktok_pack(short: str, script: str) -> None:
-    """Caption tuned for TikTok discovery: hook, CTA, niche + broad tags."""
-    slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:20] or "science"
-    # Keep under ~2200 chars; front-load keywords
-    caption = (
-        f"{short} explained in plain words \n\n"
-        f"Save this for class \n"
-        f"Comment YES for part 2 \n\n"
-        f"Follow @mike.the.tutor for daily board lessons\n\n"
-        f"#{slug} #sciencefacts #learntok #stemtok #studytok "
-        f"#fyp #foryou #foryoupage #science #education "
-        f"#mikethetutor #classroom #explained #facts "
-        f"#viral #trending #learnontiktok"
-    )
-    Path("tiktok_caption.txt").write_text(caption.strip() + "\n", encoding="utf-8")
-    Path("tiktok_comment.txt").write_text(
-        f"YES = part 2 on {short}. I reply to every comment \n",
-        encoding="utf-8",
-    )
 
 
 def main() -> None:
@@ -220,7 +199,20 @@ def main() -> None:
     Path("intro.txt").write_text((result.get("intro_script") or "") + "\n", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
     Path("title_short.txt").write_text(result["short_title"], encoding="utf-8")
-    write_tiktok_pack(result["short_title"], result["script"])
+
+    short = result["short_title"]
+    hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
+    caption = (
+        f"{short} in plain words — Mike the Tutor\n\n"
+        f"Comment YES for part 2\n"
+        f"Follow @mike.the.tutor\n\n"
+        f"#{hashtag_slug} #learntok #science #fyp #foryou #stem #studytok #mikethetutor"
+    )
+    Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
+    Path("tiktok_comment.txt").write_text(
+        f"Comment YES if you want part 2 on {short} — I reply to every one",
+        encoding="utf-8",
+    )
     print(json.dumps(result, indent=2))
 
 
