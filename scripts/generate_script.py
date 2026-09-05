@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike the Tutor scripts — coherent, longer classroom shorts."""
+"""Mike scripts: OpenRouter first (if key), then Gemma, then template."""
 from __future__ import annotations
 
 import argparse
@@ -23,21 +23,19 @@ def display_title(title: str) -> str:
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
-    t = re.sub(r"\([^)]*(whiteboard|board|write|camera|physics)[^)]*\)", " ", t, flags=re.I)
+    t = re.sub(r"\([^)]{0,80}\)", " ", t)
     for p in [
-        r"INTRO:\s*", r"BODY:\s*", r"Hook:\s*", r"Facts?:\s*",
-        r"###.*?\n", r"Please note.*", r"You write.*",
+        r"INTRO:\s*", r"BODY:\s*", r"Hook:\s*", r"###.*?\n",
         r"Okay, guys,?\s*", r"Alright, guys,?\s*",
     ]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\s+", " ", t).strip()
-    # drop leading fragment sentences (common Gemma bug)
-    t = re.sub(r"^(back into|into the|so that the|which is|and then)\b[^.]{0,40}\.\s*", "", t, flags=re.I)
+    t = re.sub(r"^(back into|into the|so that the|and then)\b[^.]{0,50}\.\s*", "", t, flags=re.I)
     words = t.split()
-    if len(words) < 50:
+    if len(words) < 55:
         return ""
-    if len(words) > 200:
-        t = " ".join(words[:190])
+    if len(words) > 210:
+        t = " ".join(words[:200])
     if t and t[-1] not in ".!?":
         t += "!"
     return t
@@ -51,7 +49,6 @@ def pick_sentences(extract: str) -> list[str]:
             continue
         if re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
             continue
-        # must look like a full sentence
         if not re.match(r"^[A-Z0-9]", s):
             continue
         parts.append(s)
@@ -59,32 +56,29 @@ def pick_sentences(extract: str) -> list[str]:
 
 
 def template_scripts(topic: dict) -> dict:
-    raw = topic.get("title") or "this idea"
-    short = display_title(raw)
+    short = display_title(topic.get("title") or "this idea")
     sents = pick_sentences(topic.get("extract") or "")
     while len(sents) < 4:
-        sents.append(f"Scientists use simple everyday examples to explain {short}.")
+        sents.append(f"Everyday examples make {short} easier to understand.")
     facts = []
     for s in sents[:4]:
         if len(s) > 130:
             s = s[:127].rsplit(" ", 1)[0] + "."
         facts.append(s)
-
     script = (
         f"Hey, I am Mike. Welcome to the board. Today we learn about {short}. "
         f"Here is the big idea. {facts[0]} "
         f"Next point. {facts[1]} "
         f"Another detail. {facts[2]} "
         f"One more thing. {facts[3]} "
-        f"So now you can explain {short} in plain words. "
+        f"Now you can explain {short} in plain words. "
         f"Follow mike.the.tutor for more short classroom lessons. See you next time!"
     )
     script = re.sub(r"\s+", " ", script).strip()
-    intro = f"Hey, I am Mike. Welcome to the board. Today we learn about {short}."
     return {
-        "title": raw,
+        "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": intro,
+        "intro_script": f"Hey, I am Mike. Welcome to the board. Today we learn about {short}.",
         "script": script,
         "bg": "classroom",
         "source": topic.get("url") or "",
@@ -97,12 +91,11 @@ def pack(topic: dict, text: str, engine: str) -> dict | None:
     cleaned = clean_spoken(text)
     if not cleaned:
         return None
-    # reject scripts that still start mid-thought
     if re.match(r"^(back into|into the|so that|and then)\b", cleaned, re.I):
         return None
-    if short.lower() not in cleaned.lower() and "mike" not in cleaned.lower():
+    if short.lower() not in cleaned.lower():
         cleaned = f"Hey, I am Mike. Today we learn about {short}. " + cleaned
-    if "mike.the.tutor" not in cleaned.lower() and "follow" not in cleaned.lower():
+    if "mike.the.tutor" not in cleaned.lower():
         cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor for more lessons!"
     return {
         "title": topic.get("title") or short,
@@ -115,6 +108,75 @@ def pack(topic: dict, text: str, engine: str) -> dict | None:
     }
 
 
+def run_openrouter(topic: dict) -> dict | None:
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        print("no OPENROUTER_API_KEY", file=sys.stderr)
+        return None
+    short = display_title(topic.get("title") or "science")
+    extract = (topic.get("extract") or "")[:450]
+    model = os.environ.get(
+        "OPENROUTER_MODEL",
+        "google/gemma-2-9b-it:free",
+    ).strip()
+    prompt = (
+        "You are Mike, a friendly science tutor on TikTok (@mike.the.tutor). "
+        "Write 150 to 180 spoken words for a vertical classroom short. "
+        "Complete sentences only. No markdown. No parentheses. No stage directions.\n"
+        f"Topic: {short}\nFacts from a textbook: {extract}\n\n"
+        "Structure: greet as Mike, name the topic, three clear facts, "
+        "one everyday example, end with follow mike.the.tutor."
+    )
+    try:
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/officialbonesceo/ghahnv-56565",
+                "X-Title": "mike-the-tutor",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 400,
+                "temperature": 0.45,
+            },
+            timeout=90,
+        )
+        print("openrouter", r.status_code, model, file=sys.stderr)
+        if r.status_code != 200:
+            print(r.text[:400], file=sys.stderr)
+            # try a second free model
+            model2 = "meta-llama/llama-3.2-3b-instruct:free"
+            r = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/officialbonesceo/ghahnv-56565",
+                    "X-Title": "mike-the-tutor",
+                },
+                json={
+                    "model": model2,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 400,
+                    "temperature": 0.45,
+                },
+                timeout=90,
+            )
+            print("openrouter retry", r.status_code, model2, file=sys.stderr)
+            model = model2
+            if r.status_code != 200:
+                print(r.text[:400], file=sys.stderr)
+                return None
+        text = r.json()["choices"][0]["message"]["content"].strip()
+        return pack(topic, text, f"openrouter:{model}")
+    except Exception as e:
+        print("openrouter error", e, file=sys.stderr)
+        return None
+
+
 def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     if not model.exists() or model.stat().st_size < 10_000_000:
         return None
@@ -122,13 +184,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(
-        json.dumps(
-            {
-                "model": str(model),
-                "title": short,
-                "extract": (topic.get("extract") or "")[:450],
-            }
-        ),
+        json.dumps({"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:450]}),
         encoding="utf-8",
     )
     if outp.exists():
@@ -143,51 +199,9 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
         if r.returncode != 0 or not outp.exists():
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
-        text = f"{data.get('intro') or ''} {data.get('body') or ''}"
-        return pack(topic, text, engine_name)
+        return pack(topic, f"{data.get('intro') or ''} {data.get('body') or ''}", engine_name)
     except Exception as e:
         print("gguf error", e, file=sys.stderr)
-        return None
-
-
-def run_openrouter(topic: dict) -> dict | None:
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if not key:
-        return None
-    short = display_title(topic.get("title") or "science")
-    extract = (topic.get("extract") or "")[:420]
-    model = os.environ.get("OPENROUTER_MODEL", "google/gemma-2-2b-it:free").strip()
-    prompt = (
-        "You are Mike, a friendly science tutor for teens on TikTok (mike.the.tutor). "
-        "Write 140 to 170 spoken words. Complete sentences only. No markdown. "
-        "No parentheses. No stage directions.\n"
-        f"Topic name to use: {short}\nFacts: {extract}\n\n"
-        "Structure: greet as Mike, name the topic, three clear facts in full sentences, "
-        "end with follow mike.the.tutor."
-    )
-    try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/qxil-pipe",
-                "X-Title": "mike-tutor",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 350,
-                "temperature": 0.5,
-            },
-            timeout=60,
-        )
-        if r.status_code != 200:
-            return None
-        text = r.json()["choices"][0]["message"]["content"].strip()
-        return pack(topic, text, f"openrouter:{model}")
-    except Exception as e:
-        print("openrouter", e, file=sys.stderr)
         return None
 
 
@@ -202,13 +216,19 @@ def main() -> None:
 
     topic = json.loads(Path(args.topic).read_text(encoding="utf-8"))
     result = None
+
+    # Prefer OpenRouter when key exists (better than local Gemma for sense)
     if args.try_llm:
-        if args.model:
+        result = run_openrouter(topic)
+        if result:
+            print("engine=openrouter", file=sys.stderr)
+        if result is None and args.model:
             result = run_gguf(Path(args.model), topic, "gemma-gguf")
+            if result:
+                print("engine=gemma-gguf", file=sys.stderr)
         if result is None and args.model_fallback:
             result = run_gguf(Path(args.model_fallback), topic, "tinyllama-gguf")
-        if result is None:
-            result = run_openrouter(topic)
+
     if result is None:
         result = template_scripts(topic)
         print("engine=template", file=sys.stderr)
@@ -218,6 +238,22 @@ def main() -> None:
     Path("intro.txt").write_text((result.get("intro_script") or "") + "\n", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
     Path("title_short.txt").write_text(result["short_title"], encoding="utf-8")
+
+    # TikTok caption pack
+    short = result["short_title"]
+    hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
+    caption = (
+        f"{short} explained in plain words by Mike\n\n"
+        f"Watch to the end — save this for class\n\n"
+        f"Follow @mike.the.tutor for daily board lessons\n\n"
+        f"#{hashtag_slug} #learntok #science #fyp #foryou "
+        f"#stem #studytok #mike the tutor #classroom #explained"
+    )
+    Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
+    Path("tiktok_comment.txt").write_text(
+        f"Comment YES if you want part 2 on {short} — I reply to every one",
+        encoding="utf-8",
+    )
     print(json.dumps(result, indent=2))
 
 

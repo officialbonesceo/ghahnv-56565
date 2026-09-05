@@ -18,12 +18,12 @@ env:
   TINY_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
   VOICE: en-US-GuyNeural
   ACTIONS: talk,walk,point,laugh
-  OPENROUTER_MODEL: google/gemma-2-2b-it:free
+  OPENROUTER_MODEL: google/gemma-2-9b-it:free
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -58,14 +58,16 @@ jobs:
           mkdir -p "$MODEL_DIR"
           [ -f "$MODEL_DIR/$GEMMA_FILE" ] || curl -L --fail -o "$MODEL_DIR/$GEMMA_FILE" "$GEMMA_URL" || true
           [ -f "$MODEL_DIR/$TINY_FILE" ] || curl -L --fail -o "$MODEL_DIR/$TINY_FILE" "$TINY_URL" || true
-          ls -lh "$MODEL_DIR" || true
 
       - name: script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
-          python -c "import json; print(json.load(open('script_job.json')).get('engine'), json.load(open('script_job.json')).get('short_title'))"
+          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'))"
+          echo CAPTION:; cat tiktok_caption.txt || true
+          echo COMMENT:; cat tiktok_comment.txt || true
           cat script.txt
 
       - name: tts
@@ -86,7 +88,7 @@ jobs:
         continue-on-error: true
         run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: render
+      - name: render-1080
         run: bash scripts/ci_render.sh
 
       - name: buffer
@@ -103,12 +105,15 @@ jobs:
       - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: qxil-out
+          name: mike-tiktok
           path: |
             output.mp4
             script.txt
             script_job.json
             topic.json
+            tiktok_caption.txt
+            tiktok_comment.txt
+            FIRST_COMMENT.txt
             buffer_result.json
             title_short.txt
           if-no-files-found: error
