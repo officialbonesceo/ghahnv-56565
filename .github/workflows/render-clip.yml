@@ -9,13 +9,16 @@ on:
 env:
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
+  MODEL_DIR: ${{ github.workspace }}/models
+  MODEL_FILE: TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
+  MODEL_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
   VOICE: en-US-GuyNeural
   ACTIONS: talk,walk,point,laugh
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +31,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip fonts-dejavu-core
 
       - name: Python deps
-        run: pip install --upgrade pip && pip install edge-tts Pillow requests
+        run: |
+          pip install --upgrade pip
+          pip install edge-tts Pillow requests
+          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python || true
 
       - name: Build MEZI sprites
         run: python scripts/write_mezi_assets.py
@@ -36,8 +42,29 @@ jobs:
       - name: Fetch topic
         run: python scripts/fetch_topics.py topic.json
 
+      - name: Cache TinyLlama
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MODEL_DIR }}
+          key: tinyllama-q4km-v1
+
+      - name: Download TinyLlama GGUF
+        run: |
+          mkdir -p "$MODEL_DIR"
+          if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
+            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || true
+          fi
+          ls -lh "$MODEL_DIR" || true
+
       - name: Generate script
-        run: python scripts/generate_script.py --topic topic.json --out script_job.json
+        run: |
+          python scripts/generate_script.py \
+            --topic topic.json \
+            --model "$MODEL_DIR/$MODEL_FILE" \
+            --try-llm \
+            --out script_job.json
+          echo INTRO:; cat intro.txt || true
+          echo BODY:; cat script.txt
 
       - name: Cache backgrounds
         uses: actions/cache@v4
@@ -50,12 +77,19 @@ jobs:
           BG=science
           test -f bg.txt && BG=$(cat bg.txt)
           python scripts/generate_bg.py --bg "$BG" --out-dir assets/bg
-          cat bg_path.txt || true
 
-      - name: Edge TTS
+      - name: Edge TTS body
         run: |
           python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
+
+      - name: Edge TTS intro
+        run: |
+          if [ -s intro.txt ]; then
+            python scripts/render_clip.py --text "$(cat intro.txt)" --voice "$VOICE" --audio-out intro.mp3
+          else
+            cp speech.mp3 intro.mp3
+          fi
 
       - name: Cache Rhubarb
         uses: actions/cache@v4
@@ -80,11 +114,21 @@ jobs:
           path: |
             output.mp4
             script.txt
+            intro.txt
             script_job.json
             topic.json
             speech.mp3
             mouth.json
             bg.txt
-            bg_path.txt
           if-no-files-found: error
           retention-days: 7
+
+      - name: Buffer upload optional
+        continue-on-error: true
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+          VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
+        run: |
+          pip install requests >/dev/null
+          python scripts/upload_buffer.py || echo "Buffer skipped or failed"
