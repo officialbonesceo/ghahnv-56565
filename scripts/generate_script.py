@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike scripts: OpenRouter free -> Gemma -> tight template (on-topic, not slow)."""
+"""Scripts: OpenRouter free -> Phi-2 GGUF -> template. Wikipedia context."""
 from __future__ import annotations
 
 import argparse
@@ -24,16 +24,17 @@ def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
     t = re.sub(r"\([^)]{0,80}\)", " ", t)
-    for p in [r"INTRO:\s*", r"BODY:\s*", r"Hook:\s*", r"###.*?\n"]:
+    t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
+    t = re.sub(r"Output:.*", " ", t, flags=re.I)
+    for p in [r"INTRO:\s*", r"BODY:\s*", r"###.*?\n"]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"^(back into|into the|so that the|and then)\b[^.]{0,50}\.\s*", "", t, flags=re.I)
     words = t.split()
-    # TikTok attention: keep ~90-140 words (faster delivery with +22% rate)
-    if len(words) < 50:
+    if len(words) < 45:
         return ""
-    if len(words) > 150:
-        t = " ".join(words[:140])
+    if len(words) > 140:
+        t = " ".join(words[:130])
     if t and t[-1] not in ".!?":
         t += "!"
     return t
@@ -63,10 +64,8 @@ def template_scripts(topic: dict) -> dict:
         facts.append(s)
     script = (
         f"Hey, I am Mike. Quick board lesson on {short}. "
-        f"{facts[0]} "
-        f"{facts[1]} "
-        f"{facts[2]} "
-        f"That is {short} in plain words. Follow mike.the.tutor for the next one!"
+        f"{facts[0]} {facts[1]} {facts[2]} "
+        f"That is {short} in plain words. Follow mike.the.tutor!"
     )
     return {
         "title": topic.get("title") or short,
@@ -84,9 +83,6 @@ def pack(topic: dict, text: str, engine: str) -> dict | None:
     cleaned = clean_spoken(text)
     if not cleaned:
         return None
-    if re.match(r"^(back into|into the|so that|and then)\b", cleaned, re.I):
-        return None
-    # must stay on topic
     if short.lower() not in cleaned.lower():
         cleaned = f"Hey, I am Mike. Quick lesson on {short}. " + cleaned
     if "mike.the.tutor" not in cleaned.lower():
@@ -111,11 +107,9 @@ def run_openrouter(topic: dict) -> dict | None:
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
         "You are Mike, a fast TikTok science tutor (@mike.the.tutor). "
-        "Write 100 to 130 spoken words ONLY about this topic. "
-        "Stay on topic. No tangents. Complete sentences. No markdown.\n"
+        "Write 100 to 130 spoken words ONLY about this topic. Stay on topic.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
-        "Greet as Mike, name the topic once, give three tight facts, one everyday example, "
-        "end with follow mike.the.tutor."
+        "Greet as Mike, three tight facts, one example, end with follow mike.the.tutor."
     )
     try:
         r = requests.post(
@@ -139,8 +133,7 @@ def run_openrouter(topic: dict) -> dict | None:
             print(r.text[:300], file=sys.stderr)
             return None
         text = r.json()["choices"][0]["message"]["content"].strip()
-        used = r.json().get("model") or model
-        return pack(topic, text, f"openrouter:{used}")
+        return pack(topic, text, f"openrouter:{r.json().get('model') or model}")
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
@@ -148,12 +141,19 @@ def run_openrouter(topic: dict) -> dict | None:
 
 def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     if not model.exists() or model.stat().st_size < 10_000_000:
+        print("gguf missing", model, file=sys.stderr)
         return None
     helper = Path(__file__).resolve().parent / "_llm_once.py"
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(
-        json.dumps({"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:400]}),
+        json.dumps(
+            {
+                "model": str(model),
+                "title": short,
+                "extract": (topic.get("extract") or "")[:400],
+            }
+        ),
         encoding="utf-8",
     )
     if outp.exists():
@@ -161,14 +161,16 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     try:
         r = subprocess.run(
             [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=240,
+            timeout=360,
             capture_output=True,
             text=True,
         )
+        print((r.stderr or "")[-400:], file=sys.stderr)
         if r.returncode != 0 or not outp.exists():
+            print("gguf failed", r.returncode, file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
-        return pack(topic, f"{data.get('intro') or ''} {data.get('body') or ''}", engine_name)
+        return pack(topic, data.get("body") or "", engine_name)
     except Exception as e:
         print("gguf error", e, file=sys.stderr)
         return None
@@ -188,9 +190,9 @@ def main() -> None:
     if args.try_llm:
         result = run_openrouter(topic)
         if result is None and args.model:
-            result = run_gguf(Path(args.model), topic, "gemma-gguf")
+            result = run_gguf(Path(args.model), topic, "phi2-gguf")
         if result is None and args.model_fallback:
-            result = run_gguf(Path(args.model_fallback), topic, "tinyllama-gguf")
+            result = run_gguf(Path(args.model_fallback), topic, "gguf-fallback")
     if result is None:
         result = template_scripts(topic)
 
@@ -204,9 +206,8 @@ def main() -> None:
     hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
     caption = (
         f"{short} in plain words — Mike the Tutor\n\n"
-        f"Comment YES for part 2\n"
-        f"Follow @mike.the.tutor\n\n"
-        f"#{hashtag_slug} #learntok #science #fyp #foryou #stem #studytok #mikethetutor"
+        f"Comment YES for part 2\nFollow @mike.the.tutor\n\n"
+        f"#{hashtag_slug} #learntok #science #fyp #stem #studytok #mikethetutor"
     )
     Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
     Path("tiktok_comment.txt").write_text(

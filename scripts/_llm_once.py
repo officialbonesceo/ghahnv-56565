@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Phi-2 / GGUF child process."""
 from __future__ import annotations
 
 import json
@@ -14,16 +15,11 @@ def main() -> None:
     llm = Llama(model_path=inp["model"], n_ctx=2048, n_threads=2, verbose=False)
     title = inp.get("title") or "science"
     ctx = inp.get("extract") or ""
-    prompt = f"""<start_of_turn>user
-You are Mike, a TikTok science tutor. Write 140 spoken words for teens.
-Complete sentences only. No markdown. No parentheses. No mid-sentence starts.
-Topic: {title}
+    # Phi-2 style instruct
+    prompt = f"""Instruct: You are Mike, a TikTok science tutor. Write 110 spoken words for teens about {title}. Use only these facts. Complete sentences. No markdown. Greet as Mike, three facts, one example, end with follow mike.the.tutor.
 Facts: {ctx}
-Say hello as Mike, explain three facts clearly, end with follow mike.the.tutor.
-<end_of_turn>
-<start_of_turn>model
-"""
-    out = llm(prompt, max_tokens=300, temperature=0.45, stop=["<end_of_turn>", "<start_of_turn>"])
+Output:"""
+    out = llm(prompt, max_tokens=260, temperature=0.4, stop=["Instruct:", "Facts:"])
     text = out["choices"][0]["text"].strip()
     out_path.write_text(json.dumps({"intro": "", "body": text}), encoding="utf-8")
 
