@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wikipedia topic -> intro + body scripts. TinyLlama optional (subprocess-safe)."""
+"""Topic -> clear TikTok scripts. Prefer solid template; LLM only if clean."""
 from __future__ import annotations
 
 import argparse
@@ -7,70 +7,101 @@ import json
 import re
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 
 def clean_spoken(text: str) -> str:
-    t = text.strip().strip('"').strip("'")
+    t = (text or "").strip().strip('"').strip("'")
+    # strip labels and junk TinyLlama loves to emit
     for p in [
-        r"\(You write.*?\)",
-        r"You write.*",
-        r"Please note that.*",
-        r"Rules:.*",
+        r"INTRO:\s*",
+        r"BODY:\s*",
         r"Hook:\s*",
         r"Facts?:\s*",
+        r"Friendly Closure:\s*",
+        r"Closing:\s*",
         r"Script:\s*",
-        r"Intro:\s*",
-        r"Body:\s*",
+        r"###.*?\n",
+        r"Focal [Pp]oint.*?\n",
+        r"\(x\d.*?\)",
+        r"x\d\s*=\s*x\d",
+        r"y\d\s*=\s*y\d",
+        r"-\s*Focal.*",
+        r"Please note.*",
+        r"You write.*",
     ]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\d+\.\s*", "", t)
+    t = re.sub(r"[-=]{2,}", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
-    if any(x in t.lower() for x in ("you write", "please note", "tiktok script for")):
+    low = t.lower()
+    if any(
+        x in low
+        for x in (
+            "friendly closure",
+            "focal point",
+            "you write",
+            "coordinates",
+            "x1",
+            "y1",
+            "###",
+        )
+    ):
+        return ""
+    # reject equation-heavy nonsense
+    if t.count("=") > 1 or t.count("(") > 2:
         return ""
     words = t.split()
-    if len(words) < 12:
+    if len(words) < 18:
         return ""
-    if len(words) > 90:
-        t = " ".join(words[:85])
+    if len(words) > 100:
+        t = " ".join(words[:90])
     if t and t[-1] not in ".!?":
         t += "!"
     return t
 
 
-def simplify_fact(s: str, max_len: int = 110) -> str:
-    s = re.sub(r"\[[^\]]*\]", "", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    if len(s) > max_len:
-        s = s[: max_len - 3].rsplit(" ", 1)[0] + "..."
-    return s
+def short_title(title: str) -> str:
+    t = title or "This idea"
+    t = re.sub(r"^\d{4}(-\d{2})?\s*", "", t).strip() or title
+    if len(t) > 36:
+        t = t[:33] + "..."
+    return t
+
+
+def pick_sentences(extract: str) -> list[str]:
+    parts = [
+        s.strip()
+        for s in re.split(r"(?<=[.!?])\s+", extract or "")
+        if len(s.strip()) > 40 and "=" not in s and "(" not in s[:20]
+    ]
+    return parts[:3]
 
 
 def template_scripts(topic: dict) -> dict:
     title = topic.get("title") or "this idea"
-    extract = (topic.get("extract") or "").strip()
-    sentences = [
-        s.strip()
-        for s in re.split(r"(?<=[.!?])\s+", extract)
-        if len(s.strip()) > 30
-    ]
-    fact1 = simplify_fact(sentences[0]) if sentences else f"{title} is something people still talk about."
-    fact2 = simplify_fact(sentences[1]) if len(sentences) > 1 else "There is more to discover if we look closer."
-
-    # Avoid awkward "Ever heard of 1960-61 Silver Hut expedition?"
-    short = title
-    if re.match(r"^\d{4}", title):
-        short = re.sub(r"^\d{4}(-\d{2})?\s*", "", title).strip() or title
+    short = short_title(title)
+    sents = pick_sentences(topic.get("extract") or "")
+    if not sents:
+        sents = [
+            f"{short} is a real idea people study and talk about.",
+            "The simple version still helps us understand the world a little better.",
+        ]
+    f1 = sents[0]
+    if len(f1) > 120:
+        f1 = f1[:117].rsplit(" ", 1)[0] + "."
+    f2 = sents[1] if len(sents) > 1 else "Scientists keep learning more about it every year."
+    if len(f2) > 120:
+        f2 = f2[:117].rsplit(" ", 1)[0] + "."
 
     intro = (
-        f"Today on the board: {short}. "
-        f"Stay with Mezi — we will break it into simple pieces."
+        f"Look at the board. Today we learn about {short}. "
+        f"Stay with Mezi for a simple explanation."
     )
     body = (
-        f"Here is the idea. {fact1} "
-        f"Also, {fact2} "
-        f"That is why it matters. Follow Mezi for more quick explainers!"
+        f"So what is {short}? {f1} "
+        f"Here is another point. {f2} "
+        f"That is the idea in plain words. Follow Mezi for more classroom explainers!"
     )
     intro = re.sub(r"\s+", " ", intro).strip()
     body = re.sub(r"\s+", " ", body).strip()
@@ -79,23 +110,26 @@ def template_scripts(topic: dict) -> dict:
         "short_title": short,
         "intro_script": intro,
         "script": body,
-        "bg": topic.get("bg") or "science",
+        "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": "template",
     }
 
 
-def run_tinyllama_subprocess(model: Path, topic: dict) -> dict | None:
-    """Run LLM in child process so SIGILL cannot kill the workflow step."""
+def run_tinyllama(model: Path, topic: dict) -> dict | None:
     helper = Path(__file__).resolve().parent / "_llm_once.py"
-    payload = {
-        "model": str(model),
-        "title": topic.get("title") or "",
-        "extract": (topic.get("extract") or "")[:400],
-    }
     inp = Path("/tmp/llm_in.json")
     outp = Path("/tmp/llm_out.json")
-    inp.write_text(json.dumps(payload), encoding="utf-8")
+    inp.write_text(
+        json.dumps(
+            {
+                "model": str(model),
+                "title": topic.get("title") or "",
+                "extract": (topic.get("extract") or "")[:380],
+            }
+        ),
+        encoding="utf-8",
+    )
     if outp.exists():
         outp.unlink()
     try:
@@ -105,31 +139,27 @@ def run_tinyllama_subprocess(model: Path, topic: dict) -> dict | None:
             capture_output=True,
             text=True,
         )
-        print(r.stdout[-500:] if r.stdout else "", file=sys.stderr)
-        print(r.stderr[-500:] if r.stderr else "", file=sys.stderr)
         if r.returncode != 0 or not outp.exists():
-            print("llm child failed code", r.returncode, file=sys.stderr)
+            print("llm failed", r.returncode, r.stderr[-400:], file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
         intro = clean_spoken(data.get("intro") or "")
         body = clean_spoken(data.get("body") or "")
-        if not body:
+        if not body or len(body.split()) < 25:
             return None
         title = topic.get("title") or "Mezi"
-        short = title
-        if re.match(r"^\d{4}", title):
-            short = re.sub(r"^\d{4}(-\d{2})?\s*", "", title).strip() or title
         return {
             "title": title,
-            "short_title": short,
-            "intro_script": intro or f"Today on the board: {short}. Stay with Mezi!",
+            "short_title": short_title(title),
+            "intro_script": intro
+            or f"Look at the board. Today we learn about {short_title(title)}. Stay with Mezi!",
             "script": body,
-            "bg": topic.get("bg") or "science",
+            "bg": "classroom",
             "source": topic.get("url") or "",
             "engine": "tinyllama",
         }
     except Exception as e:
-        print("llm subprocess error", e, file=sys.stderr)
+        print("llm error", e, file=sys.stderr)
         return None
 
 
@@ -144,16 +174,18 @@ def main() -> None:
     topic = json.loads(Path(args.topic).read_text(encoding="utf-8"))
     result = None
     if args.try_llm and args.model and Path(args.model).exists():
-        result = run_tinyllama_subprocess(Path(args.model), topic)
+        result = run_tinyllama(Path(args.model), topic)
+        if result:
+            print("engine=tinyllama accepted", file=sys.stderr)
+        else:
+            print("engine=tinyllama rejected -> template", file=sys.stderr)
     if result is None:
         result = template_scripts(topic)
-        print("engine=template", file=sys.stderr)
 
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
-    # body is main script.txt for backwards compat; intro separate
     Path("script.txt").write_text(result["script"] + "\n", encoding="utf-8")
-    Path("intro.txt").write_text(result.get("intro_script") or "", encoding="utf-8")
-    Path("bg.txt").write_text(result.get("bg") or "science", encoding="utf-8")
+    Path("intro.txt").write_text((result.get("intro_script") or "") + "\n", encoding="utf-8")
+    Path("bg.txt").write_text("classroom", encoding="utf-8")
     Path("title_short.txt").write_text(result.get("short_title") or result["title"], encoding="utf-8")
     print(json.dumps(result, indent=2))
 

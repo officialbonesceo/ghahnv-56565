@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEZI sprites: wider neck, thicker limbs, grounded, side-walk, point."""
+"""MEZI: tighter proportions, wider neck, thicker limbs, less toy spacing."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,17 +12,18 @@ HOODIE_S = (255, 220, 100, 255)
 HOODIE_D = (230, 165, 25, 255)
 SKIN = (210, 155, 115, 255)
 HAIR = (28, 24, 30, 255)
-PANTS = (32, 36, 48, 255)
-SHOE = (20, 20, 26, 255)
+PANTS = (40, 44, 58, 255)
+SHOE = (22, 22, 28, 255)
 WHITE = (255, 255, 255, 255)
 BLACK = (25, 22, 28, 255)
 MOUTH_IN = (95, 35, 45, 255)
 TEETH = (250, 245, 240, 255)
 
 CX = W // 2
-CY = 400
-HY = CY - 95
-MOUTH_Y = HY + 28
+# Compact body — less empty gap head-to-torso
+CY = 390
+HY = CY - 72
+MOUTH_Y = HY + 26
 
 
 def blank():
@@ -37,62 +38,61 @@ def draw_body(mode: str = "front") -> Image.Image:
     img = blank()
     d = ImageDraw.Draw(img)
     cx, cy = CX, CY
-    oval(d, [cx - 75, cy + 178, cx + 75, cy + 208], (0, 0, 0, 60))
+    oval(d, [cx - 70, cy + 160, cx + 70, cy + 188], (0, 0, 0, 50))
 
+    # Legs thicker, closer to body
     if mode == "walk":
-        # thicker legs, side stride
-        d.rounded_rectangle([cx - 32, cy + 80, cx - 2, cy + 178], 14, fill=PANTS)
-        d.rounded_rectangle([cx + 6, cy + 65, cx + 36, cy + 165], 14, fill=PANTS)
-        oval(d, [cx - 45, cy + 168, cx + 5, cy + 198], SHOE)
-        oval(d, [cx + 2, cy + 155, cx + 55, cy + 188], SHOE)
-        d.rounded_rectangle([cx - 58, cy - 8, cx + 55, cy + 108], 30, fill=HOODIE)
-        d.rounded_rectangle([cx - 40, cy + 18, cx + 40, cy + 95], 22, fill=HOODIE_S)
-        d.line([(cx - 50, cy + 28), (cx - 82, cy + 95)], fill=HOODIE_D, width=22)
-        oval(d, [cx - 100, cy + 85, cx - 70, cy + 115], SKIN)
-        d.line([(cx + 48, cy + 32), (cx + 88, cy + 18)], fill=HOODIE, width=22)
-        oval(d, [cx + 80, cy + 5, cx + 110, cy + 35], SKIN)
+        d.rounded_rectangle([cx - 36, cy + 70, cx - 6, cy + 165], 16, fill=PANTS)
+        d.rounded_rectangle([cx + 4, cy + 55, cx + 34, cy + 155], 16, fill=PANTS)
+        oval(d, [cx - 48, cy + 155, cx + 0, cy + 185], SHOE)
+        oval(d, [cx + 0, cy + 145, cx + 50, cy + 175], SHOE)
+        d.rounded_rectangle([cx - 55, cy + 0, cx + 52, cy + 95], 26, fill=HOODIE)
+        d.rounded_rectangle([cx - 38, cy + 25, cx + 38, cy + 85], 18, fill=HOODIE_S)
+        d.line([(cx - 48, cy + 25), (cx - 78, cy + 85)], fill=HOODIE_D, width=26)
+        oval(d, [cx - 95, cy + 75, cx - 68, cy + 102], SKIN)
+        d.line([(cx + 45, cy + 28), (cx + 85, cy + 15)], fill=HOODIE, width=26)
+        oval(d, [cx + 75, cy + 2, cx + 102, cy + 30], SKIN)
     elif mode == "point":
-        d.rounded_rectangle([cx - 42, cy + 88, cx - 10, cy + 178], 14, fill=PANTS)
-        d.rounded_rectangle([cx + 10, cy + 88, cx + 42, cy + 178], 14, fill=PANTS)
-        oval(d, [cx - 52, cy + 168, cx - 2, cy + 198], SHOE)
-        oval(d, [cx + 2, cy + 168, cx + 52, cy + 198], SHOE)
-        d.rounded_rectangle([cx - 62, cy - 8, cx + 62, cy + 112], 30, fill=HOODIE)
-        d.rounded_rectangle([cx - 42, cy + 22, cx + 42, cy + 98], 22, fill=HOODIE_S)
-        d.line([(cx + 55, cy + 28), (cx + 115, cy - 40)], fill=HOODIE, width=24)
-        oval(d, [cx + 102, cy - 58, cx + 132, cy - 28], SKIN)
-        d.line([(cx + 125, cy - 45), (cx + 155, cy - 65)], fill=SKIN, width=9)
-        d.line([(cx - 55, cy + 35), (cx - 85, cy + 105)], fill=HOODIE, width=22)
-        oval(d, [cx - 105, cy + 92, cx - 75, cy + 122], SKIN)
+        d.rounded_rectangle([cx - 36, cy + 75, cx - 6, cy + 165], 16, fill=PANTS)
+        d.rounded_rectangle([cx + 6, cy + 75, cx + 36, cy + 165], 16, fill=PANTS)
+        oval(d, [cx - 48, cy + 155, cx - 2, cy + 185], SHOE)
+        oval(d, [cx + 2, cy + 155, cx + 48, cy + 185], SHOE)
+        d.rounded_rectangle([cx - 55, cy + 0, cx + 55, cy + 98], 26, fill=HOODIE)
+        d.rounded_rectangle([cx - 38, cy + 25, cx + 38, cy + 88], 18, fill=HOODIE_S)
+        d.line([(cx + 48, cy + 22), (cx + 105, cy - 35)], fill=HOODIE, width=28)
+        oval(d, [cx + 92, cy - 52, cx + 120, cy - 24], SKIN)
+        d.line([(cx + 115, cy - 40), (cx + 142, cy - 58)], fill=SKIN, width=10)
+        d.line([(cx - 48, cy + 28), (cx - 80, cy + 90)], fill=HOODIE, width=26)
+        oval(d, [cx - 98, cy + 80, cx - 72, cy + 108], SKIN)
     else:
-        d.rounded_rectangle([cx - 42, cy + 88, cx - 10, cy + 178], 14, fill=PANTS)
-        d.rounded_rectangle([cx + 10, cy + 88, cx + 42, cy + 178], 14, fill=PANTS)
-        oval(d, [cx - 52, cy + 168, cx - 2, cy + 198], SHOE)
-        oval(d, [cx + 2, cy + 168, cx + 52, cy + 198], SHOE)
-        d.rounded_rectangle([cx - 62, cy - 8, cx + 62, cy + 112], 30, fill=HOODIE)
-        d.rounded_rectangle([cx - 42, cy + 22, cx + 42, cy + 98], 22, fill=HOODIE_S)
-        d.rounded_rectangle([cx - 34, cy + 55, cx + 34, cy + 98], 16, fill=HOODIE)
-        oval(d, [cx - 14, cy + 20, cx + 14, cy + 48], None, BLACK, 3)
-        d.line([(cx - 55, cy + 30), (cx - 88, cy + 105)], fill=HOODIE, width=22)
-        d.line([(cx + 55, cy + 30), (cx + 88, cy + 105)], fill=HOODIE, width=22)
-        oval(d, [cx - 105, cy + 95, cx - 75, cy + 125], SKIN)
-        oval(d, [cx + 75, cy + 95, cx + 105, cy + 125], SKIN)
+        d.rounded_rectangle([cx - 36, cy + 75, cx - 6, cy + 165], 16, fill=PANTS)
+        d.rounded_rectangle([cx + 6, cy + 75, cx + 36, cy + 165], 16, fill=PANTS)
+        oval(d, [cx - 48, cy + 155, cx - 2, cy + 185], SHOE)
+        oval(d, [cx + 2, cy + 155, cx + 48, cy + 185], SHOE)
+        d.rounded_rectangle([cx - 55, cy + 0, cx + 55, cy + 98], 26, fill=HOODIE)
+        d.rounded_rectangle([cx - 38, cy + 25, cx + 38, cy + 88], 18, fill=HOODIE_S)
+        oval(d, [cx - 12, cy + 18, cx + 12, cy + 42], None, BLACK, 3)
+        d.line([(cx - 48, cy + 25), (cx - 80, cy + 92)], fill=HOODIE, width=26)
+        d.line([(cx + 48, cy + 25), (cx + 80, cy + 92)], fill=HOODIE, width=26)
+        oval(d, [cx - 98, cy + 82, cx - 72, cy + 110], SKIN)
+        oval(d, [cx + 72, cy + 82, cx + 98, cy + 110], SKIN)
 
-    # wider neck in sync with head
-    d.rounded_rectangle([cx - 20, cy - 32, cx + 20, cy + 8], 8, fill=SKIN)
+    # Wide neck connecting head to hoodie (no toy gap)
+    d.rounded_rectangle([cx - 22, cy - 18, cx + 22, cy + 12], 10, fill=SKIN)
     hy = HY
-    oval(d, [cx - 68, hy - 78, cx + 68, hy + 18], HAIR)
-    oval(d, [cx - 58, hy - 58, cx + 58, hy + 55], SKIN)
-    oval(d, [cx - 66, hy - 88, cx + 66, hy - 12], HAIR)
-    oval(d, [cx - 52, hy - 35, cx + 52, hy + 50], SKIN)
-    for ox, oy, r in [(-40, -85, 22), (-8, -96, 24), (22, -96, 24), (48, -85, 20)]:
+    oval(d, [cx - 62, hy - 70, cx + 62, hy + 12], HAIR)
+    oval(d, [cx - 52, hy - 52, cx + 52, hy + 48], SKIN)
+    oval(d, [cx - 60, hy - 80, cx + 60, hy - 10], HAIR)
+    oval(d, [cx - 48, hy - 30, cx + 48, hy + 42], SKIN)
+    for ox, oy, r in [(-36, -78, 20), (-6, -88, 22), (20, -88, 22), (42, -78, 18)]:
         oval(d, [cx + ox - r, hy + oy - r // 2, cx + ox + r, hy + oy + r], HAIR)
-    oval(d, [cx - 72, hy - 12, cx - 52, hy + 24], SKIN)
-    oval(d, [cx + 52, hy - 12, cx + 72, hy + 24], SKIN)
-    ey = hy - 8
-    oval(d, [cx - 36, ey - 16, cx - 8, ey + 14], WHITE, BLACK, 3)
-    oval(d, [cx + 8, ey - 16, cx + 36, ey + 14], WHITE, BLACK, 3)
-    oval(d, [cx - 28, ey - 6, cx - 14, ey + 8], BLACK)
-    oval(d, [cx + 14, ey - 6, cx + 28, ey + 8], BLACK)
+    oval(d, [cx - 66, hy - 8, cx - 48, hy + 22], SKIN)
+    oval(d, [cx + 48, hy - 8, cx + 66, hy + 22], SKIN)
+    ey = hy - 6
+    oval(d, [cx - 32, ey - 14, cx - 8, ey + 12], WHITE, BLACK, 3)
+    oval(d, [cx + 8, ey - 14, cx + 32, ey + 12], WHITE, BLACK, 3)
+    oval(d, [cx - 26, ey - 5, cx - 14, ey + 7], BLACK)
+    oval(d, [cx + 14, ey - 5, cx + 26, ey + 7], BLACK)
     return img
 
 
@@ -101,15 +101,13 @@ def draw_mouth(kind: str) -> Image.Image:
     d = ImageDraw.Draw(img)
     cx, my = CX, MOUTH_Y
     if kind == "closed":
-        d.arc([cx - 14, my - 4, cx + 14, my + 10], 25, 155, fill=BLACK, width=3)
+        d.arc([cx - 12, my - 3, cx + 12, my + 9], 25, 155, fill=BLACK, width=3)
     elif kind == "open":
-        oval(d, [cx - 12, my - 2, cx + 12, my + 16], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 9, my, cx + 9, my + 5], TEETH)
-        oval(d, [cx - 8, my + 6, cx + 8, my + 13], (55, 18, 28, 255))
+        oval(d, [cx - 11, my - 1, cx + 11, my + 14], MOUTH_IN, BLACK, 2)
+        oval(d, [cx - 8, my + 1, cx + 8, my + 5], TEETH)
     else:
-        oval(d, [cx - 16, my - 2, cx + 16, my + 20], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 12, my, cx + 12, my + 6], TEETH)
-        oval(d, [cx - 11, my + 7, cx + 11, my + 17], (55, 18, 28, 255))
+        oval(d, [cx - 14, my - 1, cx + 14, my + 17], MOUTH_IN, BLACK, 2)
+        oval(d, [cx - 10, my + 1, cx + 10, my + 5], TEETH)
     return img
 
 
@@ -117,9 +115,9 @@ def draw_eyes_laugh() -> Image.Image:
     img = blank()
     d = ImageDraw.Draw(img)
     cx, hy = CX, HY
-    ey = hy - 8
-    d.arc([cx - 36, ey - 4, cx - 8, ey + 12], 200, 340, fill=BLACK, width=4)
-    d.arc([cx + 8, ey - 4, cx + 36, ey + 12], 200, 340, fill=BLACK, width=4)
+    ey = hy - 6
+    d.arc([cx - 32, ey - 2, cx - 8, ey + 10], 200, 340, fill=BLACK, width=4)
+    d.arc([cx + 8, ey - 2, cx + 32, ey + 10], 200, 340, fill=BLACK, width=4)
     return img
 
 
