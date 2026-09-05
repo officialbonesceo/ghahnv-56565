@@ -1,10 +1,10 @@
 name: qxil-job
 
 on:
-  # Manual only + daily schedule (no push trigger)
   workflow_dispatch:
+  # denser schedule (UTC) — GitHub can delay cron up to ~1h on free tier
   schedule:
-    - cron: "0 7,11,15,19,23 * * *"
+    - cron: "15 6,8,10,12,14,16,18,20,22 * * *"
 
 permissions:
   contents: write
@@ -12,20 +12,24 @@ permissions:
 env:
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
   MODEL_DIR: ${{ github.workspace }}/models
-  GEMMA_FILE: gemma-2-2b-it-Q4_K_M.gguf
-  GEMMA_URL: https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
-  TINY_FILE: TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
-  TINY_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+  PHI_FILE: phi-2.Q4_K_M.gguf
+  PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
   VOICE: en-US-ChristopherNeural
-  RATE: "+22%"
+  RATE: "+25%"
   OPENROUTER_MODEL: openrouter/free
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
+
+      - name: schedule-diag
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          date -u
 
       - uses: actions/setup-python@v5
         with:
@@ -56,24 +60,27 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: mark topic seen"
           git push || true
 
-      - name: cache-models
+      - name: cache-phi2
         uses: actions/cache@v4
         with:
           path: ${{ env.MODEL_DIR }}
-          key: gemma2-2b-q4km-tiny-v1
+          key: phi2-q4km-v1
 
-      - name: download-models
+      - name: download-phi2
         run: |
           mkdir -p "$MODEL_DIR"
-          [ -f "$MODEL_DIR/$GEMMA_FILE" ] || curl -L --fail -o "$MODEL_DIR/$GEMMA_FILE" "$GEMMA_URL" || true
-          [ -f "$MODEL_DIR/$TINY_FILE" ] || curl -L --fail -o "$MODEL_DIR/$TINY_FILE" "$TINY_URL" || true
+          if [ ! -f "$MODEL_DIR/$PHI_FILE" ]; then
+            echo "Downloading Phi-2 GGUF..."
+            curl -L --fail -o "$MODEL_DIR/$PHI_FILE" "$PHI_URL" || true
+          fi
+          ls -lh "$MODEL_DIR" || true
 
       - name: script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
-          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
+          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$PHI_FILE" --try-llm --out script_job.json
           python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), len(d.get('script','').split()), 'words')"
           cat script.txt
 

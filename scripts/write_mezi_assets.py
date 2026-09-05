@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
-"""Mike host layers: front, side walk, point, present (open arms)."""
+"""Mike: tall geometric figure (wireframe-inspired) with joints, colored, multi-pose."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-W, H = 420, 720
+W, H = 440, 780
+# Mike colors
 HOODIE = (255, 196, 40, 255)
-HOODIE_S = (255, 220, 100, 255)
-HOODIE_D = (230, 165, 25, 255)
-SKIN = (210, 155, 115, 255)
-HAIR = (28, 24, 30, 255)
-PANTS = (40, 44, 58, 255)
-SHOE = (22, 22, 28, 255)
+HOODIE_D = (230, 160, 20, 255)
+HOODIE_L = (255, 220, 100, 255)
+SKIN = (220, 170, 130, 255)
+SKIN_D = (190, 140, 105, 255)
+HAIR = (35, 30, 40, 255)
+PANTS = (45, 50, 65, 255)
+SHOE = (25, 25, 30, 255)
+JOINT = (255, 240, 200, 255)
+JOINT_L = (180, 180, 190, 255)
 WHITE = (255, 255, 255, 255)
-BLACK = (25, 22, 28, 255)
-MOUTH_IN = (95, 35, 45, 255)
+BLACK = (20, 18, 22, 255)
+MOUTH_IN = (120, 45, 55, 255)
 TEETH = (250, 245, 240, 255)
 
 CX = W // 2
-CY = 400
-HY = CY - 70
-MOUTH_Y = HY + 26
 
 
 def blank():
@@ -33,130 +35,267 @@ def oval(d, xy, fill, outline=None, width=2):
     d.ellipse(xy, fill=fill, outline=outline, width=width if outline else 0)
 
 
-def limb(d, x0, y0, x1, y1, width, color):
+def joint(d, x, y, r=9):
+    oval(d, [x - r, y - r, x + r, y + r], JOINT, JOINT_L, 2)
+
+
+def limb_seg(d, x0, y0, x1, y1, width, color):
     d.line([(x0, y0), (x1, y1)], fill=color, width=width)
-    r = max(width // 2, 4)
+    r = max(width // 2, 3)
     oval(d, [x0 - r, y0 - r, x0 + r, y0 + r], color)
     oval(d, [x1 - r, y1 - r, x1 + r, y1 + r], color)
 
 
-def draw_head_front(d, cx, hy):
-    oval(d, [cx - 58, hy - 66, cx + 58, hy + 10], HAIR)
-    oval(d, [cx - 50, hy - 50, cx + 50, hy + 46], SKIN)
-    oval(d, [cx - 56, hy - 76, cx + 56, hy - 8], HAIR)
-    oval(d, [cx - 46, hy - 28, cx + 46, hy + 40], SKIN)
-    for ox, oy, r in [(-34, -74, 18), (-4, -84, 20), (18, -84, 20), (38, -74, 16)]:
-        oval(d, [cx + ox - r, hy + oy - r // 2, cx + ox + r, hy + oy + r], HAIR)
-    oval(d, [cx - 62, hy - 6, cx - 46, hy + 20], SKIN)
-    oval(d, [cx + 46, hy - 6, cx + 62, hy + 20], SKIN)
-    ey = hy - 4
-    oval(d, [cx - 30, ey - 12, cx - 8, ey + 10], WHITE, BLACK, 3)
-    oval(d, [cx + 8, ey - 12, cx + 30, ey + 10], WHITE, BLACK, 3)
-    oval(d, [cx - 24, ey - 4, cx - 14, ey + 6], BLACK)
-    oval(d, [cx + 14, ey - 4, cx + 24, ey + 6], BLACK)
+def head_front(d, cx, hy, expr: str = "neutral"):
+    # tall angular head like the sketch
+    oval(d, [cx - 42, hy - 58, cx + 42, hy + 38], SKIN)
+    # hair spike
+    d.polygon(
+        [(cx - 30, hy - 40), (cx - 8, hy - 78), (cx + 5, hy - 45),
+         (cx + 18, hy - 72), (cx + 32, hy - 42), (cx + 38, hy - 20),
+         (cx - 38, hy - 20)],
+        fill=HAIR,
+    )
+    oval(d, [cx - 44, hy - 50, cx + 44, hy - 8], HAIR)
+    # ears
+    oval(d, [cx - 52, hy - 8, cx - 38, hy + 16], SKIN)
+    oval(d, [cx + 38, hy - 8, cx + 52, hy + 16], SKIN)
+    # brows / eyes by expression
+    ey = hy - 8
+    if expr == "confused":
+        d.line([(cx - 28, ey - 14), (cx - 10, ey - 8)], fill=BLACK, width=3)
+        d.line([(cx + 10, ey - 10), (cx + 28, ey - 16)], fill=BLACK, width=3)
+    elif expr == "question":
+        d.line([(cx - 28, ey - 16), (cx - 10, ey - 12)], fill=BLACK, width=3)
+        d.line([(cx + 10, ey - 12), (cx + 28, ey - 16)], fill=BLACK, width=3)
+    elif expr in ("happy", "giggle", "encouraging", "welcoming"):
+        d.arc([cx - 30, ey - 18, cx - 8, ey - 4], 200, 340, fill=BLACK, width=3)
+        d.arc([cx + 8, ey - 18, cx + 30, ey - 4], 200, 340, fill=BLACK, width=3)
+    else:
+        d.line([(cx - 28, ey - 14), (cx - 10, ey - 14)], fill=BLACK, width=3)
+        d.line([(cx + 10, ey - 14), (cx + 28, ey - 14)], fill=BLACK, width=3)
+
+    if expr == "blink":
+        d.line([(cx - 26, ey), (cx - 10, ey)], fill=BLACK, width=3)
+        d.line([(cx + 10, ey), (cx + 26, ey)], fill=BLACK, width=3)
+    elif expr in ("happy", "giggle"):
+        d.arc([cx - 28, ey - 2, cx - 8, ey + 12], 200, 340, fill=BLACK, width=3)
+        d.arc([cx + 8, ey - 2, cx + 28, ey + 12], 200, 340, fill=BLACK, width=3)
+    else:
+        oval(d, [cx - 26, ey - 10, cx - 8, ey + 10], WHITE, BLACK, 2)
+        oval(d, [cx + 8, ey - 10, cx + 26, ey + 10], WHITE, BLACK, 2)
+        # pupils look slightly inward
+        oval(d, [cx - 20, ey - 4, cx - 12, ey + 4], BLACK)
+        oval(d, [cx + 12, ey - 4, cx + 20, ey + 4], BLACK)
+
+    # nose angular
+    d.polygon([(cx, hy + 4), (cx - 6, hy + 18), (cx + 6, hy + 18)], fill=SKIN_D)
 
 
-def draw_head_side(d, cx, hy, facing: str = "left"):
-    """Side profile: one ear, one eye, nose toward direction of travel."""
-    # facing left means nose points left (walk toward left of screen)
+def head_side(d, cx, hy, facing: str = "left"):
     sign = -1 if facing == "left" else 1
-    # hair
-    oval(d, [cx - 48, hy - 70, cx + 48, hy + 8], HAIR)
-    oval(d, [cx - 42, hy - 52, cx + 42, hy + 44], SKIN)
-    oval(d, [cx - 50, hy - 78, cx + 40, hy - 10], HAIR)
-    # ear (visible on side)
-    ear_x = cx - sign * 40
-    oval(d, [ear_x - 12, hy - 8, ear_x + 12, hy + 22], SKIN, BLACK, 2)
-    oval(d, [ear_x - 6, hy - 2, ear_x + 6, hy + 14], (190, 140, 105, 255))
-    # eye
-    eye_x = cx + sign * 12
-    oval(d, [eye_x - 10, hy - 14, eye_x + 10, hy + 8], WHITE, BLACK, 2)
-    oval(d, [eye_x - 4, hy - 6, eye_x + 4, hy + 2], BLACK)
-    # nose tip
-    nx = cx + sign * 38
-    oval(d, [nx - 6, hy + 2, nx + 6, hy + 16], SKIN)
+    oval(d, [cx - 36, hy - 55, cx + 36, hy + 36], SKIN)
+    d.polygon(
+        [(cx - 20, hy - 40), (cx + sign * 5, hy - 75), (cx + 20, hy - 38)],
+        fill=HAIR,
+    )
+    oval(d, [cx - 38, hy - 48, cx + 30, hy - 5], HAIR)
+    # ear
+    ex = cx - sign * 32
+    oval(d, [ex - 10, hy - 6, ex + 10, hy + 20], SKIN, BLACK, 2)
+    # one eye
+    eye_x = cx + sign * 10
+    oval(d, [eye_x - 9, hy - 12, eye_x + 9, hy + 6], WHITE, BLACK, 2)
+    oval(d, [eye_x - 3, hy - 5, eye_x + 3, hy + 1], BLACK)
+    # nose
+    nx = cx + sign * 34
+    oval(d, [nx - 5, hy + 2, nx + 5, hy + 16], SKIN_D)
 
 
-def draw_body(mode: str = "front") -> Image.Image:
+def torso(d, cx, ty, tw=70, th=110):
+    # diamond-ish geometric torso like sketch
+    d.polygon(
+        [
+            (cx, ty),
+            (cx + tw // 2 + 8, ty + 28),
+            (cx + tw // 2, ty + th),
+            (cx - tw // 2, ty + th),
+            (cx - tw // 2 - 8, ty + 28),
+        ],
+        fill=HOODIE,
+    )
+    d.polygon(
+        [
+            (cx, ty + 18),
+            (cx + 22, ty + 40),
+            (cx + 18, ty + th - 10),
+            (cx - 18, ty + th - 10),
+            (cx - 22, ty + 40),
+        ],
+        fill=HOODIE_L,
+    )
+
+
+def draw_pose(mode: str = "stand", expr: str = "neutral") -> Image.Image:
     img = blank()
     d = ImageDraw.Draw(img)
-    cx, cy, hy = CX, CY, HY
+    cx = CX
+    # vertical layout — tall like sketch
+    hy = 175  # head center
+    neck_y = 225
+    shoulder_y = 250
+    hip_y = 380
+    knee_y = 520
+    foot_y = 650
 
-    oval(d, [cx - 60, cy + 155, cx + 60, cy + 178], (0, 0, 0, 40))
+    # shadow
+    oval(d, [cx - 55, foot_y + 8, cx + 55, foot_y + 28], (0, 0, 0, 35))
 
     if mode == "side_left":
-        # legs staggered (walk)
-        limb(d, cx - 6, cy + 78, cx - 28, cy + 155, 26, PANTS)
-        limb(d, cx + 8, cy + 78, cx + 22, cy + 150, 26, PANTS)
-        oval(d, [cx - 48, cy + 148, cx - 8, cy + 176], SHOE)
-        oval(d, [cx + 4, cy + 142, cx + 44, cy + 172], SHOE)
-        d.rounded_rectangle([cx - 36, cy + 2, cx + 36, cy + 92], 22, fill=HOODIE)
-        # near arm swing back, far arm forward
-        limb(d, cx + 10, cy + 28, cx + 40, cy + 80, 24, HOODIE)
-        oval(d, [cx + 32, cy + 72, cx + 56, cy + 96], SKIN)
-        limb(d, cx - 8, cy + 30, cx - 45, cy + 20, 24, HOODIE)
-        oval(d, [cx - 58, cy + 8, cx - 34, cy + 32], SKIN)
-        d.rectangle([cx - 16, cy - 6, cx + 16, cy + 16], fill=SKIN)
-        draw_head_side(d, cx, hy, "left")
+        # walk cycle left-facing
+        # back leg
+        limb_seg(d, cx + 5, hip_y, cx + 18, knee_y - 10, 16, PANTS)
+        limb_seg(d, cx + 18, knee_y - 10, cx + 30, foot_y - 5, 14, PANTS)
+        joint(d, cx + 18, knee_y - 10, 7)
+        oval(d, [cx + 18, foot_y - 12, cx + 52, foot_y + 8], SHOE)
+        # front leg
+        limb_seg(d, cx - 5, hip_y, cx - 22, knee_y + 5, 16, PANTS)
+        limb_seg(d, cx - 22, knee_y + 5, cx - 35, foot_y, 14, PANTS)
+        joint(d, cx - 22, knee_y + 5, 7)
+        oval(d, [cx - 55, foot_y - 8, cx - 18, foot_y + 12], SHOE)
+        torso(d, cx, shoulder_y, 58, 120)
+        joint(d, cx, hip_y, 8)
+        # arms swing opposite
+        limb_seg(d, cx + 20, shoulder_y + 15, cx + 40, shoulder_y + 90, 14, HOODIE)
+        joint(d, cx + 40, shoulder_y + 90, 6)
+        limb_seg(d, cx + 40, shoulder_y + 90, cx + 48, shoulder_y + 140, 12, SKIN)
+        limb_seg(d, cx - 18, shoulder_y + 15, cx - 50, shoulder_y + 50, 14, HOODIE)
+        joint(d, cx - 50, shoulder_y + 50, 6)
+        limb_seg(d, cx - 50, shoulder_y + 50, cx - 58, shoulder_y + 20, 12, SKIN)
+        joint(d, cx - 20, shoulder_y + 12, 7)
+        joint(d, cx + 20, shoulder_y + 12, 7)
+        # neck
+        d.rectangle([cx - 10, neck_y, cx + 10, shoulder_y + 8], fill=SKIN)
+        joint(d, cx, neck_y + 5, 6)
+        head_side(d, cx, hy, "left")
 
     elif mode == "side_right":
-        limb(d, cx + 6, cy + 78, cx + 28, cy + 155, 26, PANTS)
-        limb(d, cx - 8, cy + 78, cx - 22, cy + 150, 26, PANTS)
-        oval(d, [cx + 8, cy + 148, cx + 48, cy + 176], SHOE)
-        oval(d, [cx - 44, cy + 142, cx - 4, cy + 172], SHOE)
-        d.rounded_rectangle([cx - 36, cy + 2, cx + 36, cy + 92], 22, fill=HOODIE)
-        limb(d, cx - 10, cy + 28, cx - 40, cy + 80, 24, HOODIE)
-        oval(d, [cx - 56, cy + 72, cx - 32, cy + 96], SKIN)
-        limb(d, cx + 8, cy + 30, cx + 45, cy + 20, 24, HOODIE)
-        oval(d, [cx + 34, cy + 8, cx + 58, cy + 32], SKIN)
-        d.rectangle([cx - 16, cy - 6, cx + 16, cy + 16], fill=SKIN)
-        draw_head_side(d, cx, hy, "right")
+        limb_seg(d, cx - 5, hip_y, cx - 18, knee_y - 10, 16, PANTS)
+        limb_seg(d, cx - 18, knee_y - 10, cx - 30, foot_y - 5, 14, PANTS)
+        joint(d, cx - 18, knee_y - 10, 7)
+        oval(d, [cx - 52, foot_y - 12, cx - 18, foot_y + 8], SHOE)
+        limb_seg(d, cx + 5, hip_y, cx + 22, knee_y + 5, 16, PANTS)
+        limb_seg(d, cx + 22, knee_y + 5, cx + 35, foot_y, 14, PANTS)
+        joint(d, cx + 22, knee_y + 5, 7)
+        oval(d, [cx + 18, foot_y - 8, cx + 55, foot_y + 12], SHOE)
+        torso(d, cx, shoulder_y, 58, 120)
+        joint(d, cx, hip_y, 8)
+        limb_seg(d, cx - 20, shoulder_y + 15, cx - 40, shoulder_y + 90, 14, HOODIE)
+        joint(d, cx - 40, shoulder_y + 90, 6)
+        limb_seg(d, cx - 40, shoulder_y + 90, cx - 48, shoulder_y + 140, 12, SKIN)
+        limb_seg(d, cx + 18, shoulder_y + 15, cx + 50, shoulder_y + 50, 14, HOODIE)
+        joint(d, cx + 50, shoulder_y + 50, 6)
+        limb_seg(d, cx + 50, shoulder_y + 50, cx + 58, shoulder_y + 20, 12, SKIN)
+        joint(d, cx - 20, shoulder_y + 12, 7)
+        joint(d, cx + 20, shoulder_y + 12, 7)
+        d.rectangle([cx - 10, neck_y, cx + 10, shoulder_y + 8], fill=SKIN)
+        joint(d, cx, neck_y + 5, 6)
+        head_side(d, cx, hy, "right")
 
     elif mode == "point":
-        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
-        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
-        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
-        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
-        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
-        # arm up-right pointing
-        limb(d, cx + 40, cy + 28, cx + 105, cy - 30, 26, HOODIE)
-        oval(d, [cx + 96, cy - 48, cx + 122, cy - 22], SKIN)
-        limb(d, cx + 114, cy - 36, cx + 145, cy - 55, 11, SKIN)
-        limb(d, cx - 40, cy + 32, cx - 70, cy + 88, 24, HOODIE)
-        oval(d, [cx - 88, cy + 78, cx - 64, cy + 102], SKIN)
-        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
-        draw_head_front(d, cx, hy)
+        limb_seg(d, cx - 14, hip_y, cx - 14, knee_y, 16, PANTS)
+        limb_seg(d, cx - 14, knee_y, cx - 14, foot_y, 14, PANTS)
+        limb_seg(d, cx + 14, hip_y, cx + 14, knee_y, 16, PANTS)
+        limb_seg(d, cx + 14, knee_y, cx + 14, foot_y, 14, PANTS)
+        joint(d, cx - 14, knee_y, 7)
+        joint(d, cx + 14, knee_y, 7)
+        oval(d, [cx - 36, foot_y - 8, cx + 2, foot_y + 12], SHOE)
+        oval(d, [cx - 2, foot_y - 8, cx + 36, foot_y + 12], SHOE)
+        torso(d, cx, shoulder_y, 70, 115)
+        joint(d, cx, hip_y, 8)
+        # left arm rest
+        limb_seg(d, cx - 28, shoulder_y + 18, cx - 55, shoulder_y + 100, 14, HOODIE)
+        joint(d, cx - 55, shoulder_y + 100, 6)
+        limb_seg(d, cx - 55, shoulder_y + 100, cx - 60, shoulder_y + 145, 12, SKIN)
+        # right arm point up-right
+        limb_seg(d, cx + 28, shoulder_y + 18, cx + 85, shoulder_y - 20, 15, HOODIE)
+        joint(d, cx + 85, shoulder_y - 20, 7)
+        limb_seg(d, cx + 85, shoulder_y - 20, cx + 130, shoulder_y - 55, 12, SKIN)
+        # finger
+        limb_seg(d, cx + 130, shoulder_y - 55, cx + 155, shoulder_y - 70, 6, SKIN)
+        joint(d, cx - 28, shoulder_y + 14, 7)
+        joint(d, cx + 28, shoulder_y + 14, 7)
+        d.rectangle([cx - 11, neck_y, cx + 11, shoulder_y + 10], fill=SKIN)
+        joint(d, cx, neck_y + 5, 6)
+        head_front(d, cx, hy, expr)
 
     elif mode == "present":
-        # open arms, teacher stage pose
-        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
-        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
-        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
-        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
-        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
-        limb(d, cx - 42, cy + 30, cx - 100, cy + 10, 26, HOODIE)
-        oval(d, [cx - 118, cy - 2, cx - 92, cy + 24], SKIN)
-        limb(d, cx + 42, cy + 30, cx + 100, cy + 10, 26, HOODIE)
-        oval(d, [cx + 92, cy - 2, cx + 118, cy + 24], SKIN)
-        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
-        draw_head_front(d, cx, hy)
+        limb_seg(d, cx - 14, hip_y, cx - 14, knee_y, 16, PANTS)
+        limb_seg(d, cx - 14, knee_y, cx - 14, foot_y, 14, PANTS)
+        limb_seg(d, cx + 14, hip_y, cx + 14, knee_y, 16, PANTS)
+        limb_seg(d, cx + 14, knee_y, cx + 14, foot_y, 14, PANTS)
+        joint(d, cx - 14, knee_y, 7)
+        joint(d, cx + 14, knee_y, 7)
+        oval(d, [cx - 36, foot_y - 8, cx + 2, foot_y + 12], SHOE)
+        oval(d, [cx - 2, foot_y - 8, cx + 36, foot_y + 12], SHOE)
+        torso(d, cx, shoulder_y, 70, 115)
+        joint(d, cx, hip_y, 8)
+        limb_seg(d, cx - 30, shoulder_y + 18, cx - 95, shoulder_y + 40, 15, HOODIE)
+        joint(d, cx - 95, shoulder_y + 40, 7)
+        limb_seg(d, cx - 95, shoulder_y + 40, cx - 115, shoulder_y + 15, 12, SKIN)
+        limb_seg(d, cx + 30, shoulder_y + 18, cx + 95, shoulder_y + 40, 15, HOODIE)
+        joint(d, cx + 95, shoulder_y + 40, 7)
+        limb_seg(d, cx + 95, shoulder_y + 40, cx + 115, shoulder_y + 15, 12, SKIN)
+        joint(d, cx - 28, shoulder_y + 14, 7)
+        joint(d, cx + 28, shoulder_y + 14, 7)
+        d.rectangle([cx - 11, neck_y, cx + 11, shoulder_y + 10], fill=SKIN)
+        joint(d, cx, neck_y + 5, 6)
+        head_front(d, cx, hy, expr if expr != "neutral" else "welcoming")
 
-    else:  # front talk
-        limb(d, cx - 16, cy + 78, cx - 16, cy + 155, 26, PANTS)
-        limb(d, cx + 16, cy + 78, cx + 16, cy + 155, 26, PANTS)
-        oval(d, [cx - 38, cy + 148, cx + 2, cy + 176], SHOE)
-        oval(d, [cx - 2, cy + 148, cx + 38, cy + 176], SHOE)
-        d.rounded_rectangle([cx - 50, cy + 2, cx + 50, cy + 92], 24, fill=HOODIE)
-        d.rounded_rectangle([cx - 34, cy + 28, cx + 34, cy + 82], 16, fill=HOODIE_S)
-        oval(d, [cx - 12, cy + 22, cx + 12, cy + 44], None, BLACK, 3)
-        limb(d, cx - 40, cy + 30, cx - 70, cy + 88, 24, HOODIE)
-        limb(d, cx + 40, cy + 30, cx + 70, cy + 88, 24, HOODIE)
-        oval(d, [cx - 88, cy + 78, cx - 64, cy + 102], SKIN)
-        oval(d, [cx + 64, cy + 78, cx + 88, cy + 102], SKIN)
-        d.rectangle([cx - 18, cy - 6, cx + 18, cy + 16], fill=SKIN)
-        draw_head_front(d, cx, hy)
+    elif mode == "sit":
+        # seated on imaginary stool
+        sit_hip = 480
+        limb_seg(d, cx - 20, sit_hip, cx - 55, sit_hip + 20, 16, PANTS)
+        limb_seg(d, cx - 55, sit_hip + 20, cx - 70, sit_hip + 90, 14, PANTS)
+        limb_seg(d, cx + 20, sit_hip, cx + 55, sit_hip + 20, 16, PANTS)
+        limb_seg(d, cx + 55, sit_hip + 20, cx + 70, sit_hip + 90, 14, PANTS)
+        joint(d, cx - 55, sit_hip + 20, 7)
+        joint(d, cx + 55, sit_hip + 20, 7)
+        oval(d, [cx - 90, sit_hip + 82, cx - 55, sit_hip + 105], SHOE)
+        oval(d, [cx + 55, sit_hip + 82, cx + 90, sit_hip + 105], SHOE)
+        torso(d, cx, shoulder_y + 40, 72, 110)
+        joint(d, cx, sit_hip, 8)
+        limb_seg(d, cx - 30, shoulder_y + 55, cx - 50, shoulder_y + 130, 14, HOODIE)
+        limb_seg(d, cx + 30, shoulder_y + 55, cx + 50, shoulder_y + 130, 14, HOODIE)
+        joint(d, cx - 50, shoulder_y + 130, 6)
+        joint(d, cx + 50, shoulder_y + 130, 6)
+        limb_seg(d, cx - 50, shoulder_y + 130, cx - 45, shoulder_y + 165, 12, SKIN)
+        limb_seg(d, cx + 50, shoulder_y + 130, cx + 45, shoulder_y + 165, 12, SKIN)
+        d.rectangle([cx - 11, neck_y + 35, cx + 11, shoulder_y + 50], fill=SKIN)
+        head_front(d, cx, hy + 30, expr)
+
+    else:  # stand / talk
+        limb_seg(d, cx - 14, hip_y, cx - 14, knee_y, 16, PANTS)
+        limb_seg(d, cx - 14, knee_y, cx - 14, foot_y, 14, PANTS)
+        limb_seg(d, cx + 14, hip_y, cx + 14, knee_y, 16, PANTS)
+        limb_seg(d, cx + 14, knee_y, cx + 14, foot_y, 14, PANTS)
+        joint(d, cx - 14, knee_y, 7)
+        joint(d, cx + 14, knee_y, 7)
+        joint(d, cx, hip_y, 8)
+        oval(d, [cx - 36, foot_y - 8, cx + 2, foot_y + 12], SHOE)
+        oval(d, [cx - 2, foot_y - 8, cx + 36, foot_y + 12], SHOE)
+        torso(d, cx, shoulder_y, 70, 115)
+        limb_seg(d, cx - 28, shoulder_y + 18, cx - 48, shoulder_y + 110, 14, HOODIE)
+        limb_seg(d, cx + 28, shoulder_y + 18, cx + 48, shoulder_y + 110, 14, HOODIE)
+        joint(d, cx - 48, shoulder_y + 110, 6)
+        joint(d, cx + 48, shoulder_y + 110, 6)
+        limb_seg(d, cx - 48, shoulder_y + 110, cx - 52, shoulder_y + 155, 12, SKIN)
+        limb_seg(d, cx + 48, shoulder_y + 110, cx + 52, shoulder_y + 155, 12, SKIN)
+        joint(d, cx - 28, shoulder_y + 14, 7)
+        joint(d, cx + 28, shoulder_y + 14, 7)
+        d.rectangle([cx - 11, neck_y, cx + 11, shoulder_y + 10], fill=SKIN)
+        joint(d, cx, neck_y + 5, 6)
+        head_front(d, cx, hy, expr)
 
     return img
 
@@ -164,46 +303,47 @@ def draw_body(mode: str = "front") -> Image.Image:
 def draw_mouth(kind: str) -> Image.Image:
     img = blank()
     d = ImageDraw.Draw(img)
-    cx, my = CX, MOUTH_Y
+    cx, my = CX, 200  # aligns under front head
     if kind == "closed":
-        d.arc([cx - 12, my - 3, cx + 12, my + 9], 25, 155, fill=BLACK, width=3)
+        d.arc([cx - 14, my - 2, cx + 14, my + 12], 20, 160, fill=BLACK, width=3)
     elif kind == "open":
-        oval(d, [cx - 10, my - 1, cx + 10, my + 13], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 7, my + 1, cx + 7, my + 5], TEETH)
+        oval(d, [cx - 12, my, cx + 12, my + 16], MOUTH_IN, BLACK, 2)
+        oval(d, [cx - 8, my + 2, cx + 8, my + 6], TEETH)
+    elif kind == "smile":
+        d.arc([cx - 16, my - 4, cx + 16, my + 14], 15, 165, fill=BLACK, width=3)
     else:
-        oval(d, [cx - 13, my - 1, cx + 13, my + 16], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 9, my + 1, cx + 9, my + 5], TEETH)
-    return img
-
-
-def draw_eyes_laugh() -> Image.Image:
-    img = blank()
-    d = ImageDraw.Draw(img)
-    cx, hy = CX, HY
-    ey = hy - 4
-    d.arc([cx - 30, ey - 2, cx - 8, ey + 10], 200, 340, fill=BLACK, width=4)
-    d.arc([cx + 8, ey - 2, cx + 30, ey + 10], 200, 340, fill=BLACK, width=4)
+        oval(d, [cx - 14, my, cx + 14, my + 20], MOUTH_IN, BLACK, 2)
+        oval(d, [cx - 10, my + 2, cx + 10, my + 6], TEETH)
     return img
 
 
 def main() -> None:
     out = Path(__file__).resolve().parents[1] / "assets" / "mezi"
     out.mkdir(parents=True, exist_ok=True)
-    items = {
-        "body.png": draw_body("front"),
-        "body_side_left.png": draw_body("side_left"),
-        "body_side_right.png": draw_body("side_right"),
-        "arm_point.png": draw_body("point"),
-        "body_present.png": draw_body("present"),
-        "mouth_closed.png": draw_mouth("closed"),
-        "mouth_open.png": draw_mouth("open"),
-        "mouth_wide.png": draw_mouth("wide"),
-        "eyes_laugh.png": draw_eyes_laugh(),
+    poses = {
+        "body.png": ("stand", "neutral"),
+        "body_side_left.png": ("side_left", "neutral"),
+        "body_side_right.png": ("side_right", "neutral"),
+        "arm_point.png": ("point", "encouraging"),
+        "body_present.png": ("present", "welcoming"),
+        "body_sit.png": ("sit", "neutral"),
+        "body_happy.png": ("stand", "happy"),
+        "body_question.png": ("stand", "question"),
+        "body_confused.png": ("stand", "confused"),
+        "body_blink.png": ("stand", "blink"),
     }
-    for name, im in items.items():
-        path = out / name
-        im.save(path, "PNG")
-        print("wrote", path)
+    for name, (mode, expr) in poses.items():
+        im = draw_pose(mode, expr)
+        im.save(out / name, "PNG")
+        print("wrote", name)
+    for kind, fname in [
+        ("closed", "mouth_closed.png"),
+        ("open", "mouth_open.png"),
+        ("wide", "mouth_wide.png"),
+        ("smile", "mouth_smile.png"),
+    ]:
+        draw_mouth(kind).save(out / fname, "PNG")
+        print("wrote", fname)
 
 
 if __name__ == "__main__":
