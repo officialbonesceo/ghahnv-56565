@@ -1,4 +1,4 @@
-name: Render talking clip
+name: qxil-job
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   ACTIONS: talk,walk,point,laugh
 
 jobs:
-  render:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -27,63 +27,64 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: System deps
+      - name: deps-sys
         run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip fonts-dejavu-core
 
-      - name: Python deps
+      - name: deps-py
         run: |
           pip install --upgrade pip
           pip install edge-tts Pillow requests
           pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python || true
 
-      - name: Build MEZI sprites
+      - name: host-layers
         run: python scripts/write_mezi_assets.py
 
-      - name: Fetch topic
+      - name: topic
         run: python scripts/fetch_topics.py topic.json
 
-      - name: Cache TinyLlama
+      - name: cache-model
         uses: actions/cache@v4
         with:
           path: ${{ env.MODEL_DIR }}
           key: tinyllama-q4km-v1
 
-      - name: Download TinyLlama GGUF
+      - name: model
         run: |
           mkdir -p "$MODEL_DIR"
           if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
             curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || true
           fi
-          ls -lh "$MODEL_DIR" || true
 
-      - name: Generate script
+      - name: script
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$MODEL_FILE" --try-llm --out script_job.json
-          echo INTRO:; cat intro.txt || true
-          echo BODY:; cat script.txt
+          cat script.txt
 
-      - name: Edge TTS body
+      - name: tts
         run: |
           python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
 
-      - name: Cache Rhubarb
+      - name: cache-lips
         uses: actions/cache@v4
         with:
           path: ${{ env.RHUBARB_DIR }}
           key: rhubarb-1-13-0-linux
 
-      - name: Install Rhubarb
+      - name: lips-bin
         run: bash scripts/ci_install_rhubarb.sh
 
-      - name: Rhubarb lip cues
+      - name: lips
         continue-on-error: true
         run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: Render classroom board
+      - name: board-art
+        run: python scripts/board_refs.py || true
+
+      - name: render
         run: bash scripts/ci_render.sh
 
-      - name: Buffer list channels and optional post
+      - name: buffer
         continue-on-error: true
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
@@ -91,14 +92,13 @@ jobs:
           VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
         run: python scripts/upload_buffer.py
 
-      - name: Upload artifact
+      - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: mezi-tiktok
+          name: qxil-out
           path: |
             output.mp4
             script.txt
-            intro.txt
             script_job.json
             topic.json
             speech.mp3
@@ -106,4 +106,4 @@ jobs:
             buffer_result.json
             title_short.txt
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
