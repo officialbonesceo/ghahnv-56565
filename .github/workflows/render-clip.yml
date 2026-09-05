@@ -15,7 +15,7 @@ env:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +38,19 @@ jobs:
 
       - name: Generate script
         run: python scripts/generate_script.py --topic topic.json --out script_job.json
+
+      - name: Cache backgrounds
+        uses: actions/cache@v4
+        with:
+          path: assets/bg
+          key: mezi-bg-v1
+
+      - name: Generate background
+        run: |
+          BG=science
+          test -f bg.txt && BG=$(cat bg.txt)
+          python scripts/generate_bg.py --bg "$BG" --out-dir assets/bg
+          cat bg_path.txt || true
 
       - name: Edge TTS
         run: |
@@ -72,5 +85,6 @@ jobs:
             speech.mp3
             mouth.json
             bg.txt
+            bg_path.txt
           if-no-files-found: error
           retention-days: 7

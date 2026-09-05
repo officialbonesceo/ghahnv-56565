@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEZI sprite compositor: body + mouth layers + bg + Ken Burns."""
+"""MEZI compositor: Pollinations/drawn bg, Ken Burns, karaoke captions, sprites."""
 from __future__ import annotations
 
 import argparse
@@ -11,13 +11,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
 W, H = 720, 1280
 FPS = 12
 HOODIE = (255, 196, 40)
 WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
+GLOW = (255, 220, 80)
 MOUTH = {
     "X": 0.02, "A": 1.0, "B": 0.08, "C": 0.55,
     "D": 0.7, "E": 0.85, "F": 0.4, "G": 0.9, "H": 1.0,
@@ -32,7 +33,7 @@ def asset_dir() -> Path:
 def load_rgba(name: str) -> Image.Image:
     p = asset_dir() / name
     if not p.exists():
-        raise SystemExit(f"missing sprite {p} - run scripts/write_mezi_assets.py")
+        raise SystemExit(f"missing sprite {p}")
     return Image.open(p).convert("RGBA")
 
 
@@ -75,58 +76,147 @@ def action_at(t, duration, actions):
     return actions[min(int(t / seg), len(actions) - 1)]
 
 
-def make_bg(kind: str) -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.2)
+def make_drawn_bg(kind: str) -> Image.Image:
+    bw, bh = int(W * 1.25), int(H * 1.25)
     img = Image.new("RGB", (bw, bh))
     d = ImageDraw.Draw(img)
-    k = (kind or "studio").lower().strip()
+    k = (kind or "science").lower()
     rnd = random.Random(hash(k) & 0xFFFFFFFF)
     if k == "space":
         for y in range(bh):
             c = 6 + y // 80
             d.line([(0, y), (bw, y)], fill=(c, c + 2, 18 + c))
-        for _ in range(220):
+        for _ in range(250):
             x, y = rnd.randint(0, bw - 1), rnd.randint(0, bh - 1)
-            r = rnd.choice([1, 1, 2, 2, 3])
+            r = rnd.choice([1, 1, 2, 3])
             b = rnd.randint(180, 255)
             d.ellipse([x, y, x + r, y + r], fill=(b, b, 255))
-        d.ellipse([bw - 280, 120, bw - 40, 360], fill=(50, 80, 160))
     elif k == "ocean":
-        for y in range(int(bh * 0.42)):
-            d.line([(0, y), (bw, y)], fill=(120 + y // 30, 190, 235))
-        for y in range(int(bh * 0.42), bh):
-            depth = y - int(bh * 0.42)
-            d.line([(0, y), (bw, y)], fill=(15, 70 + depth // 20, 120))
-    elif k == "money":
-        d.rectangle([0, 0, bw, bh], fill=(236, 250, 236))
-        d.rectangle([0, int(bh * 0.68), bw, bh], fill=(25, 110, 65))
+        for y in range(bh):
+            if y < bh * 0.4:
+                d.line([(0, y), (bw, y)], fill=(120, 190, 235))
+            else:
+                d.line([(0, y), (bw, y)], fill=(15, 80, 130))
+    elif k == "nature":
+        for y in range(bh):
+            d.line([(0, y), (bw, y)], fill=(255 - y // 20, 180 - y // 40, 120))
+        d.polygon([(0, bh), (bw // 3, bh // 2), (bw, bh)], fill=(60, 90, 50))
     elif k == "tech":
         d.rectangle([0, 0, bw, bh], fill=(12, 18, 32))
-        for x in range(0, bw, 40):
-            d.line([(x, 0), (x, bh)], fill=(25, 40, 60))
-        for i in range(12):
-            x = 40 + i * 60
-            d.rectangle([x, 160, x + 40, 280], outline=(0, 220, 255), width=2)
-    elif k == "science":
-        d.rectangle([0, 0, bw, bh], fill=(220, 238, 255))
-        d.ellipse([bw - 260, 40, bw - 40, 260], fill=(255, 210, 70))
-        d.rectangle([0, int(bh * 0.72), bw, bh], fill=(160, 210, 160))
+        for x in range(0, bw, 36):
+            d.line([(x, 0), (x, bh)], fill=(30, 50, 70))
     else:
-        d.rectangle([0, 0, bw, int(bh * 0.6)], fill=(245, 240, 230))
-        d.rectangle([0, int(bh * 0.6), bw, bh], fill=(200, 190, 175))
-        d.rounded_rectangle([60, 80, 300, 320], 20, fill=(160, 210, 245), outline=(100, 140, 170), width=5)
+        for y in range(bh):
+            d.line([(0, y), (bw, y)], fill=(220, 235, 250))
+        d.ellipse([bw - 280, 40, bw - 40, 280], fill=(255, 210, 80))
     return img
 
 
-def crop_ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
+def load_bg(kind: str, bg_path: str) -> Image.Image:
+    if bg_path:
+        p = Path(bg_path)
+        if p.exists() and p.stat().st_size > 2000:
+            im = Image.open(p).convert("RGB")
+            # oversize for Ken Burns
+            return im.resize((int(W * 1.25), int(H * 1.25)), Image.Resampling.LANCZOS)
+    return make_drawn_bg(kind)
+
+
+def ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
     progress = min(1.0, t / max(duration, 0.1))
-    scale = 1.0 + 0.12 * progress
+    # ease in-out
+    ease = 0.5 - 0.5 * math.cos(progress * math.pi)
+    scale = 1.0 + 0.18 * ease
     bw, bh = bg.size
     cw, ch = min(int(W * scale), bw), min(int(H * scale), bh)
     max_x, max_y = max(0, bw - cw), max(0, bh - ch)
-    x = int(max_x * progress * 0.85)
-    y = int(max_y * 0.5 * (0.3 + 0.7 * math.sin(progress * math.pi)))
-    return bg.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.BILINEAR)
+    x = int(max_x * ease)
+    y = int(max_y * (1.0 - ease) * 0.6)
+    frame = bg.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
+    # slight vignette
+    vignette = Image.new("RGB", (W, H), (0, 0, 0))
+    mask = Image.new("L", (W, H), 0)
+    md = ImageDraw.Draw(mask)
+    md.ellipse([-W // 5, -H // 8, W + W // 5, H + H // 8], fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(80))
+    frame = Image.composite(frame, ImageEnhance.Brightness(frame).enhance(0.55), mask)
+    return frame
+
+
+def word_windows(text: str, duration: float) -> list[tuple[float, float, list[str], int]]:
+    """Chunks of 3-4 words with time ranges; active index inside chunk."""
+    words = [w for w in text.replace("\n", " ").split() if w]
+    if not words:
+        return [(0, duration, ["..."], 0)]
+    n = len(words)
+    # equal time per word
+    slot = duration / n
+    windows = []
+    i = 0
+    while i < n:
+        chunk = words[i : i + 4]
+        if len(chunk) < 3 and i + len(chunk) < n:
+            chunk = words[i : i + 3]
+        start = i * slot
+        end = min(duration, (i + len(chunk)) * slot)
+        for j in range(len(chunk)):
+            ws = start + j * (end - start) / len(chunk)
+            we = start + (j + 1) * (end - start) / len(chunk)
+            windows.append((ws, we, chunk, j))
+        i += len(chunk)
+    return windows
+
+
+def active_caption(windows, t: float):
+    for ws, we, chunk, j in windows:
+        if ws <= t < we:
+            return chunk, j
+    if windows:
+        return windows[-1][2], windows[-1][3]
+    return [""], 0
+
+
+def draw_karaoke(rgb: Image.Image, text: str, t: float, duration: float, title: str, action: str):
+    d = ImageDraw.Draw(rgb)
+    # title pill
+    f = font(24)
+    ttl = (title or "Mezi")[:34]
+    bb = d.textbbox((0, 0), ttl, font=f)
+    tw = bb[2] - bb[0]
+    d.rounded_rectangle([20, 32, 32 + tw + 16, 78], 14, fill=(0, 0, 0))
+    d.text((28, 40), ttl, font=f, fill=WHITE)
+
+    af = font(15)
+    label = f"MEZI · {action.upper()}"
+    d.rounded_rectangle([W - 185, 40, W - 20, 76], 12, fill=HOODIE)
+    d.text((W - 175, 48), label, font=af, fill=BLACK)
+
+    windows = word_windows(text, duration)
+    chunk, active = active_caption(windows, t)
+    cf = font(36)
+    # measure total width
+    gaps = []
+    total = 0
+    for w in chunk:
+        bb = d.textbbox((0, 0), w, font=cf)
+        ww = bb[2] - bb[0]
+        gaps.append(ww)
+        total += ww + 16
+    total -= 16
+    x0 = max(20, (W - total) // 2)
+    y = H - 160
+    # dark bar
+    d.rounded_rectangle([16, y - 24, W - 16, y + 70], 18, fill=(12, 12, 20))
+    x = x0
+    for i, w in enumerate(chunk):
+        if i == active:
+            # glow layers
+            for ox, oy in [(-2, 0), (2, 0), (0, -2), (0, 2), (0, 0)]:
+                d.text((x + ox, y + oy), w, font=cf, fill=GLOW)
+            d.text((x, y), w, font=cf, fill=WHITE)
+        else:
+            d.text((x, y), w, font=cf, fill=(170, 170, 180))
+        x += gaps[i] + 16
 
 
 def composite_mezi(action: str, mouth_open: float) -> Image.Image:
@@ -138,45 +228,14 @@ def composite_mezi(action: str, mouth_open: float) -> Image.Image:
     return char
 
 
-def draw_ui(d, text, action, title):
-    f = font(26)
-    t = (title or "Mezi")[:36]
-    bb = d.textbbox((0, 0), t, font=f)
-    tw = bb[2] - bb[0]
-    d.rounded_rectangle([24, 36, 36 + tw + 20, 84], 14, fill=(0, 0, 0))
-    d.text((36, 46), t, font=f, fill=WHITE)
-    cf = font(24)
-    words = " ".join(text.split()).split()
-    lines, cur = [], ""
-    for w in words:
-        test = (cur + " " + w).strip()
-        if d.textbbox((0, 0), test, font=cf)[2] > W - 80:
-            lines.append(cur)
-            cur = w
-        else:
-            cur = test
-    if cur:
-        lines.append(cur)
-    lines = lines[:5]
-    box_h = 28 + len(lines) * 30
-    d.rounded_rectangle([24, H - box_h - 36, W - 24, H - 28], 18, fill=(18, 18, 26))
-    y = H - box_h - 20
-    for line in lines:
-        d.text((40, y), line, font=cf, fill=WHITE)
-        y += 30
-    af = font(16)
-    label = f"MEZI · {action.upper()}"
-    d.rounded_rectangle([W - 190, 44, W - 24, 82], 12, fill=HOODIE)
-    d.text((W - 178, 52), label, font=af, fill=BLACK)
-
-
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--audio", required=True)
     p.add_argument("--cues", default="")
     p.add_argument("--text", required=True)
     p.add_argument("--title", default="Mezi")
-    p.add_argument("--bg", default="studio")
+    p.add_argument("--bg", default="science")
+    p.add_argument("--bg-image", default="")
     p.add_argument("--out", default="output_mezi.mp4")
     p.add_argument("--actions", default="talk,walk,point,laugh")
     args = p.parse_args()
@@ -195,8 +254,12 @@ def main():
     actions = [a if a in ALL_ACTIONS else "talk" for a in actions] or list(ALL_ACTIONS)
     cues = load_cues(Path(args.cues)) if args.cues else []
     n = max(FPS, int(math.ceil(duration * FPS)))
-    bg_full = make_bg(args.bg)
-    print(f"SPRITE mode duration={duration:.2f}s frames={n} bg={args.bg} cues={len(cues)}")
+
+    bg_path = args.bg_image
+    if not bg_path and Path("bg_path.txt").exists():
+        bg_path = Path("bg_path.txt").read_text(encoding="utf-8").strip()
+    bg_full = load_bg(args.bg, bg_path)
+    print(f"duration={duration:.2f}s frames={n} bg={args.bg} image={bool(bg_path)} cues={len(cues)}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -204,22 +267,22 @@ def main():
             t = i / float(FPS)
             action = action_at(t, duration, actions)
             phase = t * (2.5 if action == "walk" else 1.2)
-            frame = crop_ken_burns(bg_full, t, duration).convert("RGBA")
+            frame = ken_burns(bg_full, t, duration).convert("RGBA")
             mouth = open_at(cues, t)
             if action == "laugh":
                 mouth = max(mouth, 0.85)
             char = composite_mezi(action, mouth)
-            target_h = int(H * 0.55)
+            target_h = int(H * 0.52)
             scale = target_h / char.height
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
-            bob = int(6 * math.sin(phase * 3))
-            x_off = int(28 * math.sin(t * 1.5)) if action == "walk" else 0
+            bob = int(5 * math.sin(phase * 3))
+            x_off = int(24 * math.sin(t * 1.4)) if action == "walk" else 0
             x = (W - nw) // 2 + x_off
-            y = int(H * 0.22) + bob
+            y = int(H * 0.20) + bob
             frame.paste(char, (x, y), char)
             rgb = frame.convert("RGB")
-            draw_ui(ImageDraw.Draw(rgb), args.text, action, args.title)
+            draw_karaoke(rgb, args.text, t, duration, args.title, action)
             rgb.save(tmp_path / f"frame_{i:05d}.png")
 
         out_mp4 = Path(args.out).resolve()
