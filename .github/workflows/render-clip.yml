@@ -10,15 +10,18 @@ env:
   RHUBARB_VERSION: "1.13.0"
   RHUBARB_DIR: ${{ github.workspace }}/.rhubarb
   MODEL_DIR: ${{ github.workspace }}/models
-  MODEL_FILE: TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
-  MODEL_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+  GEMMA_FILE: gemma-2-2b-it-Q4_K_M.gguf
+  GEMMA_URL: https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
+  TINY_FILE: TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf
+  TINY_URL: https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
   VOICE: en-US-GuyNeural
   ACTIONS: talk,walk,point,laugh
+  OPENROUTER_MODEL: google/gemma-2-2b-it:free
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -42,22 +45,37 @@ jobs:
       - name: topic
         run: python scripts/fetch_topics.py topic.json
 
-      - name: cache-model
+      - name: cache-models
         uses: actions/cache@v4
         with:
           path: ${{ env.MODEL_DIR }}
-          key: tinyllama-q4km-v1
+          key: gemma2-2b-q4km-tiny-v1
 
-      - name: model
+      - name: download-models
         run: |
           mkdir -p "$MODEL_DIR"
-          if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
-            curl -L --fail -o "$MODEL_DIR/$MODEL_FILE" "$MODEL_URL" || true
+          if [ ! -f "$MODEL_DIR/$GEMMA_FILE" ]; then
+            echo "Downloading Gemma 2B..."
+            curl -L --fail -o "$MODEL_DIR/$GEMMA_FILE" "$GEMMA_URL" || true
           fi
+          if [ ! -f "$MODEL_DIR/$TINY_FILE" ]; then
+            echo "Downloading TinyLlama..."
+            curl -L --fail -o "$MODEL_DIR/$TINY_FILE" "$TINY_URL" || true
+          fi
+          ls -lh "$MODEL_DIR" || true
 
       - name: script
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
-          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$MODEL_FILE" --try-llm --out script_job.json
+          python scripts/generate_script.py \
+            --topic topic.json \
+            --model "$MODEL_DIR/$GEMMA_FILE" \
+            --model-fallback "$MODEL_DIR/$TINY_FILE" \
+            --try-llm \
+            --out script_job.json
+          echo ENGINE:; python -c "import json; print(json.load(open('script_job.json')).get('engine'))"
           cat script.txt
 
       - name: tts
@@ -89,6 +107,7 @@ jobs:
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+          BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
           VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
         run: python scripts/upload_buffer.py
 
@@ -103,6 +122,7 @@ jobs:
             topic.json
             speech.mp3
             buffer_channels.json
+            buffer_orgs.json
             buffer_result.json
             title_short.txt
           if-no-files-found: error
