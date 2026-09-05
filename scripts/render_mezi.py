@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classroom + large board (+ optional ref images on board) + host + captions."""
+"""Mike classroom: big board title, Ken Burns pan, captions."""
 from __future__ import annotations
 
 import argparse
@@ -39,8 +39,7 @@ def load_rgba(name: str) -> Image.Image:
 def load_cues(path: Path | None):
     if not path or not path.exists():
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return data.get("mouthCues") or []
+    return json.loads(path.read_text(encoding="utf-8")).get("mouthCues") or []
 
 
 def open_at(cues, t: float) -> float:
@@ -75,76 +74,70 @@ def action_at(t, duration, actions):
     return actions[min(int(t / seg), len(actions) - 1)]
 
 
-def load_board_refs() -> list[Image.Image]:
-    imgs = []
-    p = Path("board_refs.txt")
-    if p.exists():
-        for line in p.read_text(encoding="utf-8").splitlines():
-            fp = Path(line.strip())
-            if fp.exists():
-                try:
-                    imgs.append(Image.open(fp).convert("RGB"))
-                except Exception:
-                    pass
-    for fp in sorted(Path("assets/board").glob("ref*.jpg")) if Path("assets/board").exists() else []:
-        try:
-            imgs.append(Image.open(fp).convert("RGB"))
-        except Exception:
-            pass
-    return imgs[:2]
-
-
-def draw_classroom(topic: str) -> Image.Image:
-    img = Image.new("RGB", (W, H), (245, 236, 220))
+def draw_classroom_large(topic: str) -> Image.Image:
+    """Draw larger than frame so Ken Burns can pan/zoom."""
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (245, 236, 220))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, int(H * 0.72)], fill=(232, 222, 205))
-    d.rectangle([0, int(H * 0.72), W, H], fill=(166, 140, 105))
-    d.line([(0, int(H * 0.72)), (W, int(H * 0.72))], fill=(140, 115, 85), width=3)
+    d.rectangle([0, 0, bw, int(bh * 0.72)], fill=(232, 222, 205))
+    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(166, 140, 105))
 
-    bx0, by0, bx1, by1 = 28, 56, W - 28, int(H * 0.50)
-    d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 14, fill=(90, 70, 45))
-    d.rounded_rectangle([bx0, by0, bx1, by1], 10, fill=(34, 85, 55))
+    bx0, by0 = 40, 70
+    bx1, by1 = bw - 40, int(bh * 0.48)
+    d.rounded_rectangle([bx0 - 12, by0 - 12, bx1 + 12, by1 + 12], 16, fill=(90, 70, 45))
+    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=(34, 85, 55))
 
-    # topic title on board
-    tf = font(36)
-    words = (topic or "Lesson").split()
+    # Large chalk title — always visible
+    topic = (topic or "Today's lesson").strip() or "Today's lesson"
+    tf = font(52)
+    # fit title
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 40) and tf.size > 28:
+        tf = font(tf.size - 4)
+    words = topic.split()
     lines, cur = [], ""
     for w in words:
         test = (cur + " " + w).strip()
-        if d.textbbox((0, 0), test, font=tf)[2] > (bx1 - bx0 - 36):
-            lines.append(cur)
+        if d.textbbox((0, 0), test, font=tf)[2] > (bx1 - bx0 - 40):
+            if cur:
+                lines.append(cur)
             cur = w
         else:
             cur = test
     if cur:
         lines.append(cur)
-    y = by0 + 20
-    for line in lines[:2]:
+    y = by0 + 36
+    for line in lines[:3]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(245, 250, 240))
-        y += 42
+        # chalk-ish shadow
+        d.text((bx0 + (bx1 - bx0 - tw) // 2 + 2, y + 2), line, font=tf, fill=(20, 50, 35))
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(250, 255, 245))
+        y += tf.size + 14
 
-    # reference images pinned on board
-    refs = load_board_refs()
-    if refs:
-        slot_w = (bx1 - bx0 - 48) // max(len(refs), 1)
-        slot_h = min(160, by1 - y - 24)
-        for i, ref in enumerate(refs):
-            rw = slot_w - 12
-            rh = slot_h
-            thumb = ref.copy()
-            thumb.thumbnail((rw, rh))
-            px = bx0 + 24 + i * slot_w + (rw - thumb.width) // 2
-            py = y + 8
-            # white frame
-            d.rectangle([px - 4, py - 4, px + thumb.width + 4, py + thumb.height + 4], fill=(240, 240, 235))
-            img.paste(thumb, (px, py))
-    else:
-        d.line([bx0 + 24, by1 - 24, bx1 - 24, by1 - 24], fill=(200, 220, 200), width=2)
+    # simple drawn icons instead of broken AI images
+    icon_y = y + 20
+    if icon_y + 100 < by1:
+        d.ellipse([bx0 + 50, icon_y, bx0 + 130, icon_y + 80], outline=(200, 230, 200), width=4)
+        d.line([bx0 + 180, icon_y + 40, bx0 + 280, icon_y + 40], fill=(200, 230, 200), width=4)
+        d.polygon(
+            [(bx0 + 320, icon_y + 70), (bx0 + 360, icon_y + 10), (bx0 + 400, icon_y + 70)],
+            outline=(200, 230, 200),
+        )
 
-    d.rectangle([bx0, by1 + 4, bx1, by1 + 16], fill=(120, 95, 60))
+    d.rectangle([bx0, by1 + 4, bx1, by1 + 18], fill=(120, 95, 60))
     return img
+
+
+def ken_crop(full: Image.Image, t: float, duration: float) -> Image.Image:
+    progress = min(1.0, t / max(duration, 0.1))
+    ease = 0.5 - 0.5 * math.cos(progress * math.pi)
+    scale = 1.0 + 0.08 * ease  # subtle zoom
+    fw, fh = full.size
+    cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
+    max_x, max_y = max(0, fw - cw), max(0, fh - ch)
+    x = int(max_x * ease * 0.9)
+    y = int(max_y * (1 - ease) * 0.5)
+    return full.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
 
 
 def word_windows(text: str, duration: float):
@@ -153,8 +146,7 @@ def word_windows(text: str, duration: float):
         return [(0, duration, ["..."], 0)]
     n = len(words)
     slot = duration / max(n, 1)
-    windows = []
-    i = 0
+    windows, i = [], 0
     while i < n:
         chunk = words[i : i + 6]
         start = i * slot
@@ -179,9 +171,9 @@ def active_caption(windows, t):
 def draw_karaoke(rgb, text, t, duration, action):
     d = ImageDraw.Draw(rgb)
     af = font(14)
-    label = f"QX · {action.upper()}"
-    d.rounded_rectangle([W - 160, 20, W - 16, 52], 10, fill=ACCENT)
-    d.text((W - 150, 26), label, font=af, fill=BLACK)
+    label = f"MIKE · {action.upper()}"
+    d.rounded_rectangle([W - 175, 20, W - 16, 52], 10, fill=ACCENT)
+    d.text((W - 165, 26), label, font=af, fill=BLACK)
 
     windows = word_windows(text, duration)
     chunk, active = active_caption(windows, t)
@@ -248,7 +240,7 @@ def main():
          "-of", "default=noprint_wrappers=1:nokey=1", str(audio)],
         text=True,
     ).strip()
-    duration = min(max(float(dur_s), 1.0), 55.0)
+    duration = min(max(float(dur_s), 1.0), 70.0)
     actions = [a.strip().lower() for a in args.actions.split(",") if a.strip()]
     actions = [a if a in ALL_ACTIONS else "talk" for a in actions] or list(ALL_ACTIONS)
     cues = load_cues(Path(args.cues)) if args.cues else []
@@ -258,8 +250,8 @@ def main():
     if Path("title_short.txt").exists():
         topic = Path("title_short.txt").read_text(encoding="utf-8").strip() or topic
 
-    base = draw_classroom(topic)
-    print(f"board scene duration={duration:.2f}s frames={n}")
+    full_bg = draw_classroom_large(topic)
+    print(f"mike board duration={duration:.2f}s frames={n} topic={topic!r}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -267,7 +259,7 @@ def main():
             t = i / float(FPS)
             action = action_at(t, duration, actions)
             phase = t * 3.0 if action == "walk" else t * 1.2
-            frame = base.copy().convert("RGBA")
+            frame = ken_crop(full_bg, t, duration).convert("RGBA")
             mouth = open_at(cues, t)
             if action == "laugh":
                 mouth = max(mouth, 0.8)
@@ -277,7 +269,7 @@ def main():
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
             bob = int(3 * math.sin(phase * 2))
-            x_off = int(-50 + 100 * ((t * 0.3) % 1.0)) if action == "walk" else (36 if action == "point" else 0)
+            x_off = int(-40 + 80 * ((t * 0.25) % 1.0)) if action == "walk" else (30 if action == "point" else 0)
             x = (W - nw) // 2 + x_off
             y = H - nh - 140 + bob
             frame.paste(char, (x, y), char)

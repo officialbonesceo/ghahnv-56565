@@ -2,9 +2,11 @@ name: qxil-job
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   RHUBARB_VERSION: "1.13.0"
@@ -54,28 +56,16 @@ jobs:
       - name: download-models
         run: |
           mkdir -p "$MODEL_DIR"
-          if [ ! -f "$MODEL_DIR/$GEMMA_FILE" ]; then
-            echo "Downloading Gemma 2B..."
-            curl -L --fail -o "$MODEL_DIR/$GEMMA_FILE" "$GEMMA_URL" || true
-          fi
-          if [ ! -f "$MODEL_DIR/$TINY_FILE" ]; then
-            echo "Downloading TinyLlama..."
-            curl -L --fail -o "$MODEL_DIR/$TINY_FILE" "$TINY_URL" || true
-          fi
+          [ -f "$MODEL_DIR/$GEMMA_FILE" ] || curl -L --fail -o "$MODEL_DIR/$GEMMA_FILE" "$GEMMA_URL" || true
+          [ -f "$MODEL_DIR/$TINY_FILE" ] || curl -L --fail -o "$MODEL_DIR/$TINY_FILE" "$TINY_URL" || true
           ls -lh "$MODEL_DIR" || true
 
       - name: script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
-          python scripts/generate_script.py \
-            --topic topic.json \
-            --model "$MODEL_DIR/$GEMMA_FILE" \
-            --model-fallback "$MODEL_DIR/$TINY_FILE" \
-            --try-llm \
-            --out script_job.json
-          echo ENGINE:; python -c "import json; print(json.load(open('script_job.json')).get('engine'))"
+          python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$GEMMA_FILE" --model-fallback "$MODEL_DIR/$TINY_FILE" --try-llm --out script_job.json
+          python -c "import json; print(json.load(open('script_job.json')).get('engine'), json.load(open('script_job.json')).get('short_title'))"
           cat script.txt
 
       - name: tts
@@ -96,9 +86,6 @@ jobs:
         continue-on-error: true
         run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
 
-      - name: board-art
-        run: python scripts/board_refs.py || true
-
       - name: render
         run: bash scripts/ci_render.sh
 
@@ -109,6 +96,8 @@ jobs:
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
           BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
           VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DELETE_RELEASE_AFTER: "1"
         run: python scripts/upload_buffer.py
 
       - name: pack
@@ -120,9 +109,6 @@ jobs:
             script.txt
             script_job.json
             topic.json
-            speech.mp3
-            buffer_channels.json
-            buffer_orgs.json
             buffer_result.json
             title_short.txt
           if-no-files-found: error
