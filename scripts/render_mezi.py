@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEZI compositor: Pollinations/drawn bg, Ken Burns, karaoke captions, sprites."""
+"""MEZI compositor: grounded character, small mouths, side-walk, karaoke."""
 from __future__ import annotations
 
 import argparse
@@ -19,9 +19,10 @@ HOODIE = (255, 196, 40)
 WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
 GLOW = (255, 220, 80)
+# Clearer lip thresholds — closed vs open vs wide
 MOUTH = {
-    "X": 0.02, "A": 1.0, "B": 0.08, "C": 0.55,
-    "D": 0.7, "E": 0.85, "F": 0.4, "G": 0.9, "H": 1.0,
+    "X": 0.0, "B": 0.0, "A": 1.0, "C": 0.55,
+    "D": 0.7, "E": 0.85, "F": 0.45, "G": 0.95, "H": 1.0,
 }
 ALL_ACTIONS = ["talk", "walk", "point", "laugh"]
 
@@ -46,17 +47,18 @@ def load_cues(path: Path | None):
 
 def open_at(cues, t: float) -> float:
     if not cues:
-        return 0.05 + 0.8 * max(0.0, math.sin(t * 14))
+        # visible chatter without cues
+        return 0.0 if math.sin(t * 16) < 0.15 else (0.5 + 0.4 * abs(math.sin(t * 16)))
     for c in cues:
         if float(c["start"]) <= t < float(c["end"]):
-            return MOUTH.get(str(c["value"]).upper(), 0.45)
-    return 0.02
+            return MOUTH.get(str(c["value"]).upper(), 0.5)
+    return 0.0
 
 
 def mouth_sprite(open_amt: float) -> str:
-    if open_amt >= 0.7:
+    if open_amt >= 0.75:
         return "mouth_wide.png"
-    if open_amt >= 0.25:
+    if open_amt >= 0.2:
         return "mouth_open.png"
     return "mouth_closed.png"
 
@@ -93,14 +95,10 @@ def make_drawn_bg(kind: str) -> Image.Image:
             d.ellipse([x, y, x + r, y + r], fill=(b, b, 255))
     elif k == "ocean":
         for y in range(bh):
-            if y < bh * 0.4:
-                d.line([(0, y), (bw, y)], fill=(120, 190, 235))
-            else:
-                d.line([(0, y), (bw, y)], fill=(15, 80, 130))
+            d.line([(0, y), (bw, y)], fill=(120, 190, 235) if y < bh * 0.4 else (15, 80, 130))
     elif k == "nature":
         for y in range(bh):
             d.line([(0, y), (bw, y)], fill=(255 - y // 20, 180 - y // 40, 120))
-        d.polygon([(0, bh), (bw // 3, bh // 2), (bw, bh)], fill=(60, 90, 50))
     elif k == "tech":
         d.rectangle([0, 0, bw, bh], fill=(12, 18, 32))
         for x in range(0, bw, 36):
@@ -117,14 +115,12 @@ def load_bg(kind: str, bg_path: str) -> Image.Image:
         p = Path(bg_path)
         if p.exists() and p.stat().st_size > 2000:
             im = Image.open(p).convert("RGB")
-            # oversize for Ken Burns
             return im.resize((int(W * 1.25), int(H * 1.25)), Image.Resampling.LANCZOS)
     return make_drawn_bg(kind)
 
 
 def ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
     progress = min(1.0, t / max(duration, 0.1))
-    # ease in-out
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     scale = 1.0 + 0.18 * ease
     bw, bh = bg.size
@@ -133,30 +129,24 @@ def ken_burns(bg: Image.Image, t: float, duration: float) -> Image.Image:
     x = int(max_x * ease)
     y = int(max_y * (1.0 - ease) * 0.6)
     frame = bg.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
-    # slight vignette
-    vignette = Image.new("RGB", (W, H), (0, 0, 0))
     mask = Image.new("L", (W, H), 0)
     md = ImageDraw.Draw(mask)
     md.ellipse([-W // 5, -H // 8, W + W // 5, H + H // 8], fill=255)
     mask = mask.filter(ImageFilter.GaussianBlur(80))
-    frame = Image.composite(frame, ImageEnhance.Brightness(frame).enhance(0.55), mask)
-    return frame
+    dark = ImageEnhance.Brightness(frame).enhance(0.55)
+    return Image.composite(frame, dark, mask)
 
 
-def word_windows(text: str, duration: float) -> list[tuple[float, float, list[str], int]]:
-    """Chunks of 3-4 words with time ranges; active index inside chunk."""
+def word_windows(text: str, duration: float):
     words = [w for w in text.replace("\n", " ").split() if w]
     if not words:
         return [(0, duration, ["..."], 0)]
     n = len(words)
-    # equal time per word
     slot = duration / n
     windows = []
     i = 0
     while i < n:
         chunk = words[i : i + 4]
-        if len(chunk) < 3 and i + len(chunk) < n:
-            chunk = words[i : i + 3]
         start = i * slot
         end = min(duration, (i + len(chunk)) * slot)
         for j in range(len(chunk)):
@@ -176,16 +166,14 @@ def active_caption(windows, t: float):
     return [""], 0
 
 
-def draw_karaoke(rgb: Image.Image, text: str, t: float, duration: float, title: str, action: str):
+def draw_karaoke(rgb, text, t, duration, title, action):
     d = ImageDraw.Draw(rgb)
-    # title pill
     f = font(24)
     ttl = (title or "Mezi")[:34]
     bb = d.textbbox((0, 0), ttl, font=f)
     tw = bb[2] - bb[0]
     d.rounded_rectangle([20, 32, 32 + tw + 16, 78], 14, fill=(0, 0, 0))
     d.text((28, 40), ttl, font=f, fill=WHITE)
-
     af = font(15)
     label = f"MEZI · {action.upper()}"
     d.rounded_rectangle([W - 185, 40, W - 20, 76], 12, fill=HOODIE)
@@ -194,7 +182,6 @@ def draw_karaoke(rgb: Image.Image, text: str, t: float, duration: float, title: 
     windows = word_windows(text, duration)
     chunk, active = active_caption(windows, t)
     cf = font(36)
-    # measure total width
     gaps = []
     total = 0
     for w in chunk:
@@ -202,16 +189,14 @@ def draw_karaoke(rgb: Image.Image, text: str, t: float, duration: float, title: 
         ww = bb[2] - bb[0]
         gaps.append(ww)
         total += ww + 16
-    total -= 16
+    total = max(total - 16, 1)
     x0 = max(20, (W - total) // 2)
     y = H - 160
-    # dark bar
     d.rounded_rectangle([16, y - 24, W - 16, y + 70], 18, fill=(12, 12, 20))
     x = x0
     for i, w in enumerate(chunk):
         if i == active:
-            # glow layers
-            for ox, oy in [(-2, 0), (2, 0), (0, -2), (0, 2), (0, 0)]:
+            for ox, oy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
                 d.text((x + ox, y + oy), w, font=cf, fill=GLOW)
             d.text((x, y), w, font=cf, fill=WHITE)
         else:
@@ -220,7 +205,12 @@ def draw_karaoke(rgb: Image.Image, text: str, t: float, duration: float, title: 
 
 
 def composite_mezi(action: str, mouth_open: float) -> Image.Image:
-    body = load_rgba("arm_point.png" if action == "point" else "body.png")
+    if action == "walk":
+        body = load_rgba("body_walk.png")
+    elif action == "point":
+        body = load_rgba("arm_point.png")
+    else:
+        body = load_rgba("body.png")
     mouth = load_rgba(mouth_sprite(mouth_open))
     char = Image.alpha_composite(body, mouth)
     if action == "laugh":
@@ -259,27 +249,32 @@ def main():
     if not bg_path and Path("bg_path.txt").exists():
         bg_path = Path("bg_path.txt").read_text(encoding="utf-8").strip()
     bg_full = load_bg(args.bg, bg_path)
-    print(f"duration={duration:.2f}s frames={n} bg={args.bg} image={bool(bg_path)} cues={len(cues)}")
+    print(f"duration={duration:.2f}s frames={n} bg={args.bg} cues={len(cues)}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for i in range(n):
             t = i / float(FPS)
             action = action_at(t, duration, actions)
-            phase = t * (2.5 if action == "walk" else 1.2)
+            phase = t * 3.0 if action == "walk" else t * 1.2
             frame = ken_burns(bg_full, t, duration).convert("RGBA")
             mouth = open_at(cues, t)
             if action == "laugh":
-                mouth = max(mouth, 0.85)
+                mouth = max(mouth, 0.8)
             char = composite_mezi(action, mouth)
-            target_h = int(H * 0.52)
+            # smaller scale + feet near bottom (less floating)
+            target_h = int(H * 0.48)
             scale = target_h / char.height
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
-            bob = int(5 * math.sin(phase * 3))
-            x_off = int(24 * math.sin(t * 1.4)) if action == "walk" else 0
+            bob = int(4 * math.sin(phase * 2))
+            if action == "walk":
+                # side walk: move across frame
+                x_off = int(-80 + 160 * ((t * 0.35) % 1.0))
+            else:
+                x_off = 0
             x = (W - nw) // 2 + x_off
-            y = int(H * 0.20) + bob
+            y = H - nh - 180 + bob  # grounded above caption bar
             frame.paste(char, (x, y), char)
             rgb = frame.convert("RGB")
             draw_karaoke(rgb, args.text, t, duration, args.title, action)
