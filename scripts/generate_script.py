@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scripts: OpenRouter free -> Phi-2 GGUF -> template. Wikipedia context."""
+"""Complete on-topic scripts: OpenRouter -> Phi-2 -> strong template."""
 from __future__ import annotations
 
 import argparse
@@ -29,14 +29,25 @@ def clean_spoken(text: str) -> str:
     for p in [r"INTRO:\s*", r"BODY:\s*", r"###.*?\n"]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\s+", " ", t).strip()
-    t = re.sub(r"^(back into|into the|so that the|and then)\b[^.]{0,50}\.\s*", "", t, flags=re.I)
+    # drop mid-thought openings
+    t = re.sub(
+        r"^(group of|gas that|and then|so that|into the|back into)\b[^.]*\.\s*",
+        "",
+        t,
+        flags=re.I,
+    )
     words = t.split()
-    if len(words) < 45:
+    if len(words) < 55:
         return ""
-    if len(words) > 140:
-        t = " ".join(words[:130])
+    if len(words) > 150:
+        t = " ".join(words[:140])
+    # force end on a full sentence
     if t and t[-1] not in ".!?":
-        t += "!"
+        # trim to last period if any
+        if "." in t:
+            t = t[: t.rfind(".") + 1]
+        else:
+            t += "."
     return t
 
 
@@ -44,33 +55,37 @@ def pick_sentences(extract: str) -> list[str]:
     parts = []
     for s in re.split(r"(?<=[.!?])\s+", extract or ""):
         s = s.strip()
-        if len(s) < 45 or not re.match(r"^[A-Z0-9]", s):
+        if len(s) < 40 or not re.match(r"^[A-Z0-9]", s):
             continue
         if re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
             continue
         parts.append(s)
-    return parts[:4]
+    return parts[:5]
 
 
 def template_scripts(topic: dict) -> dict:
     short = display_title(topic.get("title") or "this idea")
     sents = pick_sentences(topic.get("extract") or "")
-    while len(sents) < 3:
-        sents.append(f"Simple examples make {short} easier to remember.")
+    while len(sents) < 4:
+        sents.append(f"Everyday examples help you remember {short}.")
     facts = []
-    for s in sents[:3]:
-        if len(s) > 110:
-            s = s[:107].rsplit(" ", 1)[0] + "."
+    for s in sents[:4]:
+        if len(s) > 120:
+            s = s[:117].rsplit(" ", 1)[0] + "."
         facts.append(s)
     script = (
-        f"Hey, I am Mike. Quick board lesson on {short}. "
-        f"{facts[0]} {facts[1]} {facts[2]} "
-        f"That is {short} in plain words. Follow mike.the.tutor!"
+        f"Hey, I am Mike. Today on the board: {short}. "
+        f"Here is the big idea. {facts[0]} "
+        f"Next. {facts[1]} "
+        f"Also important. {facts[2]} "
+        f"One more. {facts[3]} "
+        f"So now you can explain {short} in plain words. "
+        f"Follow mike.the.tutor for the next lesson. See you soon!"
     )
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Quick board lesson on {short}.",
+        "intro_script": f"Hey, I am Mike. Today on the board: {short}.",
         "script": re.sub(r"\s+", " ", script).strip(),
         "bg": "classroom",
         "source": topic.get("url") or "",
@@ -84,13 +99,18 @@ def pack(topic: dict, text: str, engine: str) -> dict | None:
     if not cleaned:
         return None
     if short.lower() not in cleaned.lower():
-        cleaned = f"Hey, I am Mike. Quick lesson on {short}. " + cleaned
+        cleaned = f"Hey, I am Mike. Today we learn about {short}. " + cleaned
+    if not cleaned.rstrip().endswith(("!", ".", "?")):
+        cleaned = cleaned.rstrip() + "."
     if "mike.the.tutor" not in cleaned.lower():
-        cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor!"
+        cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor for more lessons!"
+    # reject fragments that start mid-phrase
+    if re.match(r"^(group of|gas that|of space|and the)\b", cleaned, re.I):
+        return None
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Quick board lesson on {short}.",
+        "intro_script": f"Hey, I am Mike. Today on the board: {short}.",
         "script": cleaned,
         "bg": "classroom",
         "source": topic.get("url") or "",
@@ -103,13 +123,16 @@ def run_openrouter(topic: dict) -> dict | None:
     if not key:
         return None
     short = display_title(topic.get("title") or "science")
-    extract = (topic.get("extract") or "")[:400]
+    extract = (topic.get("extract") or "")[:450]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
-        "You are Mike, a fast TikTok science tutor (@mike.the.tutor). "
-        "Write 100 to 130 spoken words ONLY about this topic. Stay on topic.\n"
+        "You are Mike, a TikTok science tutor (@mike.the.tutor). "
+        "Write ONE complete short lesson of 110 to 140 spoken words. "
+        "Start with a full greeting. End with a full closing sentence. "
+        "Never start mid-sentence. No markdown.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
-        "Greet as Mike, three tight facts, one example, end with follow mike.the.tutor."
+        "Structure: Hello I am Mike. Name the topic. Three clear facts. "
+        "One everyday example. End with follow mike.the.tutor."
     )
     try:
         r = requests.post(
@@ -123,8 +146,8 @@ def run_openrouter(topic: dict) -> dict | None:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 280,
-                "temperature": 0.35,
+                "max_tokens": 320,
+                "temperature": 0.3,
             },
             timeout=90,
         )
@@ -141,18 +164,13 @@ def run_openrouter(topic: dict) -> dict | None:
 
 def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     if not model.exists() or model.stat().st_size < 10_000_000:
-        print("gguf missing", model, file=sys.stderr)
         return None
     helper = Path(__file__).resolve().parent / "_llm_once.py"
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(
         json.dumps(
-            {
-                "model": str(model),
-                "title": short,
-                "extract": (topic.get("extract") or "")[:400],
-            }
+            {"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:400]}
         ),
         encoding="utf-8",
     )
@@ -165,9 +183,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
             capture_output=True,
             text=True,
         )
-        print((r.stderr or "")[-400:], file=sys.stderr)
         if r.returncode != 0 or not outp.exists():
-            print("gguf failed", r.returncode, file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
         return pack(topic, data.get("body") or "", engine_name)
@@ -205,7 +221,7 @@ def main() -> None:
     short = result["short_title"]
     hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
     caption = (
-        f"{short} in plain words — Mike the Tutor\n\n"
+        f"{short} explained simply — Mike the Tutor\n\n"
         f"Comment YES for part 2\nFollow @mike.the.tutor\n\n"
         f"#{hashtag_slug} #learntok #science #fyp #stem #studytok #mikethetutor"
     )
