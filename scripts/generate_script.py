@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script + AI move plan for Mike (not fixed timeline)."""
+"""Script + moves + definition + did-you-know + CTA for TikTok retention."""
 from __future__ import annotations
 
 import argparse
@@ -31,6 +31,8 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"\([^)]{0,80}\)", " ", t)
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
     t = re.sub(r"MOVES:.*", " ", t, flags=re.I | re.S)
+    t = re.sub(r"DEFINITION:.*", " ", t, flags=re.I | re.S)
+    t = re.sub(r"DIDYOUKNOW:.*", " ", t, flags=re.I | re.S)
     for p in [r"INTRO:\s*", r"BODY:\s*", r"###.*?\n"]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\s+", " ", t).strip()
@@ -53,34 +55,38 @@ def clean_spoken(text: str) -> str:
     return t
 
 
+def short_definition(extract: str, title: str) -> str:
+    sents = re.split(r"(?<=[.!?])\s+", extract or "")
+    for s in sents:
+        s = s.strip()
+        if 40 <= len(s) <= 160 and re.match(r"^[A-Z0-9]", s):
+            if not re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
+                return s[:140]
+    return f"{title} is a key idea you can explain in simple words."
+
+
+def did_you_know_line(extract: str, title: str) -> str:
+    sents = re.split(r"(?<=[.!?])\s+", extract or "")
+    for s in sents[1:]:
+        s = s.strip()
+        if 35 <= len(s) <= 140 and re.match(r"^[A-Z0-9]", s):
+            return s[:130]
+    return f"Most people hear about {title}, but few can explain it clearly."
+
+
 def default_moves(topic: str) -> list[dict]:
-    """Fallback when AI does not supply moves — still topic-aware."""
     t = (topic or "").lower()
     plan = [
         {"at": 0.00, "move": "welcome"},
-        {"at": 0.12, "move": "talk"},
+        {"at": 0.10, "move": "talk"},
+        {"at": 0.25, "move": "walk_left"},
+        {"at": 0.38, "move": "point"},
+        {"at": 0.52, "move": "question"},
+        {"at": 0.68, "move": "sit"},
+        {"at": 0.82, "move": "present"},
     ]
-    if re.search(r"space|star|planet|solar|moon|sun|galaxy", t):
-        plan += [
-            {"at": 0.28, "move": "walk_left"},
-            {"at": 0.42, "move": "point"},
-            {"at": 0.62, "move": "talk"},
-            {"at": 0.78, "move": "present"},
-        ]
-    elif re.search(r"sit|sleep|rest|chair", t):
-        plan += [
-            {"at": 0.30, "move": "sit"},
-            {"at": 0.55, "move": "talk"},
-            {"at": 0.80, "move": "present"},
-        ]
-    else:
-        plan += [
-            {"at": 0.28, "move": "walk_left"},
-            {"at": 0.40, "move": "point"},
-            {"at": 0.55, "move": "question"},
-            {"at": 0.70, "move": "sit"},
-            {"at": 0.85, "move": "present"},
-        ]
+    if re.search(r"space|star|planet|solar|moon|galaxy", t):
+        plan[3] = {"at": 0.38, "move": "point"}
     return plan
 
 
@@ -118,48 +124,67 @@ def pick_sentences(extract: str) -> list[str]:
 
 def template_scripts(topic: dict) -> dict:
     short = display_title(topic.get("title") or "this idea")
-    sents = pick_sentences(topic.get("extract") or "")
+    extract = topic.get("extract") or ""
+    sents = pick_sentences(extract)
     while len(sents) < 4:
         sents.append(f"Everyday examples help you remember {short}.")
     facts = [s if len(s) <= 120 else s[:117].rsplit(" ", 1)[0] + "." for s in sents[:4]]
+    definition = short_definition(extract, short)
+    dyk = did_you_know_line(extract, short)
     script = (
         f"Hey, I am Mike. Today on the board: {short}. "
+        f"Definition: {definition} "
         f"Here is the big idea. {facts[0]} "
-        f"Next. {facts[1]} "
+        f"Did you know? {dyk} "
         f"Also important. {facts[2]} "
-        f"One more. {facts[3]} "
         f"So now you can explain {short} in plain words. "
-        f"Follow mike.the.tutor for the next lesson. See you soon!"
+        f"Comment YES for part 2. Follow mike.the.tutor. See you soon!"
     )
-    moves = default_moves(short)
     return {
         "title": topic.get("title") or short,
         "short_title": short,
+        "definition": definition,
+        "did_you_know": dyk,
+        "cta": "Comment YES for part 2",
         "script": re.sub(r"\s+", " ", script).strip(),
-        "moves": moves,
+        "moves": default_moves(short),
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": "template",
     }
 
 
-def pack(topic: dict, text: str, engine: str, moves_raw: str = "") -> dict | None:
+def pack(
+    topic: dict,
+    text: str,
+    engine: str,
+    moves_raw: str = "",
+    definition: str = "",
+    dyk: str = "",
+) -> dict | None:
     short = display_title(topic.get("title") or "Lesson")
+    extract = topic.get("extract") or ""
     cleaned = clean_spoken(text)
     if not cleaned:
         return None
     if short.lower() not in cleaned.lower():
         cleaned = f"Hey, I am Mike. Today we learn about {short}. " + cleaned
+    if "comment yes" not in cleaned.lower() and "part 2" not in cleaned.lower():
+        cleaned = cleaned.rstrip(".!") + ". Comment YES for part 2."
     if "mike.the.tutor" not in cleaned.lower():
-        cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor for more lessons!"
+        cleaned = cleaned.rstrip(".!") + " Follow mike.the.tutor!"
     if re.match(r"^(group of|gas that|of space)\b", cleaned, re.I):
         return None
-    moves = parse_moves(moves_raw, short)
+    definition = (definition or short_definition(extract, short))[:140]
+    dyk = (dyk or did_you_know_line(extract, short))[:130]
     return {
         "title": topic.get("title") or short,
         "short_title": short,
+        "definition": definition,
+        "did_you_know": dyk,
+        "cta": "Comment YES for part 2",
         "script": cleaned,
-        "moves": moves,
+        "moves": parse_moves(moves_raw, short),
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": engine,
@@ -175,12 +200,14 @@ def run_openrouter(topic: dict) -> dict | None:
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
         "You are Mike, TikTok science tutor (@mike.the.tutor).\n"
-        "Write 110-140 spoken words. Complete sentences. Start and end cleanly.\n"
+        "Write 110-140 spoken words. Hook in first sentence. Include one Did you know fact.\n"
+        "End with: Comment YES for part 2. Follow mike.the.tutor.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
-        "After the script, on a new line write exactly:\n"
-        "MOVES: welcome@0,talk@0.15,walk_left@0.3,point@0.45,sit@0.65,present@0.85\n"
-        "Allowed moves: welcome,talk,walk_left,walk_right,point,sit,present,question,happy\n"
-        "Choose moves that fit the lesson (e.g. point when naming an object, walk when changing scene)."
+        "After the script write these lines exactly:\n"
+        "DEFINITION: one short plain definition under 20 words\n"
+        "DIDYOUKNOW: one surprising fact under 25 words\n"
+        "MOVES: welcome@0,talk@0.12,walk_left@0.28,point@0.4,question@0.55,sit@0.7,present@0.85\n"
+        "Allowed moves: welcome,talk,walk_left,walk_right,point,sit,present,question,happy"
     )
     try:
         r = requests.post(
@@ -194,7 +221,7 @@ def run_openrouter(topic: dict) -> dict | None:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 380,
+                "max_tokens": 420,
                 "temperature": 0.35,
             },
             timeout=90,
@@ -204,12 +231,23 @@ def run_openrouter(topic: dict) -> dict | None:
             print(r.text[:300], file=sys.stderr)
             return None
         full = r.json()["choices"][0]["message"]["content"].strip()
-        moves_raw = ""
+        moves_raw = definition = dyk = ""
         m = re.search(r"MOVES:\s*(.+)$", full, re.I | re.M)
         if m:
             moves_raw = m.group(1)
             full = full[: m.start()].strip()
-        return pack(topic, full, f"openrouter:{r.json().get('model') or model}", moves_raw)
+        m = re.search(r"DEFINITION:\s*(.+)$", full, re.I | re.M)
+        if m:
+            definition = m.group(1).strip()
+            full = full[: m.start()].strip()
+        m = re.search(r"DIDYOUKNOW:\s*(.+)$", full, re.I | re.M)
+        if m:
+            dyk = m.group(1).strip()
+            full = full[: m.start()].strip()
+        return pack(
+            topic, full, f"openrouter:{r.json().get('model') or model}",
+            moves_raw, definition, dyk,
+        )
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
@@ -230,9 +268,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     try:
         r = subprocess.run(
             [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=360,
-            capture_output=True,
-            text=True,
+            timeout=360, capture_output=True, text=True,
         )
         if r.returncode != 0 or not outp.exists():
             return None
@@ -267,6 +303,9 @@ def main() -> None:
     Path("script.txt").write_text(result["script"] + "\n", encoding="utf-8")
     Path("moves.json").write_text(json.dumps(result.get("moves") or [], indent=2), encoding="utf-8")
     Path("title_short.txt").write_text(result["short_title"], encoding="utf-8")
+    Path("definition.txt").write_text(result.get("definition") or "", encoding="utf-8")
+    Path("did_you_know.txt").write_text(result.get("did_you_know") or "", encoding="utf-8")
+    Path("cta.txt").write_text(result.get("cta") or "Comment YES for part 2", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
 
     short = result["short_title"]
@@ -274,7 +313,7 @@ def main() -> None:
     caption = (
         f"{short} explained simply — Mike the Tutor\n\n"
         f"Comment YES for part 2\nFollow @mike.the.tutor\n\n"
-        f"#{slug} #learntok #science #fyp #stem #studytok #mikethetutor"
+        f"#{slug} #learntok #science #fyp #stem #studytok #didyouknow #mikethetutor"
     )
     Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
     Path("tiktok_comment.txt").write_text(
