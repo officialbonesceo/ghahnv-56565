@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike: classroom -> walk -> world point -> sit on chair -> present. Topic badge, no pose label."""
+"""Mike: AI moves timeline, Ken Burns, modern classroom, proper walk cycle + lips."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
 GLOW = (255, 230, 100)
 MOUTH = {
-    "X": 0.0, "B": 0.0, "A": 1.0, "C": 0.55,
+    "X": 0.0, "B": 0.15, "A": 1.0, "C": 0.55,
     "D": 0.7, "E": 0.85, "F": 0.45, "G": 0.95, "H": 1.0,
 }
 
@@ -33,8 +33,7 @@ def asset_dir() -> Path:
 def load_rgba(name: str) -> Image.Image:
     p = asset_dir() / name
     if not p.exists():
-        alt = asset_dir() / "body.png"
-        return Image.open(alt if alt.exists() else p).convert("RGBA")
+        return Image.open(asset_dir() / "body.png").convert("RGBA")
     return Image.open(p).convert("RGBA")
 
 
@@ -46,20 +45,20 @@ def load_cues(path: Path | None):
 
 def open_at(cues, t: float) -> float:
     if not cues:
-        return 0.0 if math.sin(t * 16) < 0.2 else 0.55 + 0.35 * abs(math.sin(t * 16))
+        return 0.35 + 0.35 * abs(math.sin(t * 14))
     for c in cues:
         if float(c["start"]) <= t < float(c["end"]):
             return MOUTH.get(str(c["value"]).upper(), 0.5)
     return 0.0
 
 
-def mouth_name(open_amt: float, pose: str) -> str:
-    if pose in ("present", "welcome") and open_amt < 0.25:
-        return "mouth_smile.png"
+def mouth_name(open_amt: float) -> str:
     if open_amt >= 0.75:
         return "mouth_wide.png"
-    if open_amt >= 0.2:
+    if open_amt >= 0.35:
         return "mouth_open.png"
+    if open_amt >= 0.12:
+        return "mouth_smile.png"
     return "mouth_closed.png"
 
 
@@ -87,43 +86,35 @@ def topic_world(topic: str) -> str:
 
 
 def draw_classroom(topic: str) -> Image.Image:
-    img = Image.new("RGB", (W, H), (230, 220, 200))
+    """Modern classroom — larger canvas for Ken Burns."""
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (245, 248, 252))
     d = ImageDraw.Draw(img)
-    # wall + floor
-    d.rectangle([0, 0, W, int(H * 0.70)], fill=(242, 234, 218))
-    d.rectangle([0, int(H * 0.70), W, H], fill=(140, 110, 75))
-    # floor shadow band
-    d.rectangle([0, int(H * 0.70), W, int(H * 0.72)], fill=(120, 95, 65))
-    # windows with panes + sky
-    for i in range(2):
-        x0 = 50 + i * 210
-        d.rounded_rectangle([x0, 50, x0 + 160, 200], 8, fill=(90, 75, 55))
-        d.rectangle([x0 + 10, 60, x0 + 150, 190], fill=(160, 200, 235))
-        d.line([x0 + 80, 60, x0 + 80, 190], fill=(90, 75, 55), width=4)
-        d.line([x0 + 10, 125, x0 + 150, 125], fill=(90, 75, 55), width=4)
-    # bookshelf
-    d.rectangle([W - 160, 80, W - 40, 280], fill=(100, 70, 45))
-    for row in range(3):
-        y = 100 + row * 55
-        d.rectangle([W - 150, y, W - 50, y + 8], fill=(80, 55, 35))
-        for b in range(3):
-            d.rectangle(
-                [W - 145 + b * 30, y + 12, W - 125 + b * 30, y + 45],
-                fill=(180 + b * 20, 80, 70),
-            )
-    # big board
-    bx0, by0, bx1, by1 = 50, 220, W - 180, int(H * 0.44)
-    d.rounded_rectangle([bx0 - 14, by0 - 14, bx1 + 14, by1 + 14], 16, fill=(85, 65, 40))
-    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=(28, 78, 48))
+    # modern wall
+    d.rectangle([0, 0, bw, int(bh * 0.72)], fill=(248, 250, 252))
+    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(55, 65, 80))
+    # accent stripe
+    d.rectangle([0, int(bh * 0.72) - 8, bw, int(bh * 0.72)], fill=(255, 196, 40))
+    # tall windows
+    for i in range(3):
+        x0 = 40 + i * 170
+        d.rounded_rectangle([x0, 40, x0 + 140, 220], 10, fill=(220, 230, 240))
+        d.rectangle([x0 + 8, 48, x0 + 132, 212], fill=(170, 210, 245))
+        d.line([x0 + 70, 48, x0 + 70, 212], fill=(200, 210, 220), width=3)
+    # digital board frame
+    bx0, by0 = 50, 250
+    bx1, by1 = bw - 80, int(bh * 0.48)
+    d.rounded_rectangle([bx0 - 8, by0 - 8, bx1 + 8, by1 + 8], 14, fill=(30, 35, 45))
+    d.rounded_rectangle([bx0, by0, bx1, by1], 10, fill=(20, 90, 70))
     topic = (topic or "Lesson").strip() or "Lesson"
-    tf = font(60)
-    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 50) and tf.size > 30:
-        tf = font(tf.size - 3)
+    tf = font(70)
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 60) and tf.size > 32:
+        tf = font(tf.size - 4)
     words = topic.split()
     lines, cur = [], ""
     for w in words:
         test = (cur + " " + w).strip()
-        if d.textbbox((0, 0), test, font=tf)[2] > (bx1 - bx0 - 50):
+        if d.textbbox((0, 0), test, font=tf)[2] > (bx1 - bx0 - 60):
             if cur:
                 lines.append(cur)
             cur = w
@@ -131,65 +122,61 @@ def draw_classroom(topic: str) -> Image.Image:
             cur = test
     if cur:
         lines.append(cur)
-    y = by0 + 45
+    y = by0 + 50
     for line in lines[:3]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2 + 2, y + 2), line, font=tf, fill=(15, 40, 25))
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(245, 250, 240))
-        y += tf.size + 12
-    d.rectangle([bx0, by1 + 4, bx1, by1 + 18], fill=(115, 90, 55))
-    # teacher desk
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(240, 255, 245))
+        y += tf.size + 14
+    # modern desk
     d.rounded_rectangle(
-        [W // 2 - 200, int(H * 0.62), W // 2 + 200, int(H * 0.68)],
-        10,
-        fill=(115, 85, 50),
-    )
-    d.rectangle(
-        [W // 2 - 190, int(H * 0.64), W // 2 + 190, int(H * 0.66)],
-        fill=(140, 105, 65),
+        [bw // 2 - 220, int(bh * 0.62), bw // 2 + 220, int(bh * 0.68)],
+        12,
+        fill=(70, 80, 95),
     )
     return img
 
 
 def draw_space() -> Image.Image:
-    img = Image.new("RGB", (W, H), (8, 10, 28))
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (6, 8, 24))
     d = ImageDraw.Draw(img)
-    rng = random.Random(7)
-    for _ in range(180):
-        x, y = rng.randint(0, W - 1), rng.randint(0, int(H * 0.75))
+    rng = random.Random(11)
+    for _ in range(220):
+        x, y = rng.randint(0, bw - 1), rng.randint(0, int(bh * 0.78))
         r = rng.randint(1, 3)
         d.ellipse([x, y, x + r, y + r], fill=(240, 245, 255))
-    # planet / sun to point at
-    sx, sy = int(W * 0.74), int(H * 0.20)
-    d.ellipse([sx - 40, sy - 40, sx + 40, sy + 40], fill=(255, 245, 180))
-    d.ellipse([sx - 18, sy - 18, sx + 18, sy + 18], fill=(255, 255, 230))
-    d.rectangle([0, int(H * 0.78), W, H], fill=(12, 14, 32))
+    sx, sy = int(bw * 0.72), int(bh * 0.2)
+    d.ellipse([sx - 45, sy - 45, sx + 45, sy + 45], fill=(255, 245, 180))
+    d.rectangle([0, int(bh * 0.8), bw, bh], fill=(10, 12, 28))
     return img
 
 
 def draw_sky() -> Image.Image:
-    img = Image.new("RGB", (W, H), (135, 190, 235))
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (130, 185, 235))
     d = ImageDraw.Draw(img)
-    d.ellipse([int(W * 0.68), int(H * 0.06), int(W * 0.92), int(H * 0.2)], fill=(255, 230, 120))
-    d.rectangle([0, int(H * 0.72), W, H], fill=(90, 160, 90))
+    d.ellipse([int(bw * 0.7), int(bh * 0.06), int(bw * 0.9), int(bh * 0.18)], fill=(255, 230, 120))
+    d.rectangle([0, int(bh * 0.74), bw, bh], fill=(85, 155, 85))
     return img
 
 
 def draw_nature() -> Image.Image:
-    img = Image.new("RGB", (W, H), (160, 210, 160))
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (155, 205, 155))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, int(H * 0.55)], fill=(140, 200, 240))
-    d.rectangle([0, int(H * 0.55), W, H], fill=(70, 130, 70))
+    d.rectangle([0, 0, bw, int(bh * 0.55)], fill=(135, 195, 235))
+    d.rectangle([0, int(bh * 0.55), bw, bh], fill=(65, 125, 65))
     return img
 
 
 def draw_lab() -> Image.Image:
-    img = Image.new("RGB", (W, H), (220, 225, 230))
+    bw, bh = int(W * 1.15), int(H * 1.12)
+    img = Image.new("RGB", (bw, bh), (225, 228, 235))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, int(H * 0.7), W, H], fill=(90, 95, 105))
-    sx, sy = int(W * 0.75), int(H * 0.28)
-    d.ellipse([sx - 40, sy - 40, sx + 40, sy + 40], fill=(120, 220, 255))
+    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(80, 85, 95))
+    sx, sy = int(bw * 0.75), int(bh * 0.26)
+    d.ellipse([sx - 45, sy - 45, sx + 45, sy + 45], fill=(120, 220, 255))
     return img
 
 
@@ -202,74 +189,88 @@ def make_bg(kind: str, topic: str) -> Image.Image:
     }.get(kind, lambda: draw_classroom(topic))()
 
 
-def draw_chair(frame: Image.Image, cx: int, seat_y: int, scale: float = 1.0) -> None:
-    """Full chair under Mike (not a stick)."""
-    d = ImageDraw.Draw(frame)
-    wood = (120, 85, 50)
-    wood_d = (90, 60, 35)
-    w = int(160 * scale)
-    h_seat = int(18 * scale)
-    leg = int(70 * scale)
-    back_h = int(90 * scale)
-    # seat
-    d.rounded_rectangle([cx - w // 2, seat_y, cx + w // 2, seat_y + h_seat], 6, fill=wood)
-    # back
-    d.rounded_rectangle(
-        [cx - w // 2, seat_y - back_h, cx - w // 2 + int(18 * scale), seat_y + h_seat],
-        6,
-        fill=wood_d,
-    )
-    d.rounded_rectangle(
-        [cx + w // 2 - int(18 * scale), seat_y - back_h, cx + w // 2, seat_y + h_seat],
-        6,
-        fill=wood_d,
-    )
-    d.rectangle(
-        [cx - w // 2, seat_y - back_h, cx + w // 2, seat_y - back_h + int(14 * scale)],
-        fill=wood,
-    )
-    # legs
-    for lx in (cx - w // 2 + 8, cx + w // 2 - 18):
-        d.rectangle([lx, seat_y + h_seat, lx + 10, seat_y + h_seat + leg], fill=wood_d)
+def ken_crop(full: Image.Image, t: float, duration: float) -> Image.Image:
+    progress = min(1.0, t / max(duration, 0.1))
+    ease = 0.5 - 0.5 * math.cos(progress * math.pi)
+    scale = 1.0 + 0.08 * ease
+    fw, fh = full.size
+    cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
+    max_x, max_y = max(0, fw - cw), max(0, fh - ch)
+    x = int(max_x * ease * 0.9)
+    y = int(max_y * (1 - ease) * 0.4)
+    return full.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
 
 
-def beat(t: float, duration: float) -> str:
+def load_moves() -> list[dict]:
+    if Path("moves.json").exists():
+        try:
+            data = json.loads(Path("moves.json").read_text(encoding="utf-8"))
+            if isinstance(data, list) and data:
+                return sorted(data, key=lambda x: float(x.get("at", 0)))
+        except Exception:
+            pass
+    return [
+        {"at": 0.0, "move": "welcome"},
+        {"at": 0.15, "move": "talk"},
+        {"at": 0.3, "move": "walk_left"},
+        {"at": 0.45, "move": "point"},
+        {"at": 0.65, "move": "sit"},
+        {"at": 0.85, "move": "present"},
+    ]
+
+
+def move_at(moves: list[dict], t: float, duration: float) -> str:
     p = t / max(duration, 0.1)
-    if p < 0.15:
-        return "welcome"
-    if p < 0.28:
-        return "board_talk"
-    if p < 0.40:
-        return "walk_left"
-    if p < 0.58:
-        return "world_point"
-    if p < 0.72:
-        return "sit"
-    return "present"
+    current = moves[0].get("move", "talk") if moves else "talk"
+    for m in moves:
+        if float(m.get("at", 0)) <= p:
+            current = m.get("move", "talk")
+        else:
+            break
+    return current
 
 
-def body_for(pose: str, blink: bool, t: float) -> str:
-    if blink and pose in ("board_talk", "welcome", "present"):
+def body_for(move: str, t: float, blink: bool) -> str:
+    if blink and move in ("talk", "welcome", "present", "happy", "question"):
         return "body_blink.png"
-    if pose == "walk_left":
-        # alternate side frames for less stiff walk
-        return "body_side_left.png" if int(t * 6) % 2 == 0 else "body_side_right.png"
+    if move in ("walk_left", "walk_right"):
+        phase = int(t * 7) % 2
+        if move == "walk_left":
+            return f"walk_l{phase}.png"
+        return f"walk_r{phase}.png"
     return {
         "welcome": "body_present.png",
-        "board_talk": "body.png",
-        "world_point": "arm_point.png",
+        "talk": "body.png",
+        "point": "arm_point.png",
         "sit": "body_sit.png",
-        "present": "body_happy.png",
-    }.get(pose, "body.png")
+        "present": "body_present.png",
+        "question": "body_question.png",
+        "happy": "body_happy.png",
+    }.get(move, "body.png")
 
 
-def composite_host(pose: str, mouth_open: float, blink: bool, t: float) -> Image.Image:
-    body = load_rgba(body_for(pose, blink, t))
-    # Never overlay mouth on side / sit (wrong head Y → hole beside face)
-    if pose in ("walk_left", "sit"):
-        return body
-    mouth = load_rgba(mouth_name(mouth_open, pose))
+def is_side(move: str) -> bool:
+    return move in ("walk_left", "walk_right")
+
+
+def composite_host(move: str, mouth_open: float, blink: bool, t: float) -> Image.Image:
+    body = load_rgba(body_for(move, t, blink))
+    if is_side(move) or move == "sit":
+        return body  # mouth baked / wrong Y
+    mouth = load_rgba(mouth_name(mouth_open))
     return Image.alpha_composite(body, mouth)
+
+
+def draw_chair(frame: Image.Image, cx: int, seat_y: int) -> None:
+    d = ImageDraw.Draw(frame)
+    wood, wood_d = (100, 110, 125), (70, 80, 95)
+    w, h_seat, leg, back_h = 170, 18, 75, 95
+    d.rounded_rectangle([cx - w // 2, seat_y, cx + w // 2, seat_y + h_seat], 6, fill=wood)
+    d.rounded_rectangle([cx - w // 2, seat_y - back_h, cx - w // 2 + 16, seat_y + h_seat], 6, fill=wood_d)
+    d.rounded_rectangle([cx + w // 2 - 16, seat_y - back_h, cx + w // 2, seat_y + h_seat], 6, fill=wood_d)
+    d.rectangle([cx - w // 2, seat_y - back_h, cx + w // 2, seat_y - back_h + 14], fill=wood)
+    for lx in (cx - w // 2 + 10, cx + w // 2 - 20):
+        d.rectangle([lx, seat_y + h_seat, lx + 10, seat_y + h_seat + leg], fill=wood_d)
 
 
 def word_windows(text: str, duration: float):
@@ -302,18 +303,12 @@ def active_caption(windows, t):
 
 def draw_ui(rgb, text, t, duration, topic: str):
     d = ImageDraw.Draw(rgb)
-    # Topic of the day (not pose label)
     af = font(24)
     label = (topic or "Lesson")[:28]
     bb = d.textbbox((0, 0), label, font=af)
     tw = bb[2] - bb[0]
-    pad = 18
-    d.rounded_rectangle(
-        [W - tw - pad * 2 - 24, 24, W - 24, 78],
-        14,
-        fill=ACCENT,
-    )
-    d.text((W - tw - pad - 24, 38), label, font=af, fill=BLACK)
+    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 14, fill=ACCENT)
+    d.text((W - tw - 42, 38), label, font=af, fill=BLACK)
 
     windows = word_windows(text, duration)
     chunk, active = active_caption(windows, t)
@@ -370,6 +365,7 @@ def main():
     duration = min(max(float(dur_s), 1.0), 90.0)
     cues = load_cues(Path(args.cues)) if args.cues else []
     n = max(FPS, int(math.ceil(duration * FPS)))
+    moves = load_moves()
 
     topic = args.title
     if Path("title_short.txt").exists():
@@ -378,46 +374,51 @@ def main():
     world = topic_world(topic)
     bg_board = draw_classroom(topic)
     bg_world = make_bg(world, topic)
-    print(f"Mike board->{world} duration={duration:.2f}s frames={n}")
+    print(f"AI moves={moves} board->{world} dur={duration:.2f}s")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for i in range(n):
             t = i / float(FPS)
-            pose = beat(t, duration)
+            move = move_at(moves, t, duration)
             pfrac = t / max(duration, 0.1)
-            blink = (int(t * 2) % 9 == 0)
+            blink = (int(t * 2) % 10 == 0)
 
-            if pose == "walk_left":
-                walk_p = max(0.0, min(1.0, (pfrac - 0.28) / 0.12))
-                base = Image.blend(bg_board, bg_world, walk_p)
-            elif pose in ("world_point", "sit", "present"):
-                base = bg_world.copy()
+            # scene: classroom until first walk, then world
+            walked = any(
+                m.get("move") in ("walk_left", "walk_right") and float(m.get("at", 1)) <= pfrac
+                for m in moves
+            )
+            if move in ("walk_left", "walk_right"):
+                # blend during walk
+                base_full = Image.blend(bg_board, bg_world, 0.5)
+            elif walked:
+                base_full = bg_world
             else:
-                base = bg_board.copy()
+                base_full = bg_board
 
-            frame = base.convert("RGBA")
+            frame = ken_crop(base_full, t, duration).convert("RGBA")
             mouth = open_at(cues, t)
-            char = composite_host(pose, mouth, blink, t)
+            char = composite_host(move, mouth, blink, t)
             target_h = int(H * 0.46)
             scale = target_h / char.height
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
 
-            bob = int(3 * math.sin(t * 7))
-            if pose == "walk_left":
-                walk_p = max(0.0, min(1.0, (pfrac - 0.28) / 0.12))
-                x = int((W - nw) // 2 - walk_p * (W * 0.32))
-                bob = int(8 * abs(math.sin(t * 10)))
-            elif pose == "world_point":
+            bob = int(3 * math.sin(t * 6))
+            if move == "walk_left":
+                # progress within walk segment
+                x = int(W * 0.55 - (t * 40) % (W * 0.25))
+                bob = int(9 * abs(math.sin(t * 11)))
+            elif move == "walk_right":
+                x = int(W * 0.25 + (t * 40) % (W * 0.25))
+                bob = int(9 * abs(math.sin(t * 11)))
+            elif move == "point":
                 x = int(W * 0.22)
-                bob = int(2 * math.sin(t * 5))
-            elif pose == "sit":
+            elif move == "sit":
                 x = (W - nw) // 2
                 bob = 0
-                # chair appears under him
-                seat_y = H - 210 - int(nh * 0.28)
-                draw_chair(frame, W // 2, seat_y, scale=1.15)
+                draw_chair(frame, W // 2, H - 210 - int(nh * 0.28))
             else:
                 x = (W - nw) // 2
 
@@ -431,7 +432,7 @@ def main():
         subprocess.check_call([
             "ffmpeg", "-y", "-framerate", str(FPS),
             "-i", str(tmp_path / "frame_%05d.png"), "-i", str(audio),
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "17",
             "-pix_fmt", "yuv420p", "-profile:v", "high",
             "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "192k", "-shortest", str(out_mp4),

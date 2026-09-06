@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete on-topic scripts: OpenRouter -> Phi-2 -> strong template."""
+"""Script + AI move plan for Mike (not fixed timeline)."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,11 @@ import sys
 from pathlib import Path
 
 import requests
+
+VALID_MOVES = {
+    "talk", "welcome", "walk_left", "walk_right",
+    "point", "sit", "present", "question", "happy",
+}
 
 
 def display_title(title: str) -> str:
@@ -25,13 +30,12 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
     t = re.sub(r"\([^)]{0,80}\)", " ", t)
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
-    t = re.sub(r"Output:.*", " ", t, flags=re.I)
+    t = re.sub(r"MOVES:.*", " ", t, flags=re.I | re.S)
     for p in [r"INTRO:\s*", r"BODY:\s*", r"###.*?\n"]:
         t = re.sub(p, " ", t, flags=re.I | re.S)
     t = re.sub(r"\s+", " ", t).strip()
-    # drop mid-thought openings
     t = re.sub(
-        r"^(group of|gas that|and then|so that|into the|back into)\b[^.]*\.\s*",
+        r"^(group of|gas that|and then|so that|into the)\b[^.]*\.\s*",
         "",
         t,
         flags=re.I,
@@ -41,14 +45,63 @@ def clean_spoken(text: str) -> str:
         return ""
     if len(words) > 150:
         t = " ".join(words[:140])
-    # force end on a full sentence
     if t and t[-1] not in ".!?":
-        # trim to last period if any
         if "." in t:
             t = t[: t.rfind(".") + 1]
         else:
             t += "."
     return t
+
+
+def default_moves(topic: str) -> list[dict]:
+    """Fallback when AI does not supply moves — still topic-aware."""
+    t = (topic or "").lower()
+    plan = [
+        {"at": 0.00, "move": "welcome"},
+        {"at": 0.12, "move": "talk"},
+    ]n    if re.search(r"space|star|planet|solar|moon|sun|galaxy", t):
+        plan += [
+            {"at": 0.28, "move": "walk_left"},
+            {"at": 0.42, "move": "point"},
+            {"at": 0.62, "move": "talk"},
+            {"at": 0.78, "move": "present"},
+        ]
+    elif re.search(r"sit|sleep|rest|chair", t):
+        plan += [
+            {"at": 0.30, "move": "sit"},
+            {"at": 0.55, "move": "talk"},
+            {"at": 0.80, "move": "present"},
+        ]
+    else:
+        plan += [
+            {"at": 0.28, "move": "walk_left"},
+            {"at": 0.40, "move": "point"},
+            {"at": 0.55, "move": "question"},
+            {"at": 0.70, "move": "sit"},
+            {"at": 0.85, "move": "present"},
+        ]
+    return plan
+
+
+def parse_moves(raw: str, topic: str) -> list[dict]:
+    """Parse MOVES: talk@0,walk_left@0.3,point@0.5 style."""
+    if not raw:
+        return default_moves(topic)
+    out = []
+    for part in re.split(r"[,;\n]+", raw):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"([a-z_]+)\s*[@:]\s*(0(?:\.\d+)?|1(?:\.0)?)", part, re.I)
+        if m:
+            move = m.group(1).lower()
+            at = float(m.group(2))
+            if move in VALID_MOVES:
+                out.append({"at": at, "move": move})
+    if len(out) < 2:
+        return default_moves(topic)
+    out.sort(key=lambda x: x["at"])
+    return out
 
 
 def pick_sentences(extract: str) -> list[str]:
@@ -68,11 +121,7 @@ def template_scripts(topic: dict) -> dict:
     sents = pick_sentences(topic.get("extract") or "")
     while len(sents) < 4:
         sents.append(f"Everyday examples help you remember {short}.")
-    facts = []
-    for s in sents[:4]:
-        if len(s) > 120:
-            s = s[:117].rsplit(" ", 1)[0] + "."
-        facts.append(s)
+    facts = [s if len(s) <= 120 else s[:117].rsplit(" ", 1)[0] + "." for s in sents[:4]]
     script = (
         f"Hey, I am Mike. Today on the board: {short}. "
         f"Here is the big idea. {facts[0]} "
@@ -82,36 +131,35 @@ def template_scripts(topic: dict) -> dict:
         f"So now you can explain {short} in plain words. "
         f"Follow mike.the.tutor for the next lesson. See you soon!"
     )
+    moves = default_moves(short)
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Today on the board: {short}.",
         "script": re.sub(r"\s+", " ", script).strip(),
+        "moves": moves,
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": "template",
     }
 
 
-def pack(topic: dict, text: str, engine: str) -> dict | None:
+def pack(topic: dict, text: str, engine: str, moves_raw: str = "") -> dict | None:
     short = display_title(topic.get("title") or "Lesson")
     cleaned = clean_spoken(text)
     if not cleaned:
         return None
     if short.lower() not in cleaned.lower():
         cleaned = f"Hey, I am Mike. Today we learn about {short}. " + cleaned
-    if not cleaned.rstrip().endswith(("!", ".", "?")):
-        cleaned = cleaned.rstrip() + "."
     if "mike.the.tutor" not in cleaned.lower():
         cleaned = cleaned.rstrip(".!") + ". Follow mike.the.tutor for more lessons!"
-    # reject fragments that start mid-phrase
-    if re.match(r"^(group of|gas that|of space|and the)\b", cleaned, re.I):
+    if re.match(r"^(group of|gas that|of space)\b", cleaned, re.I):
         return None
+    moves = parse_moves(moves_raw, short)
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "intro_script": f"Hey, I am Mike. Today on the board: {short}.",
         "script": cleaned,
+        "moves": moves,
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": engine,
@@ -126,13 +174,13 @@ def run_openrouter(topic: dict) -> dict | None:
     extract = (topic.get("extract") or "")[:450]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
-        "You are Mike, a TikTok science tutor (@mike.the.tutor). "
-        "Write ONE complete short lesson of 110 to 140 spoken words. "
-        "Start with a full greeting. End with a full closing sentence. "
-        "Never start mid-sentence. No markdown.\n"
+        "You are Mike, TikTok science tutor (@mike.the.tutor).\n"
+        "Write 110-140 spoken words. Complete sentences. Start and end cleanly.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
-        "Structure: Hello I am Mike. Name the topic. Three clear facts. "
-        "One everyday example. End with follow mike.the.tutor."
+        "After the script, on a new line write exactly:\n"
+        "MOVES: welcome@0,talk@0.15,walk_left@0.3,point@0.45,sit@0.65,present@0.85\n"
+        "Allowed moves: welcome,talk,walk_left,walk_right,point,sit,present,question,happy\n"
+        "Choose moves that fit the lesson (e.g. point when naming an object, walk when changing scene)."
     )
     try:
         r = requests.post(
@@ -146,8 +194,8 @@ def run_openrouter(topic: dict) -> dict | None:
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 320,
-                "temperature": 0.3,
+                "max_tokens": 380,
+                "temperature": 0.35,
             },
             timeout=90,
         )
@@ -155,8 +203,13 @@ def run_openrouter(topic: dict) -> dict | None:
         if r.status_code != 200:
             print(r.text[:300], file=sys.stderr)
             return None
-        text = r.json()["choices"][0]["message"]["content"].strip()
-        return pack(topic, text, f"openrouter:{r.json().get('model') or model}")
+        full = r.json()["choices"][0]["message"]["content"].strip()
+        moves_raw = ""
+        m = re.search(r"MOVES:\s*(.+)$", full, re.I | re.M)
+        if m:
+            moves_raw = m.group(1)
+            full = full[: m.start()].strip()
+        return pack(topic, full, f"openrouter:{r.json().get('model') or model}", moves_raw)
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
@@ -169,9 +222,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str) -> dict | None:
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(
-        json.dumps(
-            {"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:400]}
-        ),
+        json.dumps({"model": str(model), "title": short, "extract": (topic.get("extract") or "")[:400]}),
         encoding="utf-8",
     )
     if outp.exists():
@@ -214,21 +265,20 @@ def main() -> None:
 
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
     Path("script.txt").write_text(result["script"] + "\n", encoding="utf-8")
-    Path("intro.txt").write_text((result.get("intro_script") or "") + "\n", encoding="utf-8")
-    Path("bg.txt").write_text("classroom", encoding="utf-8")
+    Path("moves.json").write_text(json.dumps(result.get("moves") or [], indent=2), encoding="utf-8")
     Path("title_short.txt").write_text(result["short_title"], encoding="utf-8")
+    Path("bg.txt").write_text("classroom", encoding="utf-8")
 
     short = result["short_title"]
-    hashtag_slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
+    slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:24] or "science"
     caption = (
         f"{short} explained simply — Mike the Tutor\n\n"
         f"Comment YES for part 2\nFollow @mike.the.tutor\n\n"
-        f"#{hashtag_slug} #learntok #science #fyp #stem #studytok #mikethetutor"
+        f"#{slug} #learntok #science #fyp #stem #studytok #mikethetutor"
     )
     Path("tiktok_caption.txt").write_text(caption, encoding="utf-8")
     Path("tiktok_comment.txt").write_text(
-        f"Comment YES if you want part 2 on {short} — I reply to every one",
-        encoding="utf-8",
+        f"Comment YES if you want part 2 on {short}", encoding="utf-8"
     )
     print(json.dumps(result, indent=2))
 
