@@ -59,7 +59,8 @@ def default_moves(topic: str) -> list[dict]:
     plan = [
         {"at": 0.00, "move": "welcome"},
         {"at": 0.12, "move": "talk"},
-    ]n    if re.search(r"space|star|planet|solar|moon|sun|galaxy", t):
+    ]
+    if re.search(r"space|star|planet|solar|moon|sun|galaxy", t):
         plan += [
             {"at": 0.28, "move": "walk_left"},
             {"at": 0.42, "move": "point"},
@@ -84,7 +85,6 @@ def default_moves(topic: str) -> list[dict]:
 
 
 def parse_moves(raw: str, topic: str) -> list[dict]:
-    """Parse MOVES: talk@0,walk_left@0.3,point@0.5 style."""
     if not raw:
         return default_moves(topic)
     out = []
