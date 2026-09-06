@@ -2,7 +2,6 @@ name: qxil-job
 
 on:
   workflow_dispatch:
-  # denser schedule (UTC) — GitHub can delay cron up to ~1h on free tier
   schedule:
     - cron: "15 6,8,10,12,14,16,18,20,22 * * *"
 
@@ -15,7 +14,7 @@ env:
   PHI_FILE: phi-2.Q4_K_M.gguf
   PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
   VOICE: en-US-ChristopherNeural
-  RATE: "+25%"
+  RATE: "+8%"
   OPENROUTER_MODEL: openrouter/free
 
 jobs:
@@ -28,7 +27,6 @@ jobs:
       - name: schedule-diag
         run: |
           echo "event=${{ github.event_name }}"
-          echo "ref=${{ github.ref }}"
           date -u
 
       - uses: actions/setup-python@v5
@@ -69,10 +67,7 @@ jobs:
       - name: download-phi2
         run: |
           mkdir -p "$MODEL_DIR"
-          if [ ! -f "$MODEL_DIR/$PHI_FILE" ]; then
-            echo "Downloading Phi-2 GGUF..."
-            curl -L --fail -o "$MODEL_DIR/$PHI_FILE" "$PHI_URL" || true
-          fi
+          [ -f "$MODEL_DIR/$PHI_FILE" ] || curl -L --fail -o "$MODEL_DIR/$PHI_FILE" "$PHI_URL" || true
           ls -lh "$MODEL_DIR" || true
 
       - name: script
@@ -81,8 +76,9 @@ jobs:
           OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$PHI_FILE" --try-llm --out script_job.json
-          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), len(d.get('script','').split()), 'words')"
+          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), d.get('moves'))"
           cat script.txt
+          cat moves.json || true
 
       - name: tts
         run: |
@@ -100,7 +96,7 @@ jobs:
 
       - name: lips
         continue-on-error: true
-        run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "" speech.wav
+        run: ${{ env.RHUBARB_DIR }}/rhubarb -f json -o mouth.json --extendedShapes "GHX" speech.wav
 
       - name: render-1080
         run: bash scripts/ci_render.sh
@@ -128,10 +124,10 @@ jobs:
             output.mp4
             script.txt
             script_job.json
+            moves.json
             topic.json
             tiktok_caption.txt
-            tiktok_comment.txt
-            FIRST_COMMENT.txt
+            mouth.json
             buffer_result.json
             title_short.txt
           if-no-files-found: error
