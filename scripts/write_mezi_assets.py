@@ -1,320 +1,414 @@
 #!/usr/bin/env python3
-"""Mike — polished flat-cartoon style (Archie-like proportions), yellow hoodie."""
+"""Mike parts pack — high-quality flat cartoon (PNG per joint), yellow hoodie + glasses."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
-W, H = 520, 780
-# Mike palette
+# High-res parts for cleaner scale-down
+S = 2  # internal scale
+
 HOODIE = (255, 196, 40, 255)
-HOODIE_L = (255, 225, 120, 255)
-HOODIE_D = (230, 165, 25, 255)
-SKIN = (232, 185, 145, 255)
-SKIN_D = (205, 155, 115, 255)
-HAIR = (28, 24, 30, 255)
-PANTS = (42, 48, 62, 255)
-SHOE = (24, 24, 28, 255)
+HOODIE_L = (255, 230, 130, 255)
+HOODIE_D = (235, 170, 25, 255)
+SKIN = (235, 190, 150, 255)
+SKIN_D = (210, 160, 120, 255)
+HAIR = (30, 26, 32, 255)
+PANTS = (40, 48, 65, 255)
+PANTS_L = (55, 65, 85, 255)
+SHOE = (255, 220, 80, 255)
+SHOE_W = (250, 250, 252, 255)
 WHITE = (255, 255, 255, 255)
-BLACK = (18, 16, 20, 255)
-MOUTH_IN = (140, 55, 65, 255)
-TEETH = (250, 248, 245, 255)
-CHEEK = (245, 165, 145, 100)
-
-CX = W // 2
-# Proportions closer to polished cartoon (taller legs, larger head, clear joints)
-HEAD_Y = 130
-NECK_Y = 185
-SHOULDER = 210
-HIP = 400
-KNEE = 520
-FOOT = 680
+BLACK = (20, 18, 22, 255)
+MOUTH_IN = (150, 60, 70, 255)
+TEETH = (252, 250, 248, 255)
+GLASS = (40, 42, 50, 220)
 
 
-def blank():
-    return Image.new("RGBA", (W, H), (0, 0, 0, 0))
+def blank(w, h):
+    return Image.new("RGBA", (w, h), (0, 0, 0, 0))
 
 
 def oval(d, xy, fill, outline=None, width=2):
     d.ellipse(xy, fill=fill, outline=outline, width=width if outline else 0)
 
 
-def limb(d, x0, y0, x1, y1, width, color):
-    d.line([(x0, y0), (x1, y1)], fill=color, width=width)
-    r = max(width // 2 - 1, 5)
-    oval(d, [x0 - r, y0 - r, x0 + r, y0 + r], color)
-    oval(d, [x1 - r, y1 - r, x1 + r, y1 + r], color)
+def soft(img: Image.Image) -> Image.Image:
+    """Slight blur for less jagged edges."""
+    return img.filter(ImageFilter.SMOOTH)
 
 
-def nice_hand(d, x, y, open_palm=False):
-    """Round palm + simple fingers (not stubs)."""
-    oval(d, [x - 16, y - 12, x + 16, y + 16], SKIN)
-    if open_palm:
-        for i, dx in enumerate([-12, -4, 4, 12]):
-            oval(d, [x + dx - 5, y - 22, x + dx + 5, y - 6], SKIN)
-    else:
-        for dx in (-10, -2, 6):
-            oval(d, [x + dx - 4, y + 10, x + dx + 4, y + 22], SKIN)
-
-
-def nice_foot(d, x, y, facing=0):
-    if facing <= 0:
-        oval(d, [x - 30, y - 8, x + 12, y + 18], SHOE)
-        oval(d, [x - 28, y + 6, x + 4, y + 16], (15, 15, 18, 255))
-    if facing >= 0:
-        oval(d, [x - 12, y - 8, x + 30, y + 18], SHOE)
-        oval(d, [x - 4, y + 6, x + 28, y + 16], (15, 15, 18, 255))
-
-
-def head_front(d, cx, hy, expr="neutral"):
-    # larger round head
-    oval(d, [cx - 62, hy - 68, cx + 62, hy + 58], SKIN)
-    # hair cap + tuft
-    oval(d, [cx - 64, hy - 78, cx + 64, hy - 8], HAIR)
+def part_head() -> Image.Image:
+    w, h = 220 * S, 260 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    cx, cy = w // 2, int(h * 0.55)
+    # hair back
+    oval(d, [cx - 95 * S, cy - 110 * S, cx + 95 * S, cy + 20 * S], HAIR)
+    # face
+    oval(d, [cx - 88 * S, cy - 90 * S, cx + 88 * S, cy + 95 * S], SKIN)
+    # hair front / volume
+    oval(d, [cx - 92 * S, cy - 120 * S, cx + 92 * S, cy - 10 * S], HAIR)
     d.polygon(
-        [(cx - 18, hy - 55), (cx - 2, hy - 98), (cx + 14, hy - 52),
-         (cx + 30, hy - 92), (cx + 46, hy - 48)],
+        [
+            (cx - 30 * S, cy - 80 * S),
+            (cx - 5 * S, cy - 145 * S),
+            (cx + 25 * S, cy - 75 * S),
+            (cx + 50 * S, cy - 135 * S),
+            (cx + 75 * S, cy - 70 * S),
+        ],
         fill=HAIR,
     )
     # ears
-    oval(d, [cx - 72, hy - 6, cx - 54, hy + 26], SKIN)
-    oval(d, [cx + 54, hy - 6, cx + 72, hy + 26], SKIN)
-    oval(d, [cx - 52, hy + 18, cx - 30, hy + 36], CHEEK)
-    oval(d, [cx + 30, hy + 18, cx + 52, hy + 36], CHEEK)
+    oval(d, [cx - 100 * S, cy - 10 * S, cx - 75 * S, cy + 35 * S], SKIN)
+    oval(d, [cx + 75 * S, cy - 10 * S, cx + 100 * S, cy + 35 * S], SKIN)
+    return soft(img)
 
-    ey = hy - 4
+
+def part_face(expr: str = "neutral") -> Image.Image:
+    w, h = 220 * S, 260 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    cx, cy = w // 2, int(h * 0.55)
+    # eyes white
     if expr == "blink":
-        d.line([(cx - 34, ey), (cx - 12, ey)], fill=BLACK, width=5)
-        d.line([(cx + 12, ey), (cx + 34, ey)], fill=BLACK, width=5)
-    elif expr in ("happy", "welcoming", "giggle"):
-        d.arc([cx - 36, ey - 2, cx - 10, ey + 16], 200, 340, fill=BLACK, width=4)
-        d.arc([cx + 10, ey - 2, cx + 36, ey + 16], 200, 340, fill=BLACK, width=4)
+        d.line([(cx - 50 * S, cy - 5 * S), (cx - 20 * S, cy - 5 * S)], fill=BLACK, width=4 * S)
+        d.line([(cx + 20 * S, cy - 5 * S), (cx + 50 * S, cy - 5 * S)], fill=BLACK, width=4 * S)
     else:
-        # big cartoon eyes
-        oval(d, [cx - 38, ey - 18, cx - 8, ey + 16], WHITE, BLACK, 3)
-        oval(d, [cx + 8, ey - 18, cx + 38, ey + 16], WHITE, BLACK, 3)
-        oval(d, [cx - 28, ey - 8, cx - 14, ey + 6], BLACK)
-        oval(d, [cx + 14, ey - 8, cx + 28, ey + 6], BLACK)
-        oval(d, [cx - 24, ey - 10, cx - 18, ey - 4], WHITE)
-        oval(d, [cx + 18, ey - 10, cx + 24, ey - 4], WHITE)
-
-    if expr == "confused":
-        d.line([(cx - 36, ey - 26), (cx - 12, ey - 18)], fill=BLACK, width=4)
-        d.line([(cx + 12, ey - 20), (cx + 36, ey - 28)], fill=BLACK, width=4)
-    elif expr == "question":
-        d.line([(cx - 36, ey - 28), (cx - 12, ey - 22)], fill=BLACK, width=4)
-        d.line([(cx + 12, ey - 22), (cx + 36, ey - 28)], fill=BLACK, width=4)
+        oval(d, [cx - 55 * S, cy - 25 * S, cx - 15 * S, cy + 25 * S], WHITE, BLACK, 3 * S)
+        oval(d, [cx + 15 * S, cy - 25 * S, cx + 55 * S, cy + 25 * S], WHITE, BLACK, 3 * S)
+        # pupils
+        oval(d, [cx - 42 * S, cy - 10 * S, cx - 22 * S, cy + 12 * S], BLACK)
+        oval(d, [cx + 22 * S, cy - 10 * S, cx + 42 * S, cy + 12 * S], BLACK)
+        # shine
+        oval(d, [cx - 36 * S, cy - 12 * S, cx - 28 * S, cy - 4 * S], WHITE)
+        oval(d, [cx + 28 * S, cy - 12 * S, cx + 36 * S, cy - 4 * S], WHITE)
+    # brows
+    if expr == "question":
+        d.arc([cx - 55 * S, cy - 45 * S, cx - 15 * S, cy - 20 * S], 200, 340, fill=BLACK, width=3 * S)
+        d.arc([cx + 15 * S, cy - 48 * S, cx + 55 * S, cy - 22 * S], 200, 340, fill=BLACK, width=3 * S)
     elif expr in ("happy", "welcoming"):
-        d.arc([cx - 38, ey - 32, cx - 10, ey - 14], 200, 340, fill=BLACK, width=3)
-        d.arc([cx + 10, ey - 32, cx + 38, ey - 14], 200, 340, fill=BLACK, width=3)
+        d.arc([cx - 55 * S, cy - 42 * S, cx - 15 * S, cy - 18 * S], 200, 340, fill=BLACK, width=3 * S)
+        d.arc([cx + 15 * S, cy - 42 * S, cx + 55 * S, cy - 18 * S], 200, 340, fill=BLACK, width=3 * S)
     else:
-        d.line([(cx - 36, ey - 24), (cx - 12, ey - 24)], fill=BLACK, width=3)
-        d.line([(cx + 12, ey - 24), (cx + 36, ey - 24)], fill=BLACK, width=3)
-
-    # small nose
-    oval(d, [cx - 7, hy + 12, cx + 7, hy + 28], SKIN_D)
-
-
-def head_side(d, cx, hy, facing="left"):
-    """Clean profile — one eye, ear, nose, closed mouth baked in."""
-    sign = -1 if facing == "left" else 1
-    oval(d, [cx - 48, hy - 62, cx + 48, hy + 52], SKIN)
-    oval(d, [cx - 50, hy - 74, cx + 36, hy - 4], HAIR)
-    d.polygon(
-        [(cx - 6, hy - 50), (cx + sign * 14, hy - 95), (cx + 22, hy - 42)],
-        fill=HAIR,
-    )
-    # ear toward back
-    ex = cx - sign * 40
-    oval(d, [ex - 12, hy - 2, ex + 12, hy + 28], SKIN, BLACK, 2)
-    oval(d, [ex - 5, hy + 6, ex + 5, hy + 18], SKIN_D)
-    # eye
-    eye_x = cx + sign * 16
-    oval(d, [eye_x - 14, hy - 14, eye_x + 14, hy + 12], WHITE, BLACK, 2)
-    oval(d, [eye_x - 4, hy - 4, eye_x + 6, hy + 6], BLACK)
+        d.line([(cx - 52 * S, cy - 32 * S), (cx - 18 * S, cy - 32 * S)], fill=BLACK, width=3 * S)
+        d.line([(cx + 18 * S, cy - 32 * S), (cx + 52 * S, cy - 32 * S)], fill=BLACK, width=3 * S)
     # nose
-    nx = cx + sign * 46
-    oval(d, [nx - 7, hy + 6, nx + 7, hy + 24], SKIN_D)
-    # closed smile line (no separate mouth layer on side)
-    mx = cx + sign * 20
-    d.arc([mx - 12, hy + 26, mx + 12, hy + 40], 15, 165, fill=BLACK, width=3)
+    oval(d, [cx - 10 * S, cy + 15 * S, cx + 10 * S, cy + 38 * S], SKIN_D)
+    # glasses
+    d.ellipse([cx - 58 * S, cy - 28 * S, cx - 12 * S, cy + 28 * S], outline=GLASS, width=3 * S)
+    d.ellipse([cx + 12 * S, cy - 28 * S, cx + 58 * S, cy + 28 * S], outline=GLASS, width=3 * S)
+    d.line([(cx - 12 * S, cy), (cx + 12 * S, cy)], fill=GLASS, width=3 * S)
+    return soft(img)
 
 
-def torso_front(d, cx, sy):
-    d.rounded_rectangle([cx - 68, sy, cx + 68, sy + 175], 32, fill=HOODIE)
-    d.rounded_rectangle([cx - 44, sy + 40, cx + 44, sy + 150], 22, fill=HOODIE_L)
-    d.arc([cx - 55, sy - 6, cx + 55, sy + 45], 200, 340, fill=HOODIE_D, width=7)
-
-
-def torso_side(d, cx, sy):
-    d.rounded_rectangle([cx - 42, sy, cx + 42, sy + 170], 26, fill=HOODIE)
-    d.rounded_rectangle([cx - 24, sy + 35, cx + 24, sy + 145], 16, fill=HOODIE_L)
-
-
-def draw_walk(facing: str, phase: int) -> Image.Image:
-    """Human-ish side walk: clear stride, opposite arm swing, profile head."""
-    img = blank()
+def part_mouth(kind: str) -> Image.Image:
+    w, h = 220 * S, 260 * S
+    img = blank(w, h)
     d = ImageDraw.Draw(img)
-    cx = CX
-    left = facing == "left"
-    s = -1 if left else 1
-
-    oval(d, [cx - 60, FOOT + 2, cx + 60, FOOT + 26], (0, 0, 0, 40))
-
-    if phase == 0:
-        # front leg (direction of travel)
-        limb(d, cx + s * 6, HIP, cx + s * 42, KNEE - 10, 34, PANTS)
-        limb(d, cx + s * 42, KNEE - 10, cx + s * 58, FOOT - 12, 30, PANTS)
-        nice_foot(d, cx + s * 58, FOOT - 6, -1 if left else 1)
-        # back leg
-        limb(d, cx - s * 6, HIP, cx - s * 28, KNEE + 12, 34, PANTS)
-        limb(d, cx - s * 28, KNEE + 12, cx - s * 18, FOOT, 30, PANTS)
-        nice_foot(d, cx - s * 18, FOOT + 2, -1 if left else 1)
-        # arms opposite
-        limb(d, cx - s * 32, SHOULDER + 32, cx - s * 58, SHOULDER + 110, 28, HOODIE)
-        nice_hand(d, cx - s * 62, SHOULDER + 122)
-        limb(d, cx + s * 32, SHOULDER + 32, cx + s * 68, SHOULDER + 8, 28, HOODIE)
-        nice_hand(d, cx + s * 76, SHOULDER + 2, open_palm=True)
-    else:
-        limb(d, cx - s * 6, HIP, cx - s * 42, KNEE - 10, 34, PANTS)
-        limb(d, cx - s * 42, KNEE - 10, cx - s * 58, FOOT - 12, 30, PANTS)
-        nice_foot(d, cx - s * 58, FOOT - 6, -1 if left else 1)
-        limb(d, cx + s * 6, HIP, cx + s * 28, KNEE + 12, 34, PANTS)
-        limb(d, cx + s * 28, KNEE + 12, cx + s * 18, FOOT, 30, PANTS)
-        nice_foot(d, cx + s * 18, FOOT + 2, -1 if left else 1)
-        limb(d, cx + s * 32, SHOULDER + 32, cx + s * 58, SHOULDER + 110, 28, HOODIE)
-        nice_hand(d, cx + s * 62, SHOULDER + 122)
-        limb(d, cx - s * 32, SHOULDER + 32, cx - s * 68, SHOULDER + 8, 28, HOODIE)
-        nice_hand(d, cx - s * 76, SHOULDER + 2, open_palm=True)
-
-    torso_side(d, cx, SHOULDER)
-    d.rounded_rectangle([cx - 14, NECK_Y, cx + 14, SHOULDER + 14], 10, fill=SKIN)
-    head_side(d, cx, HEAD_Y, facing)
-    return img
+    cx, cy = w // 2, int(h * 0.55) + 48 * S
+    if kind == "closed":
+        d.arc([cx - 22 * S, cy - 4 * S, cx + 22 * S, cy + 20 * S], 20, 160, fill=BLACK, width=3 * S)
+    elif kind == "smile":
+        d.arc([cx - 26 * S, cy - 6 * S, cx + 26 * S, cy + 22 * S], 15, 165, fill=BLACK, width=4 * S)
+    elif kind == "open":
+        oval(d, [cx - 20 * S, cy, cx + 20 * S, cy + 28 * S], MOUTH_IN, BLACK, 2 * S)
+        oval(d, [cx - 14 * S, cy + 3 * S, cx + 14 * S, cy + 12 * S], TEETH)
+    else:  # wide
+        oval(d, [cx - 24 * S, cy, cx + 24 * S, cy + 34 * S], MOUTH_IN, BLACK, 2 * S)
+        oval(d, [cx - 16 * S, cy + 3 * S, cx + 16 * S, cy + 12 * S], TEETH)
+    return soft(img)
 
 
-def draw_pose(mode: str = "stand", expr: str = "neutral") -> Image.Image:
-    img = blank()
+def part_neck() -> Image.Image:
+    w, h = 80 * S, 50 * S
+    img = blank(w, h)
     d = ImageDraw.Draw(img)
-    cx = CX
-    oval(d, [cx - 75, FOOT + 2, cx + 75, FOOT + 28], (0, 0, 0, 40))
+    d.rounded_rectangle([10 * S, 0, 70 * S, 48 * S], 12 * S, fill=SKIN)
+    return soft(img)
+
+
+def part_torso() -> Image.Image:
+    w, h = 280 * S, 320 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    cx = w // 2
+    # hoodie body
+    d.rounded_rectangle([30 * S, 20 * S, 250 * S, 300 * S], 40 * S, fill=HOODIE)
+    # pocket
+    d.rounded_rectangle([70 * S, 140 * S, 210 * S, 260 * S], 28 * S, fill=HOODIE_L)
+    # hood rim
+    d.arc([50 * S, 5 * S, 230 * S, 100 * S], 200, 340, fill=HOODIE_D, width=8 * S)
+    # drawstrings
+    d.line([(cx - 25 * S, 55 * S), (cx - 25 * S, 130 * S)], fill=WHITE, width=5 * S)
+    d.line([(cx + 25 * S, 55 * S), (cx + 25 * S, 130 * S)], fill=WHITE, width=5 * S)
+    oval(d, [cx - 30 * S, 125 * S, cx - 20 * S, 140 * S], WHITE)
+    oval(d, [cx + 20 * S, 125 * S, cx + 30 * S, 140 * S], WHITE)
+    return soft(img)
+
+
+def part_upper_arm() -> Image.Image:
+    w, h = 70 * S, 140 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([12 * S, 5 * S, 58 * S, 130 * S], 22 * S, fill=HOODIE)
+    return soft(img)
+
+
+def part_forearm() -> Image.Image:
+    w, h = 60 * S, 120 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([10 * S, 5 * S, 50 * S, 110 * S], 18 * S, fill=HOODIE)
+    return soft(img)
+
+
+def part_hand() -> Image.Image:
+    w, h = 70 * S, 80 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    # palm
+    oval(d, [12 * S, 20 * S, 58 * S, 70 * S], SKIN)
+    # fingers
+    for i, x in enumerate([14, 26, 38, 50]):
+        oval(d, [x * S, 5 * S, (x + 12) * S, 32 * S], SKIN)
+    # thumb
+    oval(d, [2 * S, 30 * S, 22 * S, 55 * S], SKIN)
+    return soft(img)
+
+
+def part_hips() -> Image.Image:
+    w, h = 200 * S, 80 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([20 * S, 10 * S, 180 * S, 70 * S], 20 * S, fill=PANTS)
+    return soft(img)
+
+
+def part_thigh() -> Image.Image:
+    w, h = 80 * S, 160 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([15 * S, 5 * S, 65 * S, 150 * S], 24 * S, fill=PANTS)
+    return soft(img)
+
+
+def part_shin() -> Image.Image:
+    w, h = 70 * S, 150 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([12 * S, 5 * S, 58 * S, 140 * S], 20 * S, fill=PANTS)
+    return soft(img)
+
+
+def part_foot() -> Image.Image:
+    w, h = 110 * S, 55 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    # sneaker
+    d.rounded_rectangle([5 * S, 10 * S, 100 * S, 48 * S], 14 * S, fill=SHOE)
+    d.rounded_rectangle([5 * S, 32 * S, 100 * S, 50 * S], 10 * S, fill=SHOE_W)
+    # stripe
+    d.arc([25 * S, 8 * S, 70 * S, 40 * S], 200, 340, fill=WHITE, width=3 * S)
+    return soft(img)
+
+
+def part_joint() -> Image.Image:
+    """Knee / elbow orb."""
+    w, h = 40 * S, 40 * S
+    img = blank(w, h)
+    d = ImageDraw.Draw(img)
+    oval(d, [4 * S, 4 * S, 36 * S, 36 * S], SKIN)
+    return soft(img)
+
+
+def assemble_pose(mode: str, expr: str, mouth: str) -> Image.Image:
+    """Build a full-body pose from parts (for compatibility + preview)."""
+    canvas = blank(520, 780)
+    # scale parts down from 2x
+    def load_scaled(im):
+        return im.resize((im.width // S, im.height // S), Image.Resampling.LANCZOS)
+
+    head = load_scaled(part_head())
+    face = load_scaled(part_face(expr))
+    mth = load_scaled(part_mouth(mouth))
+    neck = load_scaled(part_neck())
+    torso = load_scaled(part_torso())
+    ua = load_scaled(part_upper_arm())
+    fa = load_scaled(part_forearm())
+    hand = load_scaled(part_hand())
+    hips = load_scaled(part_hips())
+    thigh = load_scaled(part_thigh())
+    shin = load_scaled(part_shin())
+    foot = load_scaled(part_foot())
+    joint = load_scaled(part_joint())
+
+    cx = 260
+
+    def paste(im, x, y):
+        canvas.paste(im, (int(x - im.width // 2), int(y - im.height // 2)), im)
+
+    def paste_rot(im, x, y, angle):
+        r = im.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+        canvas.paste(r, (int(x - r.width // 2), int(y - r.height // 2)), r)
+
+    # shadow
+    d = ImageDraw.Draw(canvas)
+    oval(d, [cx - 80, 720, cx + 80, 755], (0, 0, 0, 45))
+
+    if mode == "side_left":
+        # simplified side: legs stride
+        paste_rot(thigh, cx - 15, 480, 25)
+        paste_rot(shin, cx - 35, 580, 10)
+        paste_rot(foot, cx - 50, 660, 0)
+        paste_rot(thigh, cx + 15, 490, -20)
+        paste_rot(shin, cx + 25, 590, -5)
+        paste_rot(foot, cx + 30, 670, 0)
+        paste(hips, cx, 400)
+        paste(torso, cx, 280)
+        paste_rot(ua, cx - 50, 250, 40)
+        paste_rot(fa, cx - 80, 320, 20)
+        paste(hand, cx - 95, 380)
+        paste_rot(ua, cx + 50, 250, -50)
+        paste_rot(fa, cx + 70, 200, -30)
+        paste(hand, cx + 85, 160)
+        paste(neck, cx, 175)
+        paste(head, cx, 120)
+        paste(face, cx, 120)
+        # no mouth overlay on pure side — face has slight smile baked if needed
+        return canvas
+
+    # front poses
+    if mode == "sit":
+        paste_rot(thigh, cx - 40, 520, 70)
+        paste_rot(shin, cx - 90, 580, 5)
+        paste_rot(foot, cx - 100, 650, 0)
+        paste_rot(thigh, cx + 40, 520, -70)
+        paste_rot(shin, cx + 90, 580, -5)
+        paste_rot(foot, cx + 100, 650, 0)
+        paste(hips, cx, 460)
+        paste(torso, cx, 320)
+        paste_rot(ua, cx - 70, 300, 15)
+        paste_rot(fa, cx - 80, 380, 10)
+        paste(hand, cx - 85, 440)
+        paste_rot(ua, cx + 70, 300, -15)
+        paste_rot(fa, cx + 80, 380, -10)
+        paste(hand, cx + 85, 440)
+        paste(neck, cx, 200)
+        paste(head, cx, 145)
+        paste(face, cx, 145)
+        paste(mth, cx, 145)
+        return canvas
+
+    # legs stand
+    paste(thigh, cx - 35, 500)
+    paste(joint, cx - 35, 560)
+    paste(shin, cx - 35, 620)
+    paste(foot, cx - 40, 690)
+    paste(thigh, cx + 35, 500)
+    paste(joint, cx + 35, 560)
+    paste(shin, cx + 35, 620)
+    paste(foot, cx + 40, 690)
+    paste(hips, cx, 420)
+    paste(torso, cx, 280)
 
     if mode == "point":
-        limb(d, cx - 22, HIP, cx - 22, KNEE, 32, PANTS)
-        limb(d, cx - 22, KNEE, cx - 22, FOOT, 28, PANTS)
-        limb(d, cx + 22, HIP, cx + 22, KNEE, 32, PANTS)
-        limb(d, cx + 22, KNEE, cx + 22, FOOT, 28, PANTS)
-        nice_foot(d, cx - 22, FOOT, -1)
-        nice_foot(d, cx + 22, FOOT, 1)
-        torso_front(d, cx, SHOULDER)
-        limb(d, cx - 55, SHOULDER + 40, cx - 75, SHOULDER + 130, 28, HOODIE)
-        nice_hand(d, cx - 78, SHOULDER + 142)
-        # point arm up-right
-        limb(d, cx + 55, SHOULDER + 35, cx + 125, SHOULDER - 40, 30, HOODIE)
-        nice_hand(d, cx + 132, SHOULDER - 52, open_palm=True)
-        # finger tip
-        limb(d, cx + 132, SHOULDER - 52, cx + 165, SHOULDER - 72, 9, SKIN)
-        d.rounded_rectangle([cx - 14, NECK_Y, cx + 14, SHOULDER + 14], 10, fill=SKIN)
-        head_front(d, cx, HEAD_Y, expr)
-
+        paste_rot(ua, cx - 70, 250, 15)
+        paste_rot(fa, cx - 85, 340, 20)
+        paste(hand, cx - 95, 400)
+        paste_rot(ua, cx + 70, 230, -55)
+        paste_rot(fa, cx + 120, 160, -40)
+        paste(hand, cx + 150, 110)
     elif mode == "present":
-        limb(d, cx - 22, HIP, cx - 22, KNEE, 32, PANTS)
-        limb(d, cx - 22, KNEE, cx - 22, FOOT, 28, PANTS)
-        limb(d, cx + 22, HIP, cx + 22, KNEE, 32, PANTS)
-        limb(d, cx + 22, KNEE, cx + 22, FOOT, 28, PANTS)
-        nice_foot(d, cx - 22, FOOT, -1)
-        nice_foot(d, cx + 22, FOOT, 1)
-        torso_front(d, cx, SHOULDER)
-        limb(d, cx - 58, SHOULDER + 40, cx - 125, SHOULDER + 55, 30, HOODIE)
-        nice_hand(d, cx - 136, SHOULDER + 50, open_palm=True)
-        limb(d, cx + 58, SHOULDER + 40, cx + 125, SHOULDER + 55, 30, HOODIE)
-        nice_hand(d, cx + 136, SHOULDER + 50, open_palm=True)
-        d.rounded_rectangle([cx - 14, NECK_Y, cx + 14, SHOULDER + 14], 10, fill=SKIN)
-        head_front(d, cx, HEAD_Y, expr if expr != "neutral" else "welcoming")
-
-    elif mode == "sit":
-        sit_hip, sit_knee, sit_foot = 460, 500, 600
-        limb(d, cx - 24, sit_hip, cx - 80, sit_knee, 34, PANTS)
-        limb(d, cx + 24, sit_hip, cx + 80, sit_knee, 34, PANTS)
-        limb(d, cx - 80, sit_knee, cx - 85, sit_foot, 30, PANTS)
-        limb(d, cx + 80, sit_knee, cx + 85, sit_foot, 30, PANTS)
-        nice_foot(d, cx - 85, sit_foot, -1)
-        nice_foot(d, cx + 85, sit_foot, 1)
-        torso_front(d, cx, SHOULDER + 55)
-        limb(d, cx - 55, SHOULDER + 95, cx - 60, SHOULDER + 175, 28, HOODIE)
-        nice_hand(d, cx - 60, SHOULDER + 188)
-        limb(d, cx + 55, SHOULDER + 95, cx + 60, SHOULDER + 175, 28, HOODIE)
-        nice_hand(d, cx + 60, SHOULDER + 188)
-        d.rounded_rectangle([cx - 14, NECK_Y + 50, cx + 14, SHOULDER + 68], 10, fill=SKIN)
-        head_front(d, cx, HEAD_Y + 45, expr)
-
+        paste_rot(ua, cx - 75, 250, 50)
+        paste_rot(fa, cx - 130, 280, 20)
+        paste(hand, cx - 160, 300)
+        paste_rot(ua, cx + 75, 250, -50)
+        paste_rot(fa, cx + 130, 280, -20)
+        paste(hand, cx + 160, 300)
     else:
-        limb(d, cx - 22, HIP, cx - 22, KNEE, 32, PANTS)
-        limb(d, cx - 22, KNEE, cx - 22, FOOT, 28, PANTS)
-        limb(d, cx + 22, HIP, cx + 22, KNEE, 32, PANTS)
-        limb(d, cx + 22, KNEE, cx + 22, FOOT, 28, PANTS)
-        nice_foot(d, cx - 22, FOOT, -1)
-        nice_foot(d, cx + 22, FOOT, 1)
-        torso_front(d, cx, SHOULDER)
-        limb(d, cx - 55, SHOULDER + 40, cx - 70, SHOULDER + 140, 28, HOODIE)
-        nice_hand(d, cx - 72, SHOULDER + 152)
-        limb(d, cx + 55, SHOULDER + 40, cx + 70, SHOULDER + 140, 28, HOODIE)
-        nice_hand(d, cx + 72, SHOULDER + 152)
-        d.rounded_rectangle([cx - 14, NECK_Y, cx + 14, SHOULDER + 14], 10, fill=SKIN)
-        head_front(d, cx, HEAD_Y, expr)
+        paste_rot(ua, cx - 70, 260, 10)
+        paste_rot(fa, cx - 80, 350, 5)
+        paste(hand, cx - 85, 410)
+        paste_rot(ua, cx + 70, 260, -10)
+        paste_rot(fa, cx + 80, 350, -5)
+        paste(hand, cx + 85, 410)
 
-    return img
-
-
-def draw_mouth(kind: str) -> Image.Image:
-    img = blank()
-    d = ImageDraw.Draw(img)
-    cx, my = CX, HEAD_Y + 38
-    if kind == "closed":
-        d.arc([cx - 18, my - 2, cx + 18, my + 16], 20, 160, fill=BLACK, width=4)
-    elif kind == "open":
-        oval(d, [cx - 16, my, cx + 16, my + 22], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 12, my + 2, cx + 12, my + 9], TEETH)
-    elif kind == "smile":
-        d.arc([cx - 20, my - 4, cx + 20, my + 18], 15, 165, fill=BLACK, width=5)
-    else:
-        oval(d, [cx - 18, my, cx + 18, my + 26], MOUTH_IN, BLACK, 2)
-        oval(d, [cx - 13, my + 2, cx + 13, my + 9], TEETH)
-    return img
+    paste(neck, cx, 175)
+    paste(head, cx, 120)
+    paste(face, cx, 120)
+    paste(mth, cx, 120)
+    return canvas
 
 
 def main() -> None:
     out = Path(__file__).resolve().parents[1] / "assets" / "mezi"
     out.mkdir(parents=True, exist_ok=True)
-    draw_walk("left", 0).save(out / "walk_l0.png")
-    draw_walk("left", 1).save(out / "walk_l1.png")
-    draw_walk("right", 0).save(out / "walk_r0.png")
-    draw_walk("right", 1).save(out / "walk_r1.png")
-    draw_walk("left", 0).save(out / "body_side_left.png")
-    draw_walk("right", 0).save(out / "body_side_right.png")
-    poses = {
-        "body.png": ("stand", "neutral"),
-        "arm_point.png": ("point", "encouraging"),
-        "body_present.png": ("present", "welcoming"),
-        "body_sit.png": ("sit", "neutral"),
-        "body_happy.png": ("stand", "happy"),
-        "body_question.png": ("stand", "question"),
-        "body_confused.png": ("stand", "confused"),
-        "body_blink.png": ("stand", "blink"),
+    parts_dir = out / "parts"
+    parts_dir.mkdir(exist_ok=True)
+
+    # raw parts (2x, saved for future bone animator)
+    exports = {
+        "head.png": part_head,
+        "face_neutral.png": lambda: part_face("neutral"),
+        "face_happy.png": lambda: part_face("happy"),
+        "face_question.png": lambda: part_face("question"),
+        "face_blink.png": lambda: part_face("blink"),
+        "mouth_closed.png": lambda: part_mouth("closed"),
+        "mouth_open.png": lambda: part_mouth("open"),
+        "mouth_wide.png": lambda: part_mouth("wide"),
+        "mouth_smile.png": lambda: part_mouth("smile"),
+        "neck.png": part_neck,
+        "torso.png": part_torso,
+        "upper_arm.png": part_upper_arm,
+        "forearm.png": part_forearm,
+        "hand.png": part_hand,
+        "hips.png": part_hips,
+        "thigh.png": part_thigh,
+        "shin.png": part_shin,
+        "foot.png": part_foot,
+        "joint.png": part_joint,
     }
-    for name, (mode, expr) in poses.items():
-        draw_pose(mode, expr).save(out / name, "PNG")
-        print("wrote", name)
+    for name, fn in exports.items():
+        fn().save(parts_dir / name, "PNG")
+        print("part", name)
+
+    # full poses for current renderer
+    poses = {
+        "body.png": ("stand", "neutral", "closed"),
+        "body_happy.png": ("stand", "happy", "smile"),
+        "body_question.png": ("stand", "question", "closed"),
+        "body_blink.png": ("stand", "blink", "closed"),
+        "body_present.png": ("present", "welcoming", "smile"),
+        "arm_point.png": ("point", "neutral", "closed"),
+        "body_sit.png": ("sit", "neutral", "closed"),
+        "body_side_left.png": ("side_left", "neutral", "closed"),
+        "body_side_right.png": ("side_left", "neutral", "closed"),
+        "walk_l0.png": ("side_left", "neutral", "closed"),
+        "walk_l1.png": ("side_left", "neutral", "closed"),
+        "walk_r0.png": ("side_left", "neutral", "closed"),
+        "walk_r1.png": ("side_left", "neutral", "closed"),
+    }
+    for name, (mode, expr, mouth) in poses.items():
+        assemble_pose(mode, expr, mouth).save(out / name, "PNG")
+        print("pose", name)
+
+    # mouth overlays aligned to body canvas (front)
     for kind, fname in [
         ("closed", "mouth_closed.png"),
         ("open", "mouth_open.png"),
         ("wide", "mouth_wide.png"),
         ("smile", "mouth_smile.png"),
     ]:
-        draw_mouth(kind).save(out / fname, "PNG")
-        print("wrote", fname)
-    print("walk frames ok")
+        canvas = blank(520, 780)
+        m = part_mouth(kind).resize(
+            (part_mouth(kind).width // S, part_mouth(kind).height // S),
+            Image.Resampling.LANCZOS,
+        )
+        canvas.paste(m, (260 - m.width // 2, 120 - m.height // 2), m)
+        canvas.save(out / fname, "PNG")
+        print("mouth", fname)
 
 
 if __name__ == "__main__":
