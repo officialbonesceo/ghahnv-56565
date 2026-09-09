@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike + AI moves + lips (no baked mouth) + studio BG."""
+"""Mike + clean studio BG + lips + AI moves."""
 from __future__ import annotations
 
 import argparse
@@ -113,101 +113,131 @@ def secondary_world(primary: str) -> str:
 
 
 def draw_classroom(topic: str, definition: str = "", cta: str = "") -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
-    img = Image.new("RGB", (bw, bh), (12, 22, 48))
+    """Clean vertical studio — board top-center, wall, floor, Mike stands in open space."""
+    # Exact frame size so camera does not crop weirdly
+    bw, bh = W + 80, H + 80
+    img = Image.new("RGB", (bw, bh), (18, 32, 58))
     d = ImageDraw.Draw(img)
-    for i in range(14):
-        y0 = int(bh * i / 14)
-        d.rectangle([0, y0, bw, int(bh * (i + 1) / 14)], fill=(12 + i, 24 + i, 48 + i * 2))
-    d.rounded_rectangle([20, 40, 200, 520], 12, fill=(18, 28, 50))
-    for row in range(5):
-        y = 70 + row * 85
-        d.rectangle([35, y, 185, y + 8], fill=(255, 180, 40))
-    nf = font(36)
-    d.text((220, 50), "SCIENCE", font=nf, fill=(120, 220, 255))
-    d.text((220, 95), "TECH", font=nf, fill=(120, 220, 255))
-    d.text((220, 140), "AI", font=nf, fill=(120, 220, 255))
-    d.rectangle([205, 55, 212, 175], fill=ACCENT)
-    bx0, by0, bx1, by1 = 380, 80, bw - 200, 420
-    d.rounded_rectangle([bx0 - 8, by0 - 8, bx1 + 8, by1 + 8], 14, fill=(25, 35, 55))
-    d.rounded_rectangle([bx0, by0, bx1, by1], 10, fill=(18, 55, 70))
-    d.rectangle([bx0, by0, bx0 + 6, by1], fill=(80, 200, 255))
+
+    # soft vertical gradient
+    for i in range(20):
+        y0 = int(bh * i / 20)
+        y1 = int(bh * (i + 1) / 20)
+        shade = 16 + i
+        d.rectangle([0, y0, bw, y1], fill=(shade, 28 + i // 2, 52 + i))
+
+    # left accent bar (neon strip)
+    d.rectangle([0, 0, 14, bh], fill=ACCENT)
+    d.rectangle([14, 0, 18, bh], fill=(255, 220, 100))
+
+    # small SCI/TECH/AI label top-left
+    nf = font(22)
+    d.text((36, 36), "SCIENCE", font=nf, fill=(140, 220, 255))
+    d.text((36, 62), "TECH · AI", font=nf, fill=(140, 220, 255))
+
+    # ===== MAIN BOARD (centered upper third) =====
+    bx0, by0 = 90, 100
+    bx1, by1 = bw - 90, 480
+    # outer frame
+    d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 18, fill=(30, 40, 60))
+    # board face
+    d.rounded_rectangle([bx0, by0, bx1, by1], 14, fill=(16, 70, 62))
+    # cyan left edge
+    d.rectangle([bx0, by0 + 8, bx0 + 8, by1 - 8], fill=(80, 210, 255))
+
     topic = (topic or "Lesson").strip() or "Lesson"
-    tf = font(52)
-    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 40) and tf.size > 26:
+    tf = font(58)
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 60) and tf.size > 28:
         tf = font(tf.size - 3)
-    y = by0 + 28
-    for line in wrap_text(d, topic, tf, bx1 - bx0 - 40)[:2]:
+    y = by0 + 36
+    for line in wrap_text(d, topic, tf, bx1 - bx0 - 60)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(230, 255, 250))
-        y += tf.size + 8
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(240, 255, 250))
+        y += tf.size + 10
+
     if definition:
-        df = font(24)
-        y += 10
-        for line in wrap_text(d, definition, df, bx1 - bx0 - 40)[:4]:
+        df = font(28)
+        y += 12
+        for line in wrap_text(d, definition, df, bx1 - bx0 - 60)[:4]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(160, 210, 200))
-            y += df.size + 5
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(170, 220, 205))
+            y += df.size + 6
+
     cta = cta or "Comment YES for part 2"
-    cf = font(22)
-    d.rounded_rectangle([bx0 + 20, by1 - 50, bx1 - 20, by1 - 12], 10, fill=ACCENT)
+    cf = font(26)
+    bar_y0, bar_y1 = by1 - 70, by1 - 18
+    d.rounded_rectangle([bx0 + 40, bar_y0, bx1 - 40, bar_y1], 14, fill=ACCENT)
     bb = d.textbbox((0, 0), cta, font=cf)
     tw = bb[2] - bb[0]
-    d.text((bx0 + (bx1 - bx0 - tw) // 2, by1 - 42), cta, font=cf, fill=BLACK)
-    desk_y = int(bh * 0.58)
-    d.rounded_rectangle([40, desk_y, bw - 40, desk_y + 80], 8, fill=(45, 35, 28))
-    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(10, 16, 30))
+    d.text((bx0 + (bx1 - bx0 - tw) // 2, bar_y0 + 12), cta, font=cf, fill=BLACK)
+
+    # wall panel under board (empty stage area for character)
+    d.rectangle([0, by1 + 20, bw, int(bh * 0.78)], fill=(14, 26, 48))
+
+    # subtle floor ellipse / stage ring
+    d.ellipse(
+        [int(bw * 0.12), int(bh * 0.82), int(bw * 0.88), int(bh * 0.98)],
+        outline=(255, 190, 50), width=3,
+    )
+    # floor
+    d.rectangle([0, int(bh * 0.88), bw, bh], fill=(10, 16, 30))
+
     return img
 
 
 def draw_stage() -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
-    img = Image.new("RGB", (bw, bh), (8, 20, 45))
+    bw, bh = W + 80, H + 80
+    img = Image.new("RGB", (bw, bh), (10, 22, 48))
     d = ImageDraw.Draw(img)
-    for i in range(12):
-        y0 = int(bh * i / 12)
-        d.rectangle([0, y0, bw, int(bh * (i + 1) / 12)], fill=(8 + i, 18 + i, 40 + i * 2))
-    d.ellipse([int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)], outline=(255, 200, 60), width=4)
+    for i in range(16):
+        y0 = int(bh * i / 16)
+        d.rectangle([0, y0, bw, int(bh * (i + 1) / 16)], fill=(10 + i, 20 + i, 42 + i * 2))
+    d.ellipse([int(bw * 0.12), int(bh * 0.82), int(bw * 0.88), int(bh * 0.98)], outline=(255, 200, 60), width=3)
+    d.rectangle([0, int(bh * 0.9), bw, bh], fill=(8, 12, 24))
     return img
 
 
 def draw_space() -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
+    bw, bh = W + 80, H + 80
     img = Image.new("RGB", (bw, bh), (6, 8, 24))
     d = ImageDraw.Draw(img)
     rng = random.Random(11)
-    for _ in range(280):
-        x, y = rng.randint(0, bw - 1), rng.randint(0, int(bh * 0.8))
+    for _ in range(320):
+        x, y = rng.randint(0, bw - 1), rng.randint(0, int(bh * 0.85))
         r = rng.randint(1, 3)
         d.ellipse([x, y, x + r, y + r], fill=(240, 245, 255))
+    d.ellipse([bw - 200, 80, bw - 80, 200], fill=(255, 245, 180))
+    d.rectangle([0, int(bh * 0.9), bw, bh], fill=(4, 6, 16))
     return img
 
 
 def draw_sky() -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
+    bw, bh = W + 80, H + 80
     img = Image.new("RGB", (bw, bh), (120, 175, 230))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, int(bh * 0.74), bw, bh], fill=(70, 140, 80))
+    d.ellipse([bw - 220, 40, bw - 60, 180], fill=(255, 230, 120))
+    d.rectangle([0, int(bh * 0.75), bw, bh], fill=(70, 140, 80))
     return img
 
 
 def draw_nature() -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
-    img = Image.new("RGB", (bw, bh), (150, 200, 150))
+    bw, bh = W + 80, H + 80
+    img = Image.new("RGB", (bw, bh), (140, 190, 150))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, bw, int(bh * 0.55)], fill=(130, 190, 230))
-    d.rectangle([0, int(bh * 0.55), bw, bh], fill=(55, 120, 60))
+    d.rectangle([0, 0, bw, int(bh * 0.55)], fill=(120, 180, 230))
+    d.rectangle([0, int(bh * 0.55), bw, bh], fill=(50, 110, 55))
     return img
 
 
 def draw_lab() -> Image.Image:
-    bw, bh = int(W * 1.2), int(H * 1.15)
-    img = Image.new("RGB", (bw, bh), (15, 25, 50))
+    bw, bh = W + 80, H + 80
+    img = Image.new("RGB", (bw, bh), (12, 22, 48))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([bw // 2 - 200, 80, bw // 2 + 200, 320], 12, fill=(10, 20, 40))
-    d.text((bw // 2 - 40, 160), "AI", font=font(64), fill=(80, 200, 255))
+    d.rounded_rectangle([bw // 2 - 220, 120, bw // 2 + 220, 380], 16, fill=(10, 20, 40))
+    d.text((bw // 2 - 50, 220), "AI", font=font(72), fill=(80, 200, 255))
+    d.ellipse([int(bw * 0.12), int(bh * 0.82), int(bw * 0.88), int(bh * 0.98)], outline=ACCENT, width=3)
     return img
 
 
@@ -221,19 +251,21 @@ def make_bg(kind: str, topic: str = "", definition: str = "", cta: str = "") -> 
 
 
 def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Image.Image:
+    """Gentle Ken Burns — keep board readable, less aggressive crop."""
     progress = min(1.0, t / max(duration, 0.1))
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     fw, fh = full.size
+    # mild zoom only so board + character stay in frame
     if mode == "close":
-        scale, ox, oy = 1.22, 0.5, 0.3
+        scale, ox, oy = 1.06, 0.5, 0.42
     elif mode == "left":
-        scale, ox, oy = 1.1, 0.25 + 0.1 * ease, 0.38
+        scale, ox, oy = 1.04, 0.35 + 0.08 * ease, 0.45
     elif mode == "right":
-        scale, ox, oy = 1.1, 0.65 - 0.1 * ease, 0.38
+        scale, ox, oy = 1.04, 0.55 - 0.08 * ease, 0.45
     elif mode == "pan":
-        scale, ox, oy = 1.08 + 0.05 * ease, 0.2 + 0.5 * ease, 0.35
+        scale, ox, oy = 1.03 + 0.03 * ease, 0.35 + 0.3 * ease, 0.45
     else:
-        scale, ox, oy = 1.0 + 0.05 * ease, 0.45, 0.4
+        scale, ox, oy = 1.0 + 0.04 * ease, 0.5, 0.45
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
     x = int(max_x * max(0.0, min(1.0, ox)))
@@ -242,7 +274,6 @@ def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Imag
 
 
 def load_moves() -> list[dict]:
-    # 1) moves.json  2) script_job.json["moves"]  3) default
     for path in (Path("moves.json"), Path("script_job.json")):
         if not path.exists():
             continue
@@ -325,7 +356,6 @@ def body_for(move: str, t: float, blink: bool) -> str:
 
 def composite_host(move: str, mouth_open: float, blink: bool, t: float) -> Image.Image:
     body = load_rgba(body_for(move, t, blink))
-    # walk has baked closed mouth; front + sit use overlay for lip-sync
     if move in ("walk_left", "walk_right"):
         return body
     mouth = load_rgba(mouth_name(mouth_open))
@@ -375,12 +405,7 @@ def active_caption(windows, t):
 
 def draw_ui(rgb, text, t, duration, topic: str, dyk: str, cta: str, p: float):
     d = ImageDraw.Draw(rgb)
-    af = font(24)
-    label = (topic or "Lesson")[:28]
-    bb = d.textbbox((0, 0), label, font=af)
-    tw = bb[2] - bb[0]
-    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 14, fill=ACCENT)
-    d.text((W - tw - 42, 38), label, font=af, fill=BLACK)
+    # topic chip only if not already big on board (keep light)
     if 0.48 <= p <= 0.66 and dyk:
         df = font(30)
         lines = wrap_text(d, "Did you know? " + dyk, df, W - 100)[:4]
@@ -489,7 +514,7 @@ def main():
             frame = camera_crop(base_full, t, duration, cam).convert("RGBA")
             mouth = open_at(cues, t)
             char = composite_host(move, mouth, blink, t)
-            target_h = int(H * (0.52 if cam == "close" else 0.46))
+            target_h = int(H * (0.50 if cam == "close" else 0.46))
             scale = target_h / char.height
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
@@ -508,15 +533,16 @@ def main():
                 x = int(W * 0.2 + local * W * 0.35)
                 bob = int(10 * abs(math.sin(local * math.pi * 4)))
             elif move == "point":
-                x = int(W * 0.22)
+                x = int(W * 0.28)
             elif move == "sit":
                 x = (W - nw) // 2
                 bob = 0
-                draw_chair(frame, W // 2, H - 210 - int(nh * 0.28))
+                draw_chair(frame, W // 2, H - 200 - int(nh * 0.25))
             else:
                 x = (W - nw) // 2
 
-            y = H - nh - (150 if cam == "close" else 190) + bob
+            # stand on floor, clear of captions
+            y = H - nh - 200 + bob
             frame.paste(char, (x, y), char)
             rgb = frame.convert("RGB")
             draw_ui(rgb, args.text, t, duration, topic, dyk, cta, pfrac)
