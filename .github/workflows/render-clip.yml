@@ -14,7 +14,7 @@ env:
   PHI_FILE: phi-2.Q4_K_M.gguf
   PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
   VOICE: en-US-ChristopherNeural
-  # Slightly slower for clarity / completion
+  # Slower for clarity; must use --rate=$RATE form (leading - breaks argparse)
   RATE: "-5%"
   OPENROUTER_MODEL: openrouter/free
 
@@ -82,7 +82,8 @@ jobs:
 
       - name: tts
         run: |
-          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate "$RATE" --audio-out speech.mp3
+          # CRITICAL: use --rate=$RATE so leading minus is not parsed as a flag
+          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate="$RATE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3
 
