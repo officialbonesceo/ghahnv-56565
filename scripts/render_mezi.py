@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike polished: AI moves, modern stage BGs, tri-scene, camera, lips on front."""
+"""Mike parts-based character + modern studio BG, AI moves, lips, tri-scene."""
 from __future__ import annotations
 
 import argparse
@@ -96,7 +96,7 @@ def topic_world(topic: str) -> str:
         return "sky"
     if re.search(r"tree|plant|photo|leaf|forest|oxygen|carbon", t):
         return "nature"
-    if re.search(r"atom|molecule|chem|battery|electric|circuit|magnet|sound|wave", t):
+    if re.search(r"atom|molecule|chem|battery|electric|circuit|magnet|sound|wave|ai|model", t):
         return "lab"
     return "stage"
 
@@ -109,93 +109,126 @@ def secondary_world(primary: str) -> str:
 
 
 def draw_classroom(topic: str, definition: str = "", cta: str = "") -> Image.Image:
-    """Modern classroom board scene."""
-    bw, bh = int(W * 1.18), int(H * 1.14)
-    img = Image.new("RGB", (bw, bh), (240, 244, 250))
+    """Modern night studio desk — shelves, neon, board with topic+def+CTA."""
+    bw, bh = int(W * 1.2), int(H * 1.15)
+    img = Image.new("RGB", (bw, bh), (12, 22, 48))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, bw, int(bh * 0.72)], fill=(245, 248, 252))
-    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(50, 60, 75))
-    d.rectangle([0, int(bh * 0.72) - 6, bw, int(bh * 0.72)], fill=ACCENT)
-    for i in range(3):
-        x0 = 40 + i * 165
-        d.rounded_rectangle([x0, 36, x0 + 135, 195], 10, fill=(210, 220, 235))
-        d.rectangle([x0 + 8, 44, x0 + 127, 187], fill=(160, 200, 240))
-    bx0, by0, bx1, by1 = 40, 215, bw - 55, int(bh * 0.52)
-    d.rounded_rectangle([bx0 - 6, by0 - 6, bx1 + 6, by1 + 6], 14, fill=(25, 30, 40))
-    d.rounded_rectangle([bx0, by0, bx1, by1], 10, fill=(22, 95, 78))
+
+    # wall gradient bands
+    for i in range(14):
+        y0 = int(bh * i / 14)
+        y1 = int(bh * (i + 1) / 14)
+        d.rectangle([0, y0, bw, y1], fill=(12 + i, 24 + i, 48 + i * 2))
+
+    # left shelves
+    d.rounded_rectangle([20, 40, 200, 520], 12, fill=(18, 28, 50))
+    for row in range(5):
+        y = 70 + row * 85
+        d.rectangle([35, y, 185, y + 8], fill=(255, 180, 40))
+        for b in range(3):
+            d.rounded_rectangle(
+                [40 + b * 45, y + 15, 75 + b * 45, y + 55],
+                4,
+                fill=(40 + b * 30, 80, 160),
+            )
+
+    # right window glow
+    d.rounded_rectangle([bw - 180, 60, bw - 30, 320], 10, fill=(20, 40, 80))
+    d.rectangle([bw - 170, 70, bw - 40, 310], fill=(30, 60, 120))
+
+    # neon SCIENCE TECH AI
+    nf = font(36)
+    d.text((220, 50), "SCIENCE", font=nf, fill=(120, 220, 255))
+    d.text((220, 95), "TECH", font=nf, fill=(120, 220, 255))
+    d.text((220, 140), "AI", font=nf, fill=(120, 220, 255))
+    d.rectangle([205, 55, 212, 175], fill=ACCENT)
+
+    # functional board (center-right)
+    bx0, by0 = 380, 80
+    bx1, by1 = bw - 200, 420
+    d.rounded_rectangle([bx0 - 8, by0 - 8, bx1 + 8, by1 + 8], 14, fill=(25, 35, 55))
+    d.rounded_rectangle([bx0, by0, bx1, by1], 10, fill=(18, 55, 70))
+    # cyan edge
+    d.rectangle([bx0, by0, bx0 + 6, by1], fill=(80, 200, 255))
+
     topic = (topic or "Lesson").strip() or "Lesson"
-    tf = font(56)
-    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 28:
+    tf = font(52)
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 40) and tf.size > 26:
         tf = font(tf.size - 3)
-    y = by0 + 30
-    for line in wrap_text(d, topic, tf, bx1 - bx0 - 48)[:2]:
+    y = by0 + 28
+    for line in wrap_text(d, topic, tf, bx1 - bx0 - 40)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(240, 255, 245))
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(230, 255, 250))
         y += tf.size + 8
+
     if definition:
-        df = font(26)
-        y += 8
-        for line in wrap_text(d, definition, df, bx1 - bx0 - 48)[:3]:
+        df = font(24)
+        y += 10
+        for line in wrap_text(d, definition, df, bx1 - bx0 - 40)[:4]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(190, 230, 210))
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(160, 210, 200))
             y += df.size + 5
+
     cta = cta or "Comment YES for part 2"
-    cf = font(24)
-    d.rounded_rectangle([bx0 + 16, by1 - 52, bx1 - 16, by1 - 10], 10, fill=ACCENT)
+    cf = font(22)
+    d.rounded_rectangle([bx0 + 20, by1 - 50, bx1 - 20, by1 - 12], 10, fill=ACCENT)
     bb = d.textbbox((0, 0), cta, font=cf)
     tw = bb[2] - bb[0]
-    d.text((bx0 + (bx1 - bx0 - tw) // 2, by1 - 44), cta, font=cf, fill=BLACK)
+    d.text((bx0 + (bx1 - bx0 - tw) // 2, by1 - 42), cta, font=cf, fill=BLACK)
+
+    # desk
+    desk_y = int(bh * 0.58)
+    d.rounded_rectangle([40, desk_y, bw - 40, desk_y + 80], 8, fill=(45, 35, 28))
+    d.rectangle([40, desk_y, bw - 40, desk_y + 12], fill=(70, 55, 40))
+
+    # laptop
+    d.rounded_rectangle([80, desk_y - 70, 280, desk_y + 10], 8, fill=(25, 30, 40))
+    d.rectangle([95, desk_y - 58, 265, desk_y - 8], fill=(40, 80, 120))
+
+    # mic
+    d.ellipse([bw - 280, desk_y - 90, bw - 230, desk_y - 40], fill=(40, 45, 55))
+    d.rectangle([bw - 258, desk_y - 40, bw - 252, desk_y + 5], fill=(60, 65, 75))
+
+    # mug
+    d.rounded_rectangle([bw - 180, desk_y - 45, bw - 130, desk_y + 5], 6, fill=(30, 35, 50))
+
+    # floor
+    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(10, 16, 30))
     return img
 
 
 def draw_stage() -> Image.Image:
-    """Modern tech stage like reference — dark blue, spotlights, floor ring."""
-    bw, bh = int(W * 1.18), int(H * 1.14)
+    bw, bh = int(W * 1.2), int(H * 1.15)
     img = Image.new("RGB", (bw, bh), (8, 20, 45))
     d = ImageDraw.Draw(img)
-    # gradient-ish bands
     for i in range(12):
         y0 = int(bh * i / 12)
-        y1 = int(bh * (i + 1) / 12)
-        shade = 8 + i * 2
-        d.rectangle([0, y0, bw, y1], fill=(shade, 18 + i, 40 + i * 2))
-    # spotlights
+        d.rectangle([0, y0, bw, int(bh * (i + 1) / 12)], fill=(8 + i, 18 + i, 40 + i * 2))
     for sx in (int(bw * 0.25), int(bw * 0.5), int(bw * 0.75)):
-        d.polygon(
-            [(sx, 0), (sx - 80, int(bh * 0.7)), (sx + 80, int(bh * 0.7))],
-            fill=(20, 50, 90),
-        )
-    # floor ellipse ring
-    d.ellipse(
-        [int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)],
-        outline=(255, 200, 60), width=4,
-    )
+        d.polygon([(sx, 0), (sx - 90, int(bh * 0.7)), (sx + 90, int(bh * 0.7))], fill=(20, 50, 90))
+    d.ellipse([int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)], outline=(255, 200, 60), width=4)
     d.rectangle([0, int(bh * 0.88), bw, bh], fill=(6, 12, 28))
     return img
 
 
 def draw_space() -> Image.Image:
-    bw, bh = int(W * 1.18), int(H * 1.14)
+    bw, bh = int(W * 1.2), int(H * 1.15)
     img = Image.new("RGB", (bw, bh), (6, 8, 24))
     d = ImageDraw.Draw(img)
     rng = random.Random(11)
-    for _ in range(260):
+    for _ in range(280):
         x, y = rng.randint(0, bw - 1), rng.randint(0, int(bh * 0.8))
         r = rng.randint(1, 3)
         d.ellipse([x, y, x + r, y + r], fill=(240, 245, 255))
     sx, sy = int(bw * 0.72), int(bh * 0.2)
     d.ellipse([sx - 48, sy - 48, sx + 48, sy + 48], fill=(255, 245, 180))
-    d.ellipse(
-        [int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)],
-        outline=(80, 100, 160), width=3,
-    )
     return img
 
 
 def draw_sky() -> Image.Image:
-    bw, bh = int(W * 1.18), int(H * 1.14)
+    bw, bh = int(W * 1.2), int(H * 1.15)
     img = Image.new("RGB", (bw, bh), (120, 175, 230))
     d = ImageDraw.Draw(img)
     d.ellipse([int(bw * 0.68), int(bh * 0.05), int(bw * 0.9), int(bh * 0.17)], fill=(255, 230, 120))
@@ -204,7 +237,7 @@ def draw_sky() -> Image.Image:
 
 
 def draw_nature() -> Image.Image:
-    bw, bh = int(W * 1.18), int(H * 1.14)
+    bw, bh = int(W * 1.2), int(H * 1.15)
     img = Image.new("RGB", (bw, bh), (150, 200, 150))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, bw, int(bh * 0.55)], fill=(130, 190, 230))
@@ -213,18 +246,16 @@ def draw_nature() -> Image.Image:
 
 
 def draw_lab() -> Image.Image:
-    bw, bh = int(W * 1.18), int(H * 1.14)
+    bw, bh = int(W * 1.2), int(H * 1.15)
     img = Image.new("RGB", (bw, bh), (15, 25, 50))
     d = ImageDraw.Draw(img)
     for i in range(10):
         y0 = int(bh * i / 10)
         d.rectangle([0, y0, bw, int(bh * (i + 1) / 10)], fill=(12 + i, 22 + i, 48 + i * 2))
-    sx, sy = int(bw * 0.72), int(bh * 0.24)
-    d.ellipse([sx - 50, sy - 50, sx + 50, sy + 50], fill=(80, 200, 255))
-    d.ellipse(
-        [int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)],
-        outline=(255, 196, 40), width=3,
-    )
+    # AI board feel
+    d.rounded_rectangle([bw // 2 - 200, 80, bw // 2 + 200, 320], 12, fill=(10, 20, 40))
+    d.text((bw // 2 - 40, 160), "AI", font=font(64), fill=(80, 200, 255))
+    d.ellipse([int(bw * 0.15), int(bh * 0.78), int(bw * 0.85), int(bh * 0.98)], outline=ACCENT, width=3)
     return img
 
 
@@ -245,15 +276,15 @@ def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Imag
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     fw, fh = full.size
     if mode == "close":
-        scale, ox, oy = 1.24 + 0.03 * math.sin(progress * math.pi), 0.5, 0.32
+        scale, ox, oy = 1.22 + 0.03 * math.sin(progress * math.pi), 0.5, 0.3
     elif mode == "left":
-        scale, ox, oy = 1.12, 0.22 + 0.12 * ease, 0.38
+        scale, ox, oy = 1.1, 0.22 + 0.12 * ease, 0.38
     elif mode == "right":
-        scale, ox, oy = 1.12, 0.68 - 0.12 * ease, 0.38
+        scale, ox, oy = 1.1, 0.68 - 0.12 * ease, 0.38
     elif mode == "pan":
-        scale, ox, oy = 1.1 + 0.05 * ease, 0.2 + 0.55 * ease, 0.35
+        scale, ox, oy = 1.08 + 0.05 * ease, 0.2 + 0.5 * ease, 0.35
     else:
-        scale, ox, oy = 1.0 + 0.06 * ease, 0.45 + 0.08 * ease, 0.4
+        scale, ox, oy = 1.0 + 0.05 * ease, 0.45 + 0.08 * ease, 0.4
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
     x = int(max_x * max(0.0, min(1.0, ox)))
@@ -344,7 +375,7 @@ def composite_host(move: str, mouth_open: float, blink: bool, t: float) -> Image
 
 def draw_chair(frame: Image.Image, cx: int, seat_y: int) -> None:
     d = ImageDraw.Draw(frame)
-    wood, wood_d = (90, 100, 120), (60, 70, 90)
+    wood, wood_d = (50, 55, 70), (35, 40, 55)
     w, h_seat, leg, back_h = 170, 18, 75, 95
     d.rounded_rectangle([cx - w // 2, seat_y, cx + w // 2, seat_y + h_seat], 6, fill=wood)
     d.rounded_rectangle([cx - w // 2, seat_y - back_h, cx - w // 2 + 16, seat_y + h_seat], 6, fill=wood_d)
@@ -480,7 +511,7 @@ def main():
     bg_class = make_bg("classroom", topic, definition, cta)
     bg_w1 = make_bg(world)
     bg_w2 = make_bg(world2)
-    print(f"tri class->{world}->{world2} dur={duration:.2f}s")
+    print(f"tri studio->{world}->{world2} dur={duration:.2f}s")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -507,14 +538,13 @@ def main():
             frame = camera_crop(base_full, t, duration, cam).convert("RGBA")
             mouth = open_at(cues, t)
             char = composite_host(move, mouth, blink, t)
-            target_h = int(H * (0.54 if cam == "close" else 0.48))
+            target_h = int(H * (0.52 if cam == "close" else 0.46))
             scale = target_h / char.height
             nw, nh = int(char.width * scale), int(char.height * scale)
             char = char.resize((nw, nh), Image.Resampling.LANCZOS)
 
             bob = int(3 * math.sin(t * 6))
             if move == "walk_left":
-                # steady cross screen
                 walk_moves = [m for m in moves if m.get("move") == "walk_left"]
                 start_p = float(walk_moves[0]["at"]) if walk_moves else 0.28
                 local = max(0.0, min(1.0, (pfrac - start_p) / 0.14))
@@ -527,11 +557,11 @@ def main():
                 x = int(W * 0.2 + local * W * 0.35)
                 bob = int(10 * abs(math.sin(local * math.pi * 4)))
             elif move == "point":
-                x = int(W * 0.18)
+                x = int(W * 0.22)
             elif move == "sit":
                 x = (W - nw) // 2
                 bob = 0
-                draw_chair(frame, W // 2, H - 200 - int(nh * 0.28))
+                draw_chair(frame, W // 2, H - 210 - int(nh * 0.28))
             else:
                 x = (W - nw) // 2
 
