@@ -1,5 +1,6 @@
 [
   "Brain",
+  "Compass",
   "DNA",
   "Dinosaur",
   "Echo",
@@ -22,6 +23,7 @@
   "Telescope",
   "Vaccine",
   "brain",
+  "compass",
   "dinosaur",
   "dna",
   "echo",
