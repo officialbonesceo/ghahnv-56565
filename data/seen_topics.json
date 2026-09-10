@@ -25,6 +25,7 @@
   "Star",
   "Sun",
   "Telescope",
+  "Tide",
   "Vaccine",
   "brain",
   "compass",
@@ -52,5 +53,6 @@
   "star",
   "sun",
   "telescope",
+  "tide",
   "vaccine"
 ]
