@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Student-pain topics only; hard dedupe via data/seen_topics.json."""
+"""Prefer trending study topics, else exam seed list; dedupe via seen_topics.json."""
 from __future__ import annotations
 
 import json
@@ -11,9 +11,10 @@ from pathlib import Path
 import requests
 
 UA = {"User-Agent": "MikeTutor/1.0 (educational)"}
-SEEN_PATH = Path(__file__).resolve().parents[1] / "data" / "seen_topics.json"
+ROOT = Path(__file__).resolve().parents[1]
+SEEN_PATH = ROOT / "data" / "seen_topics.json"
+TREND_PATH = ROOT / "data" / "trending_topics.json"
 
-# Exam / classroom pain — not random trivia
 SEED_TITLES = [
     "Photosynthesis",
     "Gravity",
@@ -30,7 +31,6 @@ SEED_TITLES = [
     "Evaporation",
     "Condensation",
     "Water cycle",
-    "Photosynthesis",
     "Respiration",
     "Enzyme",
     "Catalyst",
@@ -103,6 +103,19 @@ def save_seen(seen: set[str], title: str) -> None:
     SEEN_PATH.write_text(json.dumps(sorted(seen)[-800:], indent=2), encoding="utf-8")
 
 
+def load_trends() -> list[str]:
+    if not TREND_PATH.exists():
+        return []
+    try:
+        data = json.loads(TREND_PATH.read_text(encoding="utf-8"))
+        titles = data.get("titles") if isinstance(data, dict) else data
+        if not isinstance(titles, list):
+            return []
+        return [str(t).strip() for t in titles if str(t).strip()]
+    except Exception:
+        return []
+
+
 def summary(title: str) -> dict:
     slug = title.replace(" ", "_")
     for base in (
@@ -126,10 +139,27 @@ def summary(title: str) -> dict:
                 "description": data.get("description") or "",
                 "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
                 "bg": "classroom",
+                "trend": False,
             }
         except Exception:
             continue
     return {}
+
+
+def build_pool(seen: set[str], seen_norm: set[str]) -> tuple[list[str], list[str]]:
+    """Return (trend_pool, seed_pool) excluding seen."""
+    trend_pool, seed_pool = [], []
+    for t in load_trends():
+        key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
+        if t in seen or key in seen_norm:
+            continue
+        trend_pool.append(t)
+    for t in SEED_TITLES:
+        key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
+        if t in seen or key in seen_norm:
+            continue
+        seed_pool.append(t)
+    return trend_pool, seed_pool
 
 
 def main() -> None:
@@ -137,26 +167,44 @@ def main() -> None:
     seen = load_seen()
     seen_norm = {s.lower() for s in seen}
 
-    pool = []
-    for t in SEED_TITLES:
-        key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
-        if t in seen or key in seen_norm:
-            continue
-        pool.append(t)
-    if not pool:
+    trend_pool, seed_pool = build_pool(seen, seen_norm)
+    # Prefer trends ~70% of the time when available
+    if trend_pool and (not seed_pool or random.random() < 0.7):
+        primary, source_tag = trend_pool, "trend"
+    else:
+        primary, source_tag = seed_pool or list(dict.fromkeys(SEED_TITLES)), "seed"
+
+    if not primary:
         kept = sorted(seen)[-50:]
         seen = set(kept)
-        pool = list(dict.fromkeys(SEED_TITLES))
+        primary = list(dict.fromkeys(SEED_TITLES))
+        source_tag = "seed-reset"
         print("seen list soft-reset", file=sys.stderr)
 
-    random.shuffle(pool)
+    random.shuffle(primary)
     candidates = []
-    for title in pool:
+    for title in primary:
         s = summary(title)
         if s:
+            s["trend"] = source_tag == "trend"
+            s["topic_source"] = source_tag
             candidates.append(s)
         if len(candidates) >= 8:
             break
+
+    # If trends failed to resolve on Wikipedia, fall back to seeds
+    if not candidates and source_tag == "trend":
+        print("trends unresolved, falling back to seeds", file=sys.stderr)
+        random.shuffle(seed_pool or SEED_TITLES)
+        for title in (seed_pool or SEED_TITLES):
+            s = summary(title)
+            if s:
+                s["trend"] = False
+                s["topic_source"] = "seed-fallback"
+                candidates.append(s)
+            if len(candidates) >= 8:
+                break
+
     if not candidates:
         candidates = [{
             "title": "Friction",
@@ -167,11 +215,14 @@ def main() -> None:
             "description": "physics",
             "url": "",
             "bg": "classroom",
+            "trend": False,
+            "topic_source": "hardcoded",
         }]
 
     pick = random.choice(candidates)
     save_seen(seen, pick["title"])
     out.write_text(json.dumps(pick, indent=2), encoding="utf-8")
+    print("TOPIC_SOURCE", pick.get("topic_source"), pick.get("title"), file=sys.stderr)
     print(json.dumps(pick, indent=2))
 
 
