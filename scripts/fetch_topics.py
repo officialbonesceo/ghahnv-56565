@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick one fresh topic; hard dedupe via data/seen_topics.json (committed each run)."""
+"""Student-pain topics only; hard dedupe via data/seen_topics.json."""
 from __future__ import annotations
 
 import json
@@ -13,56 +13,76 @@ import requests
 UA = {"User-Agent": "MikeTutor/1.0 (educational)"}
 SEEN_PATH = Path(__file__).resolve().parents[1] / "data" / "seen_topics.json"
 
+# Exam / classroom pain — not random trivia
 SEED_TITLES = [
-    "Electric battery",
-    "Rainbow",
-    "Gravity",
     "Photosynthesis",
-    "Lightning",
-    "Magnet",
-    "Echo",
-    "Tide",
-    "Cloud",
-    "Sound",
-    "Heat",
-    "Moon",
-    "Sun",
-    "DNA",
-    "Internet",
-    "Earthquake",
-    "Volcano",
-    "Oxygen",
-    "Sleep",
-    "Evaporation",
+    "Gravity",
     "Friction",
-    "Static electricity",
-    "Compass",
-    "Microscope",
-    "Telescope",
+    "Electricity",
+    "Electric current",
+    "Voltage",
+    "Circuit",
     "Atom",
     "Molecule",
+    "DNA",
+    "Osmosis",
+    "Diffusion",
+    "Evaporation",
+    "Condensation",
     "Water cycle",
-    "Greenhouse effect",
-    "Solar system",
-    "Planet",
-    "Star",
-    "Black hole",
-    "Dinosaur",
-    "Fossil",
+    "Photosynthesis",
+    "Respiration",
+    "Enzyme",
+    "Catalyst",
+    "Acid",
+    "Base (chemistry)",
+    "pH",
+    "Speed",
+    "Velocity",
+    "Acceleration",
+    "Force",
+    "Newton's laws of motion",
+    "Work (physics)",
+    "Energy",
+    "Kinetic energy",
+    "Potential energy",
+    "Heat",
+    "Temperature",
+    "Sound",
+    "Light",
+    "Reflection (physics)",
+    "Refraction",
+    "Magnet",
+    "Electromagnet",
+    "Cell (biology)",
+    "Mitosis",
+    "Meiosis",
+    "Blood",
+    "Heart",
+    "Lungs",
+    "Brain",
+    "Sleep",
+    "Memory",
     "Vaccine",
     "Antibiotic",
-    "Heart",
-    "Brain",
-    "Lung",
-    "Plastic",
-    "Recycling",
-    "Wind power",
-    "Solar power",
-    "Electricity",
-    "Circuit",
-    "Light bulb",
-    "Camera",
-    "Microphone",
+    "Greenhouse effect",
+    "Global warming",
+    "Solar system",
+    "Eclipse",
+    "Moon",
+    "Earth",
+    "Earthquake",
+    "Volcano",
+    "Fossil",
+    "Evolution",
+    "Quadratic equation",
+    "Pythagorean theorem",
+    "Fraction",
+    "Percentage",
+    "Ratio",
+    "Average",
+    "Essay",
+    "Paragraph",
 ]
 
 
@@ -78,7 +98,6 @@ def load_seen() -> set[str]:
 
 def save_seen(seen: set[str], title: str) -> None:
     seen.add(title)
-    # also store normalized form
     seen.add(re.sub(r"\s*\([^)]*\)", "", title).strip().lower())
     SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     SEEN_PATH.write_text(json.dumps(sorted(seen)[-800:], indent=2), encoding="utf-8")
@@ -125,10 +144,9 @@ def main() -> None:
             continue
         pool.append(t)
     if not pool:
-        # all used — reset soft (keep last 50 only)
         kept = sorted(seen)[-50:]
         seen = set(kept)
-        pool = list(SEED_TITLES)
+        pool = list(dict.fromkeys(SEED_TITLES))
         print("seen list soft-reset", file=sys.stderr)
 
     random.shuffle(pool)
@@ -141,12 +159,12 @@ def main() -> None:
             break
     if not candidates:
         candidates = [{
-            "title": "Rainbow",
+            "title": "Friction",
             "extract": (
-                "A rainbow is a colorful arc in the sky made when sunlight hits raindrops. "
-                "Each drop bends light and splits it into colors we can see."
+                "Friction is a force that slows things down when two surfaces rub. "
+                "Students meet it in almost every motion question in exams."
             ),
-            "description": "light",
+            "description": "physics",
             "url": "",
             "bg": "classroom",
         }]

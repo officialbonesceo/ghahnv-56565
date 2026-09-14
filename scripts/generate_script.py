@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Student Shorts: hooks, teach gestures, soft CTAs."""
+"""Student Shorts: exam-pain hooks, 3 teach moves, soft CTAs."""
 from __future__ import annotations
 
 import argparse
@@ -18,14 +18,16 @@ VALID_MOVES = {
     "explain", "shrug", "count", "think", "lean",
 }
 
+# Pain-first hooks — exam / student language
 HOOK_TEMPLATES = [
-    "Stop. Most students get {topic} wrong.",
-    "Why does {topic} actually matter in exams?",
-    "Can you explain {topic} in one sentence?",
-    "Here is {topic} in plain words — no fluff.",
-    "You need {topic} more than you think.",
-    "Quick test: what is {topic}?",
-    "This is the simplest way to understand {topic}.",
+    "Stop scrolling. This is how exams trick you on {topic}.",
+    "Most students lose marks on {topic}. Here is why.",
+    "If {topic} confuses you, watch this once.",
+    "Teachers assume you know {topic}. You might not.",
+    "One clear way to explain {topic} in an exam.",
+    "Before your test: what {topic} actually means.",
+    "{topic} in plain words — no textbook fog.",
+    "Can you define {topic} without panic? Start here.",
 ]
 
 CTA_ENDINGS = [
@@ -92,21 +94,18 @@ def did_you_know_line(extract: str, title: str) -> str:
         s = s.strip()
         if 30 <= len(s) <= 120 and re.match(r"^[A-Z0-9]", s):
             return s[:110]
-    return f"Most students have heard of {title}, but few can explain it clearly."
+    return f"Most students have heard of {title}, but few can explain it in an exam."
 
 
 def default_moves(topic: str) -> list[dict]:
-    """Livelier teacher arc — no walk."""
+    # Only 3 meaningful beats: hook face → teach/point → CTA
     return [
         {"at": 0.00, "move": "question"},
-        {"at": 0.10, "move": "talk"},
-        {"at": 0.22, "move": "explain"},
-        {"at": 0.36, "move": "point"},
-        {"at": 0.48, "move": "count"},
-        {"at": 0.60, "move": "think"},
-        {"at": 0.72, "move": "lean"},
-        {"at": 0.84, "move": "present"},
-        {"at": 0.93, "move": "happy"},
+        {"at": 0.12, "move": "talk"},
+        {"at": 0.35, "move": "explain"},
+        {"at": 0.55, "move": "point"},
+        {"at": 0.78, "move": "present"},
+        {"at": 0.92, "move": "happy"},
     ]
 
 
@@ -165,13 +164,21 @@ def pick_sentences(extract: str) -> list[str]:
 
 def force_hook(script: str, topic: str) -> str:
     s = script.strip()
-    soft = re.match(r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk)", s, re.I)
-    if soft or len(s.split(".")[0].split()) > 18:
+    soft = re.match(
+        r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is)",
+        s,
+        re.I,
+    )
+    first = s.split(".")[0] if "." in s else s
+    weak = soft or len(first.split()) > 16 or not re.search(
+        r"\b(exam|mark|test|student|wrong|confus|trick|before)\b", first, re.I
+    )
+    if weak:
         hook = random.choice(HOOK_TEMPLATES).format(topic=topic)
         rest = s
         if "." in s:
-            first, _, after = s.partition(".")
-            if re.match(r"^(hey|hi|hello|i am|i'm|today)", first.strip(), re.I):
+            first_s, _, after = s.partition(".")
+            if re.match(r"^(hey|hi|hello|i am|i'm|today|here is|stop)", first_s.strip(), re.I):
                 rest = after.strip()
         s = f"{hook} {rest}".strip()
     return re.sub(r"\s+", " ", s)
@@ -197,7 +204,7 @@ def template_scripts(topic: dict) -> dict:
     extract = topic.get("extract") or ""
     sents = pick_sentences(extract)
     while len(sents) < 2:
-        sents.append(f"You can explain {short} with one clear example.")
+        sents.append(f"You can explain {short} with one clear example in an exam.")
     definition = short_definition(extract, short)
     dyk = did_you_know_line(extract, short)
     fact = sents[0]
@@ -206,9 +213,10 @@ def template_scripts(topic: dict) -> dict:
     hook = random.choice(HOOK_TEMPLATES).format(topic=short)
     cta = random.choice(CTA_ENDINGS)
     script = (
-        f"{hook} Here is the definition: {definition} "
-        f"Remember this: {fact} Did you know? {dyk} "
-        f"So now you can explain {short} in plain words. {cta} Follow for more."
+        f"{hook} Definition: {definition} "
+        f"Remember this for marks: {fact} "
+        f"Did you know? {dyk} "
+        f"Say it back in your own words. {cta} Follow for more."
     )
     return {
         "title": topic.get("title") or short,
@@ -220,7 +228,7 @@ def template_scripts(topic: dict) -> dict:
         "moves": default_moves(short),
         "bg": "classroom",
         "source": topic.get("url") or "",
-        "engine": "template-student",
+        "engine": "template-exam",
     }
 
 
@@ -256,16 +264,17 @@ def run_openrouter(topic: dict):
     extract = (topic.get("extract") or "")[:400]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     prompt = (
-        "TikTok student science Short.\n"
-        "1. Strong hook first. No Hey/Hi/I am Mike.\n"
-        "2. Definition → one fact → Did you know → takeaway.\n"
-        "3. 75-105 words.\n"
-        "4. End: Comment what you understood. OR Comment the next topic you want. Then Follow for more.\n"
+        "TikTok for secondary students before exams.\n"
+        "1. FIRST line must sound like exam help (marks, test, confuse, trick).\n"
+        "2. No Hey/Hi/I am Mike.\n"
+        "3. Definition → one exam-useful fact → Did you know → takeaway.\n"
+        "4. 75-105 words.\n"
+        "5. End: Comment what you understood. OR Comment the next topic you want. Follow for more.\n"
         "Never say mike.the.tutor or Comment YES.\n"
         f"Topic: {short}\nFacts: {extract}\n\n"
         "After script:\nDEFINITION: ...\nDIDYOUKNOW: ...\n"
-        "MOVES: question@0,talk@0.1,explain@0.22,point@0.36,count@0.5,think@0.65,present@0.82\n"
-        "Moves allowed: talk,point,present,question,happy,explain,shrug,count,think,lean,sit"
+        "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8\n"
+        "Moves: talk,point,present,question,happy,explain,think"
     )
     try:
         r = requests.post(
@@ -277,7 +286,7 @@ def run_openrouter(topic: dict):
                 "X-Title": "mike-tutor",
             },
             json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                  "max_tokens": 380, "temperature": 0.4},
+                  "max_tokens": 380, "temperature": 0.35},
             timeout=90,
         )
         if r.status_code != 200:
@@ -352,11 +361,14 @@ def main():
     Path("did_you_know.txt").write_text(result.get("did_you_know") or "", encoding="utf-8")
     Path("cta.txt").write_text(result.get("cta") or "Comment what you understood.", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
+    # First spoken sentence = on-screen HOOK text for first 2s
+    first = result["script"].split(".")[0].strip()
+    Path("hook.txt").write_text(first[:90], encoding="utf-8")
     short = result["short_title"]
-    slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:20] or "science"
+    slug = re.sub(r"[^a-z0-9]+", "", short.lower())[:20] or "study"
     Path("tiktok_caption.txt").write_text(
-        f"{short} explained simply\n\n{result.get('cta')}\nFollow for more\n\n"
-        f"#{slug} #learntok #study #fyp #stem #examtips",
+        f"{short} — exam plain words\n\n{result.get('cta')}\nFollow for more\n\n"
+        f"#{slug} #examtips #study #learntok #fyp #waec #jamb",
         encoding="utf-8",
     )
     print("ENGINE", result.get("engine"), "WORDS", len(result["script"].split()), file=sys.stderr)
