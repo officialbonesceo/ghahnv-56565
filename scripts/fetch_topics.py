@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prefer trending study topics, else exam seed list; dedupe via seen_topics.json."""
+"""School STEM topics only; prefer trends; hard TOS/safety filter."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 import requests
+
+from content_safety import is_school_safe, filter_title_list
 
 UA = {"User-Agent": "MikeTutor/1.0 (educational)"}
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,12 +113,14 @@ def load_trends() -> list[str]:
         titles = data.get("titles") if isinstance(data, dict) else data
         if not isinstance(titles, list):
             return []
-        return [str(t).strip() for t in titles if str(t).strip()]
+        return filter_title_list([str(t).strip() for t in titles if str(t).strip()])
     except Exception:
         return []
 
 
 def summary(title: str) -> dict:
+    if not is_school_safe(title):
+        return {}
     slug = title.replace(" ", "_")
     for base in (
         "https://simple.wikipedia.org/api/rest_v1/page/summary/",
@@ -131,7 +135,8 @@ def summary(title: str) -> dict:
             extract = (data.get("extract") or "").strip()
             if len(extract) < 100:
                 continue
-            if re.search(r"\b(crime|unlawful|disambiguation)\b", extract, re.I):
+            if not is_school_safe(data.get("title") or title, extract):
+                print("skip unsafe", title, file=sys.stderr)
                 continue
             return {
                 "title": data.get("title") or title,
@@ -147,11 +152,12 @@ def summary(title: str) -> dict:
 
 
 def build_pool(seen: set[str], seen_norm: set[str]) -> tuple[list[str], list[str]]:
-    """Return (trend_pool, seed_pool) excluding seen."""
     trend_pool, seed_pool = [], []
     for t in load_trends():
         key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
         if t in seen or key in seen_norm:
+            continue
+        if not is_school_safe(t):
             continue
         trend_pool.append(t)
     for t in SEED_TITLES:
@@ -163,12 +169,13 @@ def build_pool(seen: set[str], seen_norm: set[str]) -> tuple[list[str], list[str
 
 
 def main() -> None:
+    # allow running as script from repo root or scripts/
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "topic.json")
     seen = load_seen()
     seen_norm = {s.lower() for s in seen}
 
     trend_pool, seed_pool = build_pool(seen, seen_norm)
-    # Prefer trends ~70% of the time when available
     if trend_pool and (not seed_pool or random.random() < 0.7):
         primary, source_tag = trend_pool, "trend"
     else:
@@ -192,7 +199,6 @@ def main() -> None:
         if len(candidates) >= 8:
             break
 
-    # If trends failed to resolve on Wikipedia, fall back to seeds
     if not candidates and source_tag == "trend":
         print("trends unresolved, falling back to seeds", file=sys.stderr)
         random.shuffle(seed_pool or SEED_TITLES)
@@ -220,6 +226,8 @@ def main() -> None:
         }]
 
     pick = random.choice(candidates)
+    if not is_school_safe(pick.get("title", ""), pick.get("extract", "")):
+        pick = candidates[0]
     save_seen(seen, pick["title"])
     out.write_text(json.dumps(pick, indent=2), encoding="utf-8")
     print("TOPIC_SOURCE", pick.get("topic_source"), pick.get("title"), file=sys.stderr)
@@ -227,4 +235,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # ensure local import works when cwd is repo root
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     main()

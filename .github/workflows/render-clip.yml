@@ -15,7 +15,8 @@ env:
   PHI_FILE: phi-2.Q4_K_M.gguf
   PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
   VOICE: en-US-ChristopherNeural
-  RATE: "-5%"
+  # Slightly faster than default (was -5% = too slow). +8% = clear, not rushed.
+  RATE: "+8%"
   OPENROUTER_MODEL: openrouter/free
 
 jobs:
