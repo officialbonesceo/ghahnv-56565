@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike: 0-2s hook face close-up, then board-heavy teach layout."""
+"""Mike: hook face → teach → optional mid full-screen topic image → teach/CTA."""
 from __future__ import annotations
 
 import argparse
@@ -10,11 +10,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 W, H = 1080, 1920
 FPS = 24
-HOOK_END = 2.0  # seconds of face-first hook
+HOOK_END = 2.0
 ACCENT = (255, 196, 40)
 WHITE = (255, 255, 255)
 BLACK = (28, 24, 30)
@@ -97,7 +97,6 @@ def draw_classroom(topic: str, definition: str = "", cta: str = "") -> Image.Ima
     for i in range(2):
         x0 = 36 + i * 150
         d.rounded_rectangle([x0, 36, x0 + 130, 180], 10, fill=(190, 210, 230))
-    # Bigger board for board-heavy phase
     bx0, by0, bx1, by1 = 40, 200, bw - 40, int(bh * 0.62)
     d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 12, fill=(40, 48, 58))
     d.rounded_rectangle([bx0, by0, bx1, by1], 8, fill=(28, 95, 78))
@@ -129,7 +128,6 @@ def draw_classroom(topic: str, definition: str = "", cta: str = "") -> Image.Ima
 
 
 def draw_hook_bg() -> Image.Image:
-    """Solid dark frame for face close-up."""
     img = Image.new("RGB", (W, H), (18, 22, 32))
     d = ImageDraw.Draw(img)
     d.rectangle([0, H - 280, W, H], fill=(12, 14, 20))
@@ -141,13 +139,8 @@ def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Imag
     progress = min(1.0, t / max(duration, 0.1))
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     fw, fh = full.size
-    if mode == "close":
-        scale, ox, oy = 1.2, 0.5, 0.22
-    elif mode == "board":
-        # Prefer upper board area
+    if mode == "board":
         scale, ox, oy = 1.0 + 0.03 * ease, 0.5, 0.18
-    elif mode == "pan":
-        scale, ox, oy = 1.05 + 0.03 * ease, 0.35 + 0.25 * ease, 0.25
     else:
         scale, ox, oy = 1.0 + 0.03 * ease, 0.5, 0.3
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
@@ -155,6 +148,52 @@ def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Imag
     x = int(max_x * max(0.0, min(1.0, ox)))
     y = int(max_y * max(0.0, min(1.0, oy)))
     return full.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
+
+
+def prepare_topic_image(path: Path) -> Image.Image | None:
+    if not path.exists():
+        return None
+    try:
+        im = Image.open(path).convert("RGB")
+        # Cover 1080x1920 with extra margin for Ken Burns
+        im = ImageOps.fit(im, (int(W * 1.35), int(H * 1.35)), method=Image.Resampling.LANCZOS)
+        return im
+    except Exception as e:
+        print("topic image load fail", e, file=sys.stderr)
+        return None
+
+
+def ken_burns_frame(src: Image.Image, local_t: float, seg_dur: float, phase: str) -> Image.Image:
+    """phase: left | center | right — slow zoom + pan."""
+    p = min(1.0, max(0.0, local_t / max(seg_dur, 0.01)))
+    ease = 0.5 - 0.5 * math.cos(p * math.pi)
+    fw, fh = src.size
+    # zoom 1.0 → 1.18 over segment
+    scale = 1.0 + 0.18 * ease
+    cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
+    max_x, max_y = max(0, fw - cw), max(0, fh - ch)
+    if phase == "left":
+        ox = 0.15 + 0.2 * ease
+    elif phase == "right":
+        ox = 0.85 - 0.2 * ease
+    else:
+        ox = 0.5
+    oy = 0.35 + 0.15 * ease
+    x = int(max_x * max(0.0, min(1.0, ox)))
+    y = int(max_y * max(0.0, min(1.0, oy)))
+    return src.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
+
+
+def image_window(duration: float) -> tuple[float, float] | None:
+    """Mid-video image beat; None if video too short."""
+    if duration < 12:
+        return None
+    # ~28%–58% of timeline, max ~10s
+    start = duration * 0.28
+    end = min(duration * 0.58, start + 10.0)
+    if end - start < 3.5:
+        return None
+    return start, end
 
 
 def load_moves() -> list[dict]:
@@ -261,19 +300,29 @@ def draw_hook_text(rgb, hook: str):
         y += tf.size + 10
 
 
+def draw_image_caption(rgb, topic: str):
+    d = ImageDraw.Draw(rgb)
+    label = (topic or "")[:36]
+    if not label:
+        return
+    tf = font(28)
+    bb = d.textbbox((0, 0), label, font=tf)
+    tw = bb[2] - bb[0]
+    d.rounded_rectangle([W // 2 - tw // 2 - 20, H - 120, W // 2 + tw // 2 + 20, H - 60], 14, fill=(12, 14, 22))
+    d.text((W // 2 - tw // 2, H - 108), label, font=tf, fill=WHITE)
+
+
 def draw_ui(rgb, text, t, duration, topic, dyk, cta, p, hook_phase):
     d = ImageDraw.Draw(rgb)
     if hook_phase:
-        return  # hook text drawn separately
-
+        return
     af = font(24)
     label = (topic or "Lesson")[:28]
     bb = d.textbbox((0, 0), label, font=af)
     tw = bb[2] - bb[0]
     d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 14, fill=ACCENT)
     d.text((W - tw - 42, 38), label, font=af, fill=BLACK)
-
-    if 0.45 <= p <= 0.65 and dyk:
+    if 0.62 <= p <= 0.75 and dyk:
         df = font(28)
         lines = wrap_text(d, "Did you know? " + dyk, df, W - 100)[:3]
         box_h = 36 + len(lines) * (df.size + 8)
@@ -282,15 +331,13 @@ def draw_ui(rgb, text, t, duration, topic, dyk, cta, p, hook_phase):
         for line in lines:
             d.text((56, y), line, font=df, fill=WHITE)
             y += df.size + 8
-
-    if p >= 0.78:
+    if p >= 0.82:
         cf = font(30)
         msg = (cta or "Comment what you understood")[:40]
         bb = d.textbbox((0, 0), msg, font=cf)
         tw = bb[2] - bb[0]
         d.rounded_rectangle([W // 2 - tw // 2 - 24, 90, W // 2 + tw // 2 + 24, 148], 16, fill=ACCENT)
         d.text((W // 2 - tw // 2, 102), msg, font=cf, fill=BLACK)
-
     windows = word_windows(text, duration)
     chunk, active = active_caption(windows, t)
     cf = font(42)
@@ -328,6 +375,7 @@ def main():
     p.add_argument("--title", default="Lesson")
     p.add_argument("--bg", default="classroom")
     p.add_argument("--bg-image", default="")
+    p.add_argument("--topic-image", default="topic_image.jpg")
     p.add_argument("--out", default="output.mp4")
     p.add_argument("--actions", default="")
     args = p.parse_args()
@@ -356,12 +404,19 @@ def main():
 
     classroom = draw_classroom(topic, definition, cta)
     hook_bg = draw_hook_bg()
+    topic_img = prepare_topic_image(Path(args.topic_image))
+    win = image_window(duration) if topic_img is not None else None
+    if topic_img is not None and win:
+        print(f"IMAGE_BEAT {win[0]:.1f}-{win[1]:.1f}s", file=sys.stderr)
+    else:
+        print("IMAGE_BEAT skip", file=sys.stderr)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for i in range(n):
             t = i / float(FPS)
             hook_phase = t < HOOK_END
+            img_phase = bool(win and win[0] <= t < win[1])
             move = move_at(moves, t, duration)
             if hook_phase:
                 move = "question"
@@ -371,21 +426,34 @@ def main():
             if hook_phase:
                 frame = hook_bg.convert("RGBA")
                 char = composite_host(move, open_at(cues, t), blink)
-                # Big face: crop upper body by scaling large and shifting up
                 target_h = int(H * 0.92)
                 scale = target_h / char.height
                 nw, nh = int(char.width * scale), int(char.height * scale)
                 char = char.resize((nw, nh), Image.Resampling.LANCZOS)
-                # Focus on head: paste so head sits mid-upper
                 x = (W - nw) // 2
-                y = H - nh + int(nh * 0.28)  # push body down → head larger on screen
+                y = H - nh + int(nh * 0.28)
                 frame.paste(char, (x, y), char)
                 rgb = frame.convert("RGB")
                 draw_hook_text(rgb, hook)
+            elif img_phase and topic_img is not None and win:
+                # Mike OFF screen — full image with L/C/R Ken Burns
+                local = t - win[0]
+                seg = win[1] - win[0]
+                third = seg / 3.0
+                if local < third:
+                    phase = "left"
+                    lt, ld = local, third
+                elif local < 2 * third:
+                    phase = "center"
+                    lt, ld = local - third, third
+                else:
+                    phase = "right"
+                    lt, ld = local - 2 * third, third
+                rgb = ken_burns_frame(topic_img, lt, ld, phase)
+                draw_image_caption(rgb, topic)
             else:
                 frame = camera_crop(classroom, t, duration, "board").convert("RGBA")
                 char = composite_host(move, open_at(cues, t), blink)
-                # Smaller Mike — board is the star
                 target_h = int(H * 0.32)
                 scale = target_h / char.height
                 nw, nh = int(char.width * scale), int(char.height * scale)

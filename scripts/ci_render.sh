@@ -13,7 +13,7 @@ BG_IMG=
 if [ -f bg_path.txt ]; then
   BG_IMG=$(cat bg_path.txt)
 fi
-# ACTIONS optional — render_mezi uses its own performance timeline
+TOPIC_IMG=topic_image.jpg
 ACTIONS="${ACTIONS:-}"
 
 if [ -f mouth.json ]; then
@@ -23,6 +23,7 @@ if [ -f mouth.json ]; then
     --title "${TITLE}" \
     --bg "${BG}" \
     --bg-image "${BG_IMG}" \
+    --topic-image "${TOPIC_IMG}" \
     --out output.mp4 \
     --actions "${ACTIONS}" \
     --cues mouth.json
@@ -33,6 +34,7 @@ else
     --title "${TITLE}" \
     --bg "${BG}" \
     --bg-image "${BG_IMG}" \
+    --topic-image "${TOPIC_IMG}" \
     --out output.mp4 \
     --actions "${ACTIONS}"
 fi

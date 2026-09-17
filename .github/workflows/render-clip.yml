@@ -3,7 +3,6 @@ name: qxil-job
 on:
   workflow_dispatch:
   schedule:
-    # 2 per day — 10:15 and 18:15 UTC (11:15 & 19:15 WAT)
     - cron: "15 10,18 * * *"
 
 permissions:
@@ -15,7 +14,6 @@ env:
   PHI_FILE: phi-2.Q4_K_M.gguf
   PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
   VOICE: en-US-ChristopherNeural
-  # Slightly faster than default (was -5% = too slow). +8% = clear, not rushed.
   RATE: "+8%"
   OPENROUTER_MODEL: openrouter/free
 
@@ -87,6 +85,12 @@ jobs:
           python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), len(d.get('script','').split()), 'words'); print(d.get('script','')[:200])"
           cat moves.json || true
 
+      - name: topic-image
+        continue-on-error: true
+        run: |
+          python scripts/fetch_topic_image.py || true
+          ls -lh topic_image.jpg 2>/dev/null || echo "no topic image (will skip beat)"
+
       - name: tts
         run: |
           python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate="$RATE" --audio-out speech.mp3
@@ -134,6 +138,8 @@ jobs:
             script_job.json
             moves.json
             topic.json
+            topic_image.jpg
+            topic_image.json
             data/trending_topics.json
             tiktok_caption.txt
             tiktok_comment.txt
