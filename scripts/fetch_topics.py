@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""School STEM topics; optional data/seed_topic.json forces one topic for a run."""
+"""School STEM topics with strong dedupe + optional seed."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -38,21 +39,51 @@ SEED_TITLES = [
 ]
 
 
+def norm_key(title: str) -> str:
+    t = re.sub(r"\s*\([^)]*\)", "", title or "")
+    t = re.sub(r"[^a-z0-9]+", "", t.lower())
+    return t
+
+
 def load_seen() -> set[str]:
     if not SEEN_PATH.exists():
         return set()
     try:
         data = json.loads(SEEN_PATH.read_text(encoding="utf-8"))
-        return set(data if isinstance(data, list) else [])
+        raw = data if isinstance(data, list) else data.get("titles", [])
+        out = set()
+        for x in raw:
+            out.add(str(x))
+            out.add(norm_key(str(x)))
+        return out
     except Exception:
         return set()
 
 
 def save_seen(seen: set[str], title: str) -> None:
     seen.add(title)
-    seen.add(re.sub(r"\s*\([^)]*\)", "", title).strip().lower())
+    seen.add(norm_key(title))
+    # also store stemmed-ish short form
+    seen.add(norm_key(title)[:12])
     SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_PATH.write_text(json.dumps(sorted(seen)[-800:], indent=2), encoding="utf-8")
+    # keep readable titles + keys, last 1000
+    titles = sorted({s for s in seen if s and not s.isalnum() or len(s) > 3})[-1000:]
+    SEEN_PATH.write_text(json.dumps(titles, indent=2), encoding="utf-8")
+
+
+def is_seen(seen: set[str], title: str) -> bool:
+    k = norm_key(title)
+    if title in seen or k in seen:
+        return True
+    if k[:12] in seen:
+        return True
+    # fuzzy: any seen key that shares long prefix
+    for s in seen:
+        sk = norm_key(s) if not s.isalnum() else s
+        if len(k) >= 6 and len(sk) >= 6 and (k.startswith(sk[:6]) or sk.startswith(k[:6])):
+            if k == sk or abs(len(k) - len(sk)) <= 3:
+                return True
+    return False
 
 
 def load_trends() -> list[str]:
@@ -69,10 +100,6 @@ def load_trends() -> list[str]:
 
 
 def try_seed_topic() -> dict | None:
-    """If data/seed_topic.json exists (or FORCE_SEED=1), use it once then rename aside."""
-    force = os.environ.get("FORCE_SEED", "").strip() in ("1", "true", "yes")
-    if not SEED_TOPIC_PATH.exists() and not force:
-        return None
     if not SEED_TOPIC_PATH.exists():
         return None
     try:
@@ -82,12 +109,10 @@ def try_seed_topic() -> dict | None:
         if not title or len(extract) < 80:
             return None
         if not is_school_safe(title, extract):
-            print("seed blocked by safety", title, file=sys.stderr)
             return None
         data.setdefault("bg", "classroom")
         data["topic_source"] = data.get("topic_source") or "seed"
         data["trend"] = bool(data.get("trend", True))
-        # consume seed so scheduled runs do not repeat forever
         used = SEED_TOPIC_PATH.with_name("seed_topic.used.json")
         SEED_TOPIC_PATH.replace(used)
         print("USING_SEED", title, file=sys.stderr)
@@ -129,18 +154,14 @@ def summary(title: str) -> dict:
     return {}
 
 
-def build_pool(seen: set[str], seen_norm: set[str]) -> tuple[list[str], list[str]]:
+def build_pool(seen: set[str]) -> tuple[list[str], list[str]]:
     trend_pool, seed_pool = [], []
     for t in load_trends():
-        key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
-        if t in seen or key in seen_norm:
-            continue
-        if not is_school_safe(t):
+        if is_seen(seen, t) or not is_school_safe(t):
             continue
         trend_pool.append(t)
     for t in SEED_TITLES:
-        key = re.sub(r"\s*\([^)]*\)", "", t).strip().lower()
-        if t in seen or key in seen_norm:
+        if is_seen(seen, t):
             continue
         seed_pool.append(t)
     return trend_pool, seed_pool
@@ -159,38 +180,44 @@ def main() -> None:
         return
 
     seen = load_seen()
-    seen_norm = {s.lower() for s in seen}
-    trend_pool, seed_pool = build_pool(seen, seen_norm)
+    trend_pool, seed_pool = build_pool(seen)
     if trend_pool and (not seed_pool or random.random() < 0.7):
         primary, source_tag = trend_pool, "trend"
     else:
         primary, source_tag = seed_pool or list(dict.fromkeys(SEED_TITLES)), "seed"
 
     if not primary:
-        kept = sorted(seen)[-50:]
+        # soft reset only last 40 kept as block
+        kept = [s for s in sorted(seen) if len(s) > 12][-40:]
         seen = set(kept)
-        primary = list(dict.fromkeys(SEED_TITLES))
+        for k in list(kept):
+            seen.add(norm_key(k))
+        primary = [t for t in SEED_TITLES if not is_seen(seen, t)] or list(SEED_TITLES)
         source_tag = "seed-reset"
+        print("seen soft-reset", file=sys.stderr)
 
     random.shuffle(primary)
     candidates = []
     for title in primary:
+        if is_seen(seen, title):
+            continue
         s = summary(title)
-        if s:
+        if s and not is_seen(seen, s["title"]):
             s["trend"] = source_tag == "trend"
             s["topic_source"] = source_tag
             candidates.append(s)
         if len(candidates) >= 8:
             break
 
-    if not candidates and source_tag == "trend":
-        for title in (seed_pool or SEED_TITLES):
+    if not candidates:
+        for title in SEED_TITLES:
+            if is_seen(seen, title):
+                continue
             s = summary(title)
             if s:
-                s["trend"] = False
                 s["topic_source"] = "seed-fallback"
                 candidates.append(s)
-            if len(candidates) >= 8:
+            if len(candidates) >= 5:
                 break
 
     if not candidates:

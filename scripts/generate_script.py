@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI-only student Shorts scripts. No template fallback — exit 1 if AI fails."""
+"""AI-only scripts; hooky DYK; fail if AI fails."""
 from __future__ import annotations
 
 import argparse
@@ -36,7 +36,6 @@ CTA_ENDINGS = [
     "Comment one thing you learned.",
 ]
 
-# Phrases that mean the model echoed the system prompt into the script
 PROMPT_LEAK_RE = re.compile(
     r"(?is)("
     r"tiktok for secondary|before exams\.?\s*\d\."
@@ -59,7 +58,6 @@ def display_title(title: str) -> str:
 
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
-    # Drop anything after labeled metadata lines
     t = re.split(r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM)\s*:", t)[0]
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
     t = re.sub(r"```[\s\S]*?```", " ", t)
@@ -70,7 +68,6 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
     for p in [r"INTRO:\s*", r"BODY:\s*", r"SCRIPT:\s*"]:
         t = re.sub(p, " ", t, flags=re.I)
-    # If model pasted the whole prompt, reject
     if PROMPT_LEAK_RE.search(t):
         print("PROMPT_LEAK detected — rejecting", file=sys.stderr)
         return ""
@@ -105,12 +102,23 @@ def short_definition(extract: str, title: str) -> str:
 
 
 def did_you_know_line(extract: str, title: str) -> str:
+    """Hooky one-liner for full-screen card — not soft textbook tone."""
     sents = re.split(r"(?<=[.!?])\s+", extract or "")
-    for s in sents[1:]:
+    best = ""
+    for s in sents:
         s = s.strip()
-        if 30 <= len(s) <= 120 and re.match(r"^[A-Z0-9]", s):
-            return s[:110]
-    return f"Most students have heard of {title}, but few can explain it in an exam."
+        if 25 <= len(s) <= 110 and re.match(r"^[A-Z0-9]", s):
+            if not re.search(r"\b(is a|are a|refers to)\b", s, re.I) or len(s) < 80:
+                best = s
+                break
+            if not best:
+                best = s
+    if best:
+        # punch up opening
+        if not re.match(r"(?i)(most|almost|few|students|exam|stop|never|only)", best):
+            best = f"Most students miss this: {best[0].lower()}{best[1:]}"
+        return best[:120]
+    return f"Most students cannot explain {title} in one exam sentence."
 
 
 def default_moves(topic: str) -> list[dict]:
@@ -169,8 +177,7 @@ def force_hook(script: str, topic: str) -> str:
     s = script.strip()
     soft = re.match(
         r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is)",
-        s,
-        re.I,
+        s, re.I,
     )
     first = s.split(".")[0] if "." in s else s
     weak = soft or len(first.split()) > 16 or not re.search(
@@ -211,13 +218,19 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
     cleaned = force_hook(cleaned, short)
     cleaned = ensure_cta(cleaned, short)
     if PROMPT_LEAK_RE.search(cleaned):
-        print("PROMPT_LEAK after pack — rejecting", file=sys.stderr)
         return None
+    dyk_final = (dyk or "").strip()
+    if not dyk_final or len(dyk_final) < 20:
+        dyk_final = did_you_know_line(extract, short)
+    else:
+        # ensure hooky
+        if not re.match(r"(?i)(most|almost|few|students|exam|stop|never|only|wait)", dyk_final):
+            dyk_final = f"Most students miss this: {dyk_final[0].lower()}{dyk_final[1:]}"
     return {
         "title": topic.get("title") or short,
         "short_title": short,
         "definition": (definition or short_definition(extract, short))[:120],
-        "did_you_know": (dyk or did_you_know_line(extract, short))[:110],
+        "did_you_know": dyk_final[:120],
         "cta": random.choice(CTA_ENDINGS),
         "script": cleaned,
         "moves": parse_moves(moves_raw, short),
@@ -235,22 +248,17 @@ def run_openrouter(topic: dict):
     short = display_title(topic.get("title") or "science")
     extract = (topic.get("extract") or "")[:400]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
-    # Keep instructions out of a form models love to copy-paste
     system = (
         "You write spoken TikTok voiceover for secondary school exam revision. "
-        "Return ONLY the spoken script paragraphs. No headings, no numbered rules, "
-        "no MOVES/DEFINITION labels in the main text."
+        "Return ONLY the spoken script paragraphs. No headings, no numbered rules."
     )
     user = (
-        f"Topic: {short}\n"
-        f"Facts you may use:\n{extract}\n\n"
-        "Write 75-105 words. Open with an exam-style hook (marks/test/confusion). "
-        "Then definition, one exam-useful fact, one did-you-know style line, short takeaway. "
-        "End with a soft comment CTA and Follow for more. "
-        "Do not introduce yourself as Mike. Do not invent religious or political content.\n\n"
-        "After the script, on new lines only:\n"
-        "DEFINITION: one short sentence\n"
-        "DIDYOUKNOW: one short sentence\n"
+        f"Topic: {short}\nFacts:\n{extract}\n\n"
+        "75-105 words. Exam-style hook first. Definition, one exam fact, takeaway. "
+        "End with comment CTA and Follow for more. No religious/political content.\n"
+        "After script only:\n"
+        "DEFINITION: one sentence\n"
+        "DIDYOUKNOW: one HOOKY surprise fact students will stop for (start with Most students… or Wait…)\n"
         "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
     )
     try:
@@ -269,7 +277,7 @@ def run_openrouter(topic: dict):
                     {"role": "user", "content": user},
                 ],
                 "max_tokens": 380,
-                "temperature": 0.35,
+                "temperature": 0.4,
             },
             timeout=90,
         )
@@ -300,33 +308,22 @@ def run_openrouter(topic: dict):
 
 def run_gguf(model: Path, topic: dict, engine_name: str):
     if not model.exists() or model.stat().st_size < 10_000_000:
-        print("gguf missing or tiny", model, file=sys.stderr)
         return None
     helper = Path(__file__).resolve().parent / "_llm_once.py"
     if not helper.exists():
-        print("missing _llm_once.py", file=sys.stderr)
         return None
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
-    inp.write_text(
-        json.dumps({
-            "model": str(model),
-            "title": short,
-            "extract": (topic.get("extract") or "")[:400],
-        }),
-        encoding="utf-8",
-    )
+    inp.write_text(json.dumps({
+        "model": str(model), "title": short,
+        "extract": (topic.get("extract") or "")[:400],
+    }), encoding="utf-8")
     if outp.exists():
         outp.unlink()
     try:
-        r = subprocess.run(
-            [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=360,
-            capture_output=True,
-            text=True,
-        )
+        r = subprocess.run([sys.executable, str(helper), str(inp), str(outp)],
+                           timeout=360, capture_output=True, text=True)
         if r.returncode != 0 or not outp.exists():
-            print("gguf fail", r.stderr[:500] if r.stderr else r.stdout[:500], file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
         return pack(topic, data.get("body") or "", engine_name)
@@ -353,13 +350,10 @@ def main():
         if result is None and args.model_fallback:
             result = run_gguf(Path(args.model_fallback), topic, "gguf-fallback")
 
-    # NO template / seed fallback — fail the job
     if result is None:
-        print("AI_SCRIPT_FAILED: no usable LLM script (OpenRouter + local)", file=sys.stderr)
+        print("AI_SCRIPT_FAILED: no usable LLM script", file=sys.stderr)
         sys.exit(1)
-
     if result.get("engine", "").startswith("template"):
-        print("REFUSING template engine", file=sys.stderr)
         sys.exit(1)
 
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
