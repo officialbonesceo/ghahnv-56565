@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Student Shorts: exam-pain hooks, 3 teach moves, soft CTAs."""
+"""AI-only student Shorts scripts. No template fallback — exit 1 if AI fails."""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +18,6 @@ VALID_MOVES = {
     "explain", "shrug", "count", "think", "lean",
 }
 
-# Pain-first hooks — exam / student language
 HOOK_TEMPLATES = [
     "Stop scrolling. This is how exams trick you on {topic}.",
     "Most students lose marks on {topic}. Here is why.",
@@ -37,6 +36,19 @@ CTA_ENDINGS = [
     "Comment one thing you learned.",
 ]
 
+# Phrases that mean the model echoed the system prompt into the script
+PROMPT_LEAK_RE = re.compile(
+    r"(?is)("
+    r"tiktok for secondary|before exams\.?\s*\d\."
+    r"|first line must|no hey/?hi|definition\s*→|exam-useful fact"
+    r"|75-?105 words|never say mike\.the\.tutor|comment yes"
+    r"|after script:|moves:\s*question@|moves:\s*talk,"
+    r"|instruct:|system:|user:|assistant:"
+    r"|you are a helpful|write a script|output only"
+    r"|topic:\s*\w+\s*facts:"
+    r")"
+)
+
 
 def display_title(title: str) -> str:
     t = title or "Science"
@@ -47,21 +59,26 @@ def display_title(title: str) -> str:
 
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
+    # Drop anything after labeled metadata lines
+    t = re.split(r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM)\s*:", t)[0]
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
-    t = re.sub(r"\([^)]{0,80}\)", " ", t)
+    t = re.sub(r"```[\s\S]*?```", " ", t)
+    t = re.sub(r"(?im)^#{1,3}\s+.*$", " ", t)
+    t = re.sub(r"MOVES:\s*.+$", " ", t, flags=re.I | re.M)
+    t = re.sub(r"DEFINITION:\s*.+$", " ", t, flags=re.I | re.M)
+    t = re.sub(r"DIDYOUKNOW:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
-    t = re.sub(r"MOVES:.*", " ", t, flags=re.I | re.S)
-    t = re.sub(r"DEFINITION:.*", " ", t, flags=re.I | re.S)
-    t = re.sub(r"DIDYOUKNOW:.*", " ", t, flags=re.I | re.S)
-    for p in [r"INTRO:\s*", r"BODY:\s*", r"###.*?\n"]:
-        t = re.sub(p, " ", t, flags=re.I | re.S)
+    for p in [r"INTRO:\s*", r"BODY:\s*", r"SCRIPT:\s*"]:
+        t = re.sub(p, " ", t, flags=re.I)
+    # If model pasted the whole prompt, reject
+    if PROMPT_LEAK_RE.search(t):
+        print("PROMPT_LEAK detected — rejecting", file=sys.stderr)
+        return ""
     t = re.sub(r"\s+", " ", t).strip()
-    t = re.sub(r"^(group of|gas that|and then|so that|into the)\b[^.]*\.\s*", "", t, flags=re.I)
     t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\s*", "", t, flags=re.I)
     t = re.sub(r"^today (on the board|we (learn|talk) about)[:\s]+", "", t, flags=re.I)
     t = re.sub(r"comment yes[^.]*\.?", "", t, flags=re.I)
     t = re.sub(r"follow\s+mike\.the\.tutor[^.]*\.?", "", t, flags=re.I)
-    t = re.sub(r"follow\s+@?mike[^.]*\.?", "", t, flags=re.I)
     t = re.sub(r"\s+", " ", t).strip()
     words = t.split()
     if len(words) < 45:
@@ -83,8 +100,7 @@ def short_definition(extract: str, title: str) -> str:
     for s in sents:
         s = s.strip()
         if 35 <= len(s) <= 140 and re.match(r"^[A-Z0-9]", s):
-            if not re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
-                return s[:120]
+            return s[:120]
     return f"{title} is a simple idea you can explain in everyday words."
 
 
@@ -98,7 +114,6 @@ def did_you_know_line(extract: str, title: str) -> str:
 
 
 def default_moves(topic: str) -> list[dict]:
-    # Only 3 meaningful beats: hook face → teach/point → CTA
     return [
         {"at": 0.00, "move": "question"},
         {"at": 0.12, "move": "talk"},
@@ -150,18 +165,6 @@ def parse_moves(raw: str, topic: str) -> list[dict]:
     return out
 
 
-def pick_sentences(extract: str) -> list[str]:
-    parts = []
-    for s in re.split(r"(?<=[.!?])\s+", extract or ""):
-        s = s.strip()
-        if len(s) < 35 or not re.match(r"^[A-Z0-9]", s):
-            continue
-        if re.search(r"\b(crime|unlawful|disambiguation)\b", s, re.I):
-            continue
-        parts.append(s)
-    return parts[:4]
-
-
 def force_hook(script: str, topic: str) -> str:
     s = script.strip()
     soft = re.match(
@@ -171,7 +174,7 @@ def force_hook(script: str, topic: str) -> str:
     )
     first = s.split(".")[0] if "." in s else s
     weak = soft or len(first.split()) > 16 or not re.search(
-        r"\b(exam|mark|test|student|wrong|confus|trick|before)\b", first, re.I
+        r"\b(exam|mark|test|student|wrong|confus|trick|before|stop)\b", first, re.I
     )
     if weak:
         hook = random.choice(HOOK_TEMPLATES).format(topic=topic)
@@ -199,39 +202,6 @@ def ensure_cta(script: str, topic: str) -> str:
     return s
 
 
-def template_scripts(topic: dict) -> dict:
-    short = display_title(topic.get("title") or "this idea")
-    extract = topic.get("extract") or ""
-    sents = pick_sentences(extract)
-    while len(sents) < 2:
-        sents.append(f"You can explain {short} with one clear example in an exam.")
-    definition = short_definition(extract, short)
-    dyk = did_you_know_line(extract, short)
-    fact = sents[0]
-    if len(fact) > 110:
-        fact = fact[:107].rsplit(" ", 1)[0] + "."
-    hook = random.choice(HOOK_TEMPLATES).format(topic=short)
-    cta = random.choice(CTA_ENDINGS)
-    script = (
-        f"{hook} Definition: {definition} "
-        f"Remember this for marks: {fact} "
-        f"Did you know? {dyk} "
-        f"Say it back in your own words. {cta} Follow for more."
-    )
-    return {
-        "title": topic.get("title") or short,
-        "short_title": short,
-        "definition": definition,
-        "did_you_know": dyk,
-        "cta": cta,
-        "script": re.sub(r"\s+", " ", script).strip(),
-        "moves": default_moves(short),
-        "bg": "classroom",
-        "source": topic.get("url") or "",
-        "engine": "template-exam",
-    }
-
-
 def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
     short = display_title(topic.get("title") or "Lesson")
     extract = topic.get("extract") or ""
@@ -240,7 +210,8 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
         return None
     cleaned = force_hook(cleaned, short)
     cleaned = ensure_cta(cleaned, short)
-    if re.match(r"^(group of|gas that|of space)\b", cleaned, re.I):
+    if PROMPT_LEAK_RE.search(cleaned):
+        print("PROMPT_LEAK after pack — rejecting", file=sys.stderr)
         return None
     return {
         "title": topic.get("title") or short,
@@ -259,22 +230,28 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
 def run_openrouter(topic: dict):
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
+        print("openrouter: no API key", file=sys.stderr)
         return None
     short = display_title(topic.get("title") or "science")
     extract = (topic.get("extract") or "")[:400]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
-    prompt = (
-        "TikTok for secondary students before exams.\n"
-        "1. FIRST line must sound like exam help (marks, test, confuse, trick).\n"
-        "2. No Hey/Hi/I am Mike.\n"
-        "3. Definition → one exam-useful fact → Did you know → takeaway.\n"
-        "4. 75-105 words.\n"
-        "5. End: Comment what you understood. OR Comment the next topic you want. Follow for more.\n"
-        "Never say mike.the.tutor or Comment YES.\n"
-        f"Topic: {short}\nFacts: {extract}\n\n"
-        "After script:\nDEFINITION: ...\nDIDYOUKNOW: ...\n"
-        "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8\n"
-        "Moves: talk,point,present,question,happy,explain,think"
+    # Keep instructions out of a form models love to copy-paste
+    system = (
+        "You write spoken TikTok voiceover for secondary school exam revision. "
+        "Return ONLY the spoken script paragraphs. No headings, no numbered rules, "
+        "no MOVES/DEFINITION labels in the main text."
+    )
+    user = (
+        f"Topic: {short}\n"
+        f"Facts you may use:\n{extract}\n\n"
+        "Write 75-105 words. Open with an exam-style hook (marks/test/confusion). "
+        "Then definition, one exam-useful fact, one did-you-know style line, short takeaway. "
+        "End with a soft comment CTA and Follow for more. "
+        "Do not introduce yourself as Mike. Do not invent religious or political content.\n\n"
+        "After the script, on new lines only:\n"
+        "DEFINITION: one short sentence\n"
+        "DIDYOUKNOW: one short sentence\n"
+        "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
     )
     try:
         r = requests.post(
@@ -285,11 +262,19 @@ def run_openrouter(topic: dict):
                 "HTTP-Referer": "https://github.com/officialbonesceo/ghahnv-56565",
                 "X-Title": "mike-tutor",
             },
-            json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                  "max_tokens": 380, "temperature": 0.35},
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": 380,
+                "temperature": 0.35,
+            },
             timeout=90,
         )
         if r.status_code != 200:
+            print("openrouter status", r.status_code, r.text[:300], file=sys.stderr)
             return None
         choice = r.json().get("choices") or []
         if not choice:
@@ -315,18 +300,33 @@ def run_openrouter(topic: dict):
 
 def run_gguf(model: Path, topic: dict, engine_name: str):
     if not model.exists() or model.stat().st_size < 10_000_000:
+        print("gguf missing or tiny", model, file=sys.stderr)
         return None
     helper = Path(__file__).resolve().parent / "_llm_once.py"
+    if not helper.exists():
+        print("missing _llm_once.py", file=sys.stderr)
+        return None
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
-    inp.write_text(json.dumps({"model": str(model), "title": short,
-                               "extract": (topic.get("extract") or "")[:400]}), encoding="utf-8")
+    inp.write_text(
+        json.dumps({
+            "model": str(model),
+            "title": short,
+            "extract": (topic.get("extract") or "")[:400],
+        }),
+        encoding="utf-8",
+    )
     if outp.exists():
         outp.unlink()
     try:
-        r = subprocess.run([sys.executable, str(helper), str(inp), str(outp)],
-                           timeout=360, capture_output=True, text=True)
+        r = subprocess.run(
+            [sys.executable, str(helper), str(inp), str(outp)],
+            timeout=360,
+            capture_output=True,
+            text=True,
+        )
         if r.returncode != 0 or not outp.exists():
+            print("gguf fail", r.stderr[:500] if r.stderr else r.stdout[:500], file=sys.stderr)
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
         return pack(topic, data.get("body") or "", engine_name)
@@ -344,6 +344,7 @@ def main():
     p.add_argument("--try-llm", action="store_true")
     args = p.parse_args()
     topic = json.loads(Path(args.topic).read_text(encoding="utf-8"))
+
     result = None
     if args.try_llm:
         result = run_openrouter(topic)
@@ -351,8 +352,16 @@ def main():
             result = run_gguf(Path(args.model), topic, "phi2-gguf")
         if result is None and args.model_fallback:
             result = run_gguf(Path(args.model_fallback), topic, "gguf-fallback")
+
+    # NO template / seed fallback — fail the job
     if result is None:
-        result = template_scripts(topic)
+        print("AI_SCRIPT_FAILED: no usable LLM script (OpenRouter + local)", file=sys.stderr)
+        sys.exit(1)
+
+    if result.get("engine", "").startswith("template"):
+        print("REFUSING template engine", file=sys.stderr)
+        sys.exit(1)
+
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
     Path("script.txt").write_text(result["script"] + "\n", encoding="utf-8")
     Path("moves.json").write_text(json.dumps(result.get("moves") or [], indent=2), encoding="utf-8")
@@ -361,7 +370,6 @@ def main():
     Path("did_you_know.txt").write_text(result.get("did_you_know") or "", encoding="utf-8")
     Path("cta.txt").write_text(result.get("cta") or "Comment what you understood.", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
-    # First spoken sentence = on-screen HOOK text for first 2s
     first = result["script"].split(".")[0].strip()
     Path("hook.txt").write_text(first[:90], encoding="utf-8")
     short = result["short_title"]
