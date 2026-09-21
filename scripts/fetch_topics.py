@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""School STEM topics only; prefer trends; hard TOS/safety filter."""
+"""School STEM topics; optional data/seed_topic.json forces one topic for a run."""
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import sys
@@ -10,81 +11,30 @@ from pathlib import Path
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import is_school_safe, filter_title_list
 
 UA = {"User-Agent": "MikeTutor/1.0 (educational)"}
 ROOT = Path(__file__).resolve().parents[1]
 SEEN_PATH = ROOT / "data" / "seen_topics.json"
 TREND_PATH = ROOT / "data" / "trending_topics.json"
+SEED_TOPIC_PATH = ROOT / "data" / "seed_topic.json"
 
 SEED_TITLES = [
-    "Photosynthesis",
-    "Gravity",
-    "Friction",
-    "Electricity",
-    "Electric current",
-    "Voltage",
-    "Circuit",
-    "Atom",
-    "Molecule",
-    "DNA",
-    "Osmosis",
-    "Diffusion",
-    "Evaporation",
-    "Condensation",
-    "Water cycle",
-    "Respiration",
-    "Enzyme",
-    "Catalyst",
-    "Acid",
-    "Base (chemistry)",
-    "pH",
-    "Speed",
-    "Velocity",
-    "Acceleration",
-    "Force",
-    "Newton's laws of motion",
-    "Work (physics)",
-    "Energy",
-    "Kinetic energy",
-    "Potential energy",
-    "Heat",
-    "Temperature",
-    "Sound",
-    "Light",
-    "Reflection (physics)",
-    "Refraction",
-    "Magnet",
-    "Electromagnet",
-    "Cell (biology)",
-    "Mitosis",
-    "Meiosis",
-    "Blood",
-    "Heart",
-    "Lungs",
-    "Brain",
-    "Sleep",
-    "Memory",
-    "Vaccine",
-    "Antibiotic",
-    "Greenhouse effect",
-    "Global warming",
-    "Solar system",
-    "Eclipse",
-    "Moon",
-    "Earth",
-    "Earthquake",
-    "Volcano",
-    "Fossil",
-    "Evolution",
-    "Quadratic equation",
-    "Pythagorean theorem",
-    "Fraction",
-    "Percentage",
-    "Ratio",
-    "Average",
-    "Essay",
-    "Paragraph",
+    "Photosynthesis", "Gravity", "Friction", "Electricity", "Electric current",
+    "Voltage", "Circuit", "Atom", "Molecule", "DNA", "Osmosis", "Diffusion",
+    "Evaporation", "Condensation", "Water cycle", "Respiration", "Enzyme",
+    "Catalyst", "Acid", "Base (chemistry)", "pH", "Speed", "Velocity",
+    "Acceleration", "Force", "Newton's laws of motion", "Work (physics)",
+    "Energy", "Kinetic energy", "Potential energy", "Heat", "Temperature",
+    "Sound", "Light", "Reflection (physics)", "Refraction", "Magnet",
+    "Electromagnet", "Cell (biology)", "Mitosis", "Meiosis", "Blood",
+    "Heart", "Lungs", "Brain", "Sleep", "Memory", "Vaccine", "Antibiotic",
+    "Greenhouse effect", "Global warming", "Solar system", "Eclipse",
+    "Moon", "Earth", "Earthquake", "Volcano", "Fossil", "Evolution",
+    "Quadratic equation", "Pythagorean theorem", "Fraction", "Percentage",
+    "Ratio", "Average", "Essay", "Paragraph", "Petroleum refining",
+    "Fractional distillation", "Supply and demand",
 ]
 
 
@@ -118,6 +68,35 @@ def load_trends() -> list[str]:
         return []
 
 
+def try_seed_topic() -> dict | None:
+    """If data/seed_topic.json exists (or FORCE_SEED=1), use it once then rename aside."""
+    force = os.environ.get("FORCE_SEED", "").strip() in ("1", "true", "yes")
+    if not SEED_TOPIC_PATH.exists() and not force:
+        return None
+    if not SEED_TOPIC_PATH.exists():
+        return None
+    try:
+        data = json.loads(SEED_TOPIC_PATH.read_text(encoding="utf-8"))
+        title = (data.get("title") or "").strip()
+        extract = (data.get("extract") or "").strip()
+        if not title or len(extract) < 80:
+            return None
+        if not is_school_safe(title, extract):
+            print("seed blocked by safety", title, file=sys.stderr)
+            return None
+        data.setdefault("bg", "classroom")
+        data["topic_source"] = data.get("topic_source") or "seed"
+        data["trend"] = bool(data.get("trend", True))
+        # consume seed so scheduled runs do not repeat forever
+        used = SEED_TOPIC_PATH.with_name("seed_topic.used.json")
+        SEED_TOPIC_PATH.replace(used)
+        print("USING_SEED", title, file=sys.stderr)
+        return data
+    except Exception as e:
+        print("seed load fail", e, file=sys.stderr)
+        return None
+
+
 def summary(title: str) -> dict:
     if not is_school_safe(title):
         return {}
@@ -136,7 +115,6 @@ def summary(title: str) -> dict:
             if len(extract) < 100:
                 continue
             if not is_school_safe(data.get("title") or title, extract):
-                print("skip unsafe", title, file=sys.stderr)
                 continue
             return {
                 "title": data.get("title") or title,
@@ -169,12 +147,19 @@ def build_pool(seen: set[str], seen_norm: set[str]) -> tuple[list[str], list[str
 
 
 def main() -> None:
-    # allow running as script from repo root or scripts/
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "topic.json")
+
+    seeded = try_seed_topic()
+    if seeded:
+        seen = load_seen()
+        save_seen(seen, seeded["title"])
+        out.write_text(json.dumps(seeded, indent=2), encoding="utf-8")
+        print("TOPIC_SOURCE seed", seeded.get("title"), file=sys.stderr)
+        print(json.dumps(seeded, indent=2))
+        return
+
     seen = load_seen()
     seen_norm = {s.lower() for s in seen}
-
     trend_pool, seed_pool = build_pool(seen, seen_norm)
     if trend_pool and (not seed_pool or random.random() < 0.7):
         primary, source_tag = trend_pool, "trend"
@@ -186,7 +171,6 @@ def main() -> None:
         seen = set(kept)
         primary = list(dict.fromkeys(SEED_TITLES))
         source_tag = "seed-reset"
-        print("seen list soft-reset", file=sys.stderr)
 
     random.shuffle(primary)
     candidates = []
@@ -200,8 +184,6 @@ def main() -> None:
             break
 
     if not candidates and source_tag == "trend":
-        print("trends unresolved, falling back to seeds", file=sys.stderr)
-        random.shuffle(seed_pool or SEED_TITLES)
         for title in (seed_pool or SEED_TITLES):
             s = summary(title)
             if s:
@@ -226,8 +208,6 @@ def main() -> None:
         }]
 
     pick = random.choice(candidates)
-    if not is_school_safe(pick.get("title", ""), pick.get("extract", "")):
-        pick = candidates[0]
     save_seen(seen, pick["title"])
     out.write_text(json.dumps(pick, indent=2), encoding="utf-8")
     print("TOPIC_SOURCE", pick.get("topic_source"), pick.get("title"), file=sys.stderr)
@@ -235,6 +215,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # ensure local import works when cwd is repo root
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     main()

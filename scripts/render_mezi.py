@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike: hook face → teach → optional mid full-screen topic image → teach/CTA."""
+"""Mike: modern classroom, karaoke white-on-black curved captions, optional image beat."""
 from __future__ import annotations
 
 import argparse
@@ -15,10 +15,16 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 W, H = 1080, 1920
 FPS = 24
 HOOK_END = 2.0
-ACCENT = (255, 196, 40)
+# New palette — warm modern studio, not grey lab
+ACCENT = (255, 180, 50)
+WALL = (255, 244, 230)
+WALL_DEEP = (255, 236, 214)
+FLOOR = (62, 48, 40)
+BOARD = (18, 72, 92)
+BOARD_FRAME = (28, 36, 48)
 WHITE = (255, 255, 255)
-BLACK = (28, 24, 30)
-GLOW = (255, 230, 100)
+BLACK = (10, 12, 16)
+GLOW = (255, 255, 255)
 MOUTH = {
     "X": 0.0, "B": 0.25, "A": 1.0, "C": 0.55,
     "D": 0.7, "E": 0.85, "F": 0.5, "G": 0.95, "H": 1.0,
@@ -88,50 +94,76 @@ def wrap_text(d, text, tf, max_w):
 
 
 def draw_classroom(topic: str, definition: str = "", cta: str = "") -> Image.Image:
-    bw, bh = int(W * 1.15), int(H * 1.12)
-    img = Image.new("RGB", (bw, bh), (232, 236, 242))
+    """Warm modern classroom — cream walls, teal board, wood floor, new layout."""
+    bw, bh = int(W * 1.18), int(H * 1.14)
+    img = Image.new("RGB", (bw, bh), WALL)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, bw, int(bh * 0.72)], fill=(240, 243, 248))
-    d.rectangle([0, int(bh * 0.72), bw, bh], fill=(58, 64, 78))
-    d.rectangle([0, int(bh * 0.72) - 8, bw, int(bh * 0.72)], fill=ACCENT)
-    for i in range(2):
-        x0 = 36 + i * 150
-        d.rounded_rectangle([x0, 36, x0 + 130, 180], 10, fill=(190, 210, 230))
-    bx0, by0, bx1, by1 = 40, 200, bw - 40, int(bh * 0.62)
-    d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 12, fill=(40, 48, 58))
-    d.rounded_rectangle([bx0, by0, bx1, by1], 8, fill=(28, 95, 78))
+
+    # Upper wall band + lower wall
+    d.rectangle([0, 0, bw, int(bh * 0.68)], fill=WALL)
+    d.rectangle([0, int(bh * 0.68), bw, bh], fill=FLOOR)
+    # Skirting
+    d.rectangle([0, int(bh * 0.68) - 14, bw, int(bh * 0.68)], fill=ACCENT)
+
+    # Tall window on the LEFT (new place)
+    wx0, wy0, wx1, wy1 = 28, 48, 210, 320
+    d.rounded_rectangle([wx0, wy0, wx1, wy1], 14, fill=(160, 200, 230))
+    d.line([(wx0, (wy0 + wy1) // 2), (wx1, (wy0 + wy1) // 2)], fill=WHITE, width=4)
+    d.line([((wx0 + wx1) // 2, wy0), ((wx0 + wx1) // 2, wy1)], fill=WHITE, width=4)
+    d.rounded_rectangle([wx0 - 4, wy0 - 4, wx1 + 4, wy1 + 4], 16, outline=(90, 70, 55), width=5)
+
+    # Poster strip on the RIGHT
+    for i, col in enumerate([(255, 120, 100), (100, 180, 255), (120, 210, 140)]):
+        px = bw - 170
+        py = 50 + i * 100
+        d.rounded_rectangle([px, py, px + 130, py + 85], 12, fill=col)
+        d.rounded_rectangle([px + 10, py + 12, px + 120, py + 28], 4, fill=WHITE)
+
+    # Shelf under posters
+    d.rectangle([bw - 190, 360, bw - 30, 378], fill=(90, 70, 55))
+
+    # Main board — centered but slightly higher, teal (new color)
+    bx0, by0, bx1, by1 = 230, 70, bw - 200, int(bh * 0.58)
+    d.rounded_rectangle([bx0 - 14, by0 - 14, bx1 + 14, by1 + 14], 18, fill=BOARD_FRAME)
+    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=BOARD)
+
     topic = (topic or "Lesson").strip() or "Lesson"
-    tf = font(62)
-    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 40) and tf.size > 28:
+    tf = font(58)
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 26:
         tf = font(tf.size - 3)
-    y = by0 + 40
-    for line in wrap_text(d, topic, tf, bx1 - bx0 - 40)[:2]:
+    y = by0 + 36
+    for line in wrap_text(d, topic, tf, bx1 - bx0 - 48)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=(245, 255, 248))
-        y += tf.size + 12
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=WHITE)
+        y += tf.size + 10
+
     if definition:
-        df = font(30)
-        y += 14
-        for line in wrap_text(d, definition, df, bx1 - bx0 - 40)[:4]:
+        df = font(28)
+        y += 16
+        for line in wrap_text(d, definition, df, bx1 - bx0 - 48)[:4]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(190, 230, 210))
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(200, 230, 240))
             y += df.size + 6
+
     cta = cta or "Comment what you understood"
     cf = font(26)
-    d.rounded_rectangle([bx0 + 24, by1 - 62, bx1 - 24, by1 - 16], 12, fill=ACCENT)
+    d.rounded_rectangle([bx0 + 28, by1 - 64, bx1 - 28, by1 - 18], 20, fill=ACCENT)
     bb = d.textbbox((0, 0), cta[:42], font=cf)
     tw = bb[2] - bb[0]
-    d.text((bx0 + (bx1 - bx0 - tw) // 2, by1 - 52), cta[:42], font=cf, fill=BLACK)
+    d.text((bx0 + (bx1 - bx0 - tw) // 2, by1 - 54), cta[:42], font=cf, fill=BLACK)
+
+    # Desk silhouette at bottom (new place)
+    d.rounded_rectangle([bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=(70, 52, 42))
     return img
 
 
 def draw_hook_bg() -> Image.Image:
-    img = Image.new("RGB", (W, H), (18, 22, 32))
+    img = Image.new("RGB", (W, H), (22, 18, 28))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, H - 280, W, H], fill=(12, 14, 20))
-    d.rectangle([0, 0, W, 12], fill=ACCENT)
+    d.rectangle([0, H - 280, W, H], fill=(12, 10, 16))
+    d.rectangle([0, 0, W, 14], fill=ACCENT)
     return img
 
 
@@ -139,10 +171,7 @@ def camera_crop(full: Image.Image, t: float, duration: float, mode: str) -> Imag
     progress = min(1.0, t / max(duration, 0.1))
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     fw, fh = full.size
-    if mode == "board":
-        scale, ox, oy = 1.0 + 0.03 * ease, 0.5, 0.18
-    else:
-        scale, ox, oy = 1.0 + 0.03 * ease, 0.5, 0.3
+    scale, ox, oy = 1.0 + 0.04 * ease, 0.5, 0.16
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
     x = int(max_x * max(0.0, min(1.0, ox)))
@@ -155,7 +184,6 @@ def prepare_topic_image(path: Path) -> Image.Image | None:
         return None
     try:
         im = Image.open(path).convert("RGB")
-        # Cover 1080x1920 with extra margin for Ken Burns
         im = ImageOps.fit(im, (int(W * 1.35), int(H * 1.35)), method=Image.Resampling.LANCZOS)
         return im
     except Exception as e:
@@ -164,11 +192,9 @@ def prepare_topic_image(path: Path) -> Image.Image | None:
 
 
 def ken_burns_frame(src: Image.Image, local_t: float, seg_dur: float, phase: str) -> Image.Image:
-    """phase: left | center | right — slow zoom + pan."""
     p = min(1.0, max(0.0, local_t / max(seg_dur, 0.01)))
     ease = 0.5 - 0.5 * math.cos(p * math.pi)
     fw, fh = src.size
-    # zoom 1.0 → 1.18 over segment
     scale = 1.0 + 0.18 * ease
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
@@ -185,10 +211,8 @@ def ken_burns_frame(src: Image.Image, local_t: float, seg_dur: float, phase: str
 
 
 def image_window(duration: float) -> tuple[float, float] | None:
-    """Mid-video image beat; None if video too short."""
     if duration < 12:
         return None
-    # ~28%–58% of timeline, max ~10s
     start = duration * 0.28
     end = min(duration * 0.58, start + 10.0)
     if end - start < 3.5:
@@ -239,18 +263,10 @@ def body_for(move, blink):
     if blink and move in ("talk", "present", "happy", "question", "explain", "lean"):
         return "body_blink.png"
     return {
-        "welcome": "body_present.png",
-        "talk": "body.png",
-        "point": "arm_point.png",
-        "sit": "body_sit.png",
-        "present": "body_present.png",
-        "question": "body_question.png",
-        "happy": "body_happy.png",
-        "explain": "body_explain.png",
-        "shrug": "body_shrug.png",
-        "count": "body_count.png",
-        "think": "body_think.png",
-        "lean": "body_lean.png",
+        "welcome": "body_present.png", "talk": "body.png", "point": "arm_point.png",
+        "sit": "body_sit.png", "present": "body_present.png", "question": "body_question.png",
+        "happy": "body_happy.png", "explain": "body_explain.png", "shrug": "body_shrug.png",
+        "count": "body_count.png", "think": "body_think.png", "lean": "body_lean.png",
     }.get(move, "body.png")
 
 
@@ -290,8 +306,7 @@ def draw_hook_text(rgb, hook: str):
     lines = wrap_text(d, hook, tf, W - 80)[:4]
     box_h = 40 + len(lines) * (tf.size + 10)
     top = 80
-    d.rounded_rectangle([32, top, W - 32, top + box_h], 20, fill=(12, 14, 22))
-    d.rounded_rectangle([32, top, W - 32, top + 8], 4, fill=ACCENT)
+    d.rounded_rectangle([32, top, W - 32, top + box_h], 28, fill=BLACK)
     y = top + 24
     for line in lines:
         bb = d.textbbox((0, 0), line, font=tf)
@@ -308,8 +323,44 @@ def draw_image_caption(rgb, topic: str):
     tf = font(28)
     bb = d.textbbox((0, 0), label, font=tf)
     tw = bb[2] - bb[0]
-    d.rounded_rectangle([W // 2 - tw // 2 - 20, H - 120, W // 2 + tw // 2 + 20, H - 60], 14, fill=(12, 14, 22))
-    d.text((W // 2 - tw // 2, H - 108), label, font=tf, fill=WHITE)
+    d.rounded_rectangle([W // 2 - tw // 2 - 24, H - 120, W // 2 + tw // 2 + 24, H - 56], 28, fill=BLACK)
+    d.text((W // 2 - tw // 2, H - 106), label, font=tf, fill=WHITE)
+
+
+def draw_karaoke(rgb, text, t, duration):
+    """White text, black highly curved (pill) drop, active word brighter."""
+    d = ImageDraw.Draw(rgb)
+    windows = word_windows(text, duration)
+    chunk, active = active_caption(windows, t)
+    cf = font(44)
+    gaps, display, total = [], [], 0
+    for w in chunk:
+        bb = d.textbbox((0, 0), w, font=cf)
+        ww = bb[2] - bb[0]
+        if total + ww + 16 > W - 72 and display:
+            break
+        display.append(w)
+        gaps.append(ww)
+        total += ww + 16
+    if not display:
+        display, gaps, total = ["..."], [40], 40
+    active = min(active, len(display) - 1)
+    total = max(total - 16, 1)
+    pad_x, pad_y = 28, 18
+    box_w = total + pad_x * 2
+    box_h = cf.size + pad_y * 2
+    x0 = max(24, (W - box_w) // 2)
+    y0 = H - 170
+    # Curved black capsule
+    d.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=box_h // 2, fill=BLACK)
+    x = x0 + pad_x
+    y = y0 + pad_y - 2
+    for i, w in enumerate(display):
+        if i == active:
+            d.text((x, y), w, font=cf, fill=WHITE)
+        else:
+            d.text((x, y), w, font=cf, fill=(190, 190, 195))
+        x += gaps[i] + 16
 
 
 def draw_ui(rgb, text, t, duration, topic, dyk, cta, p, hook_phase):
@@ -320,13 +371,13 @@ def draw_ui(rgb, text, t, duration, topic, dyk, cta, p, hook_phase):
     label = (topic or "Lesson")[:28]
     bb = d.textbbox((0, 0), label, font=af)
     tw = bb[2] - bb[0]
-    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 14, fill=ACCENT)
+    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 20, fill=ACCENT)
     d.text((W - tw - 42, 38), label, font=af, fill=BLACK)
     if 0.62 <= p <= 0.75 and dyk:
         df = font(28)
         lines = wrap_text(d, "Did you know? " + dyk, df, W - 100)[:3]
         box_h = 36 + len(lines) * (df.size + 8)
-        d.rounded_rectangle([40, 100, W - 40, 100 + box_h], 16, fill=(20, 28, 40))
+        d.rounded_rectangle([40, 100, W - 40, 100 + box_h], 24, fill=BLACK)
         y = 118
         for line in lines:
             d.text((56, y), line, font=df, fill=WHITE)
@@ -336,35 +387,9 @@ def draw_ui(rgb, text, t, duration, topic, dyk, cta, p, hook_phase):
         msg = (cta or "Comment what you understood")[:40]
         bb = d.textbbox((0, 0), msg, font=cf)
         tw = bb[2] - bb[0]
-        d.rounded_rectangle([W // 2 - tw // 2 - 24, 90, W // 2 + tw // 2 + 24, 148], 16, fill=ACCENT)
-        d.text((W // 2 - tw // 2, 102), msg, font=cf, fill=BLACK)
-    windows = word_windows(text, duration)
-    chunk, active = active_caption(windows, t)
-    cf = font(42)
-    gaps, display, total = [], [], 0
-    for w in chunk:
-        bb = d.textbbox((0, 0), w, font=cf)
-        ww = bb[2] - bb[0]
-        if total + ww + 14 > W - 64 and display:
-            break
-        display.append(w)
-        gaps.append(ww)
-        total += ww + 14
-    if not display:
-        display, gaps, total = ["..."], [40], 40
-    active = min(active, len(display) - 1)
-    total = max(total - 14, 1)
-    x0, y = max(32, (W - total) // 2), H - 160
-    d.rounded_rectangle([24, y - 18, W - 24, y + 72], 18, fill=(12, 12, 20))
-    x = x0
-    for i, w in enumerate(display):
-        if i == active:
-            for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3)]:
-                d.text((x + ox, y + oy), w, font=cf, fill=GLOW)
-            d.text((x, y), w, font=cf, fill=WHITE)
-        else:
-            d.text((x, y), w, font=cf, fill=(175, 175, 185))
-        x += gaps[i] + 14
+        d.rounded_rectangle([W // 2 - tw // 2 - 28, 90, W // 2 + tw // 2 + 28, 152], 24, fill=ACCENT)
+        d.text((W // 2 - tw // 2, 104), msg, font=cf, fill=BLACK)
+    draw_karaoke(rgb, text, t, duration)
 
 
 def main():
@@ -406,10 +431,7 @@ def main():
     hook_bg = draw_hook_bg()
     topic_img = prepare_topic_image(Path(args.topic_image))
     win = image_window(duration) if topic_img is not None else None
-    if topic_img is not None and win:
-        print(f"IMAGE_BEAT {win[0]:.1f}-{win[1]:.1f}s", file=sys.stderr)
-    else:
-        print("IMAGE_BEAT skip", file=sys.stderr)
+    print(f"IMAGE_BEAT {win[0]:.1f}-{win[1]:.1f}s" if win else "IMAGE_BEAT skip", file=sys.stderr)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -436,19 +458,15 @@ def main():
                 rgb = frame.convert("RGB")
                 draw_hook_text(rgb, hook)
             elif img_phase and topic_img is not None and win:
-                # Mike OFF screen — full image with L/C/R Ken Burns
                 local = t - win[0]
                 seg = win[1] - win[0]
                 third = seg / 3.0
                 if local < third:
-                    phase = "left"
-                    lt, ld = local, third
+                    phase, lt, ld = "left", local, third
                 elif local < 2 * third:
-                    phase = "center"
-                    lt, ld = local - third, third
+                    phase, lt, ld = "center", local - third, third
                 else:
-                    phase = "right"
-                    lt, ld = local - 2 * third, third
+                    phase, lt, ld = "right", local - 2 * third, third
                 rgb = ken_burns_frame(topic_img, lt, ld, phase)
                 draw_image_caption(rgb, topic)
             else:
