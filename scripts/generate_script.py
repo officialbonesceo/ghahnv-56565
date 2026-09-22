@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI-only scripts; hooky DYK; fail if AI fails."""
+"""AI-only student scripts: real-life examples, distinct DYK, fail if AI fails."""
 from __future__ import annotations
 
 import argparse
@@ -25,8 +25,6 @@ HOOK_TEMPLATES = [
     "Teachers assume you know {topic}. You might not.",
     "One clear way to explain {topic} in an exam.",
     "Before your test: what {topic} actually means.",
-    "{topic} in plain words — no textbook fog.",
-    "Can you define {topic} without panic? Start here.",
 ]
 
 CTA_ENDINGS = [
@@ -42,9 +40,9 @@ PROMPT_LEAK_RE = re.compile(
     r"|first line must|no hey/?hi|definition\s*→|exam-useful fact"
     r"|75-?105 words|never say mike\.the\.tutor|comment yes"
     r"|after script:|moves:\s*question@|moves:\s*talk,"
-    r"|instruct:|system:|user:|assistant:"
-    r"|you are a helpful|write a script|output only"
-    r"|topic:\s*\w+\s*facts:"
+    r"|instruct:|system:|user:|assistant:|you are a helpful"
+    r"|write a script|output only|real-life example required"
+    r"|topic:\s*\w+\s*facts:|didyouknow must"
     r")"
 )
 
@@ -58,13 +56,14 @@ def display_title(title: str) -> str:
 
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
-    t = re.split(r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM)\s*:", t)[0]
+    t = re.split(r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM|EXAMPLE)\s*:", t)[0]
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
     t = re.sub(r"```[\s\S]*?```", " ", t)
     t = re.sub(r"(?im)^#{1,3}\s+.*$", " ", t)
     t = re.sub(r"MOVES:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"DEFINITION:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"DIDYOUKNOW:\s*.+$", " ", t, flags=re.I | re.M)
+    t = re.sub(r"EXAMPLE:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
     for p in [r"INTRO:\s*", r"BODY:\s*", r"SCRIPT:\s*"]:
         t = re.sub(p, " ", t, flags=re.I)
@@ -73,15 +72,14 @@ def clean_spoken(text: str) -> str:
         return ""
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\s*", "", t, flags=re.I)
-    t = re.sub(r"^today (on the board|we (learn|talk) about)[:\s]+", "", t, flags=re.I)
     t = re.sub(r"comment yes[^.]*\.?", "", t, flags=re.I)
     t = re.sub(r"follow\s+mike\.the\.tutor[^.]*\.?", "", t, flags=re.I)
     t = re.sub(r"\s+", " ", t).strip()
     words = t.split()
-    if len(words) < 45:
+    if len(words) < 50:
         return ""
-    if len(words) > 120:
-        t = " ".join(words[:110])
+    if len(words) > 130:
+        t = " ".join(words[:115])
         if "." in t:
             t = t[: t.rfind(".") + 1]
     if t and t[-1] not in ".!?":
@@ -98,27 +96,32 @@ def short_definition(extract: str, title: str) -> str:
         s = s.strip()
         if 35 <= len(s) <= 140 and re.match(r"^[A-Z0-9]", s):
             return s[:120]
-    return f"{title} is a simple idea you can explain in everyday words."
+    return f"{title} is a core exam idea you can state in one clear sentence."
 
 
-def did_you_know_line(extract: str, title: str) -> str:
-    """Hooky one-liner for full-screen card — not soft textbook tone."""
+def distinct_dyk(extract: str, title: str, definition: str) -> str:
+    """Surprise fact — must NOT repeat the board definition."""
+    def_norm = re.sub(r"[^a-z0-9]", "", (definition or "").lower())
     sents = re.split(r"(?<=[.!?])\s+", extract or "")
-    best = ""
+    candidates = []
     for s in sents:
         s = s.strip()
-        if 25 <= len(s) <= 110 and re.match(r"^[A-Z0-9]", s):
-            if not re.search(r"\b(is a|are a|refers to)\b", s, re.I) or len(s) < 80:
-                best = s
-                break
-            if not best:
-                best = s
-    if best:
-        # punch up opening
-        if not re.match(r"(?i)(most|almost|few|students|exam|stop|never|only)", best):
-            best = f"Most students miss this: {best[0].lower()}{best[1:]}"
-        return best[:120]
-    return f"Most students cannot explain {title} in one exam sentence."
+        if not (28 <= len(s) <= 115 and re.match(r"^[A-Z0-9]", s)):
+            continue
+        sn = re.sub(r"[^a-z0-9]", "", s.lower())
+        # reject if too similar to definition
+        if def_norm and (sn[:40] == def_norm[:40] or def_norm[:30] in sn or sn[:30] in def_norm):
+            continue
+        if re.search(r"\b(is a|are a|refers to|defined as)\b", s, re.I) and len(s) < 70:
+            continue
+        candidates.append(s)
+    if candidates:
+        # prefer 2nd+ sentence (usually less definitional)
+        pick = candidates[1] if len(candidates) > 1 else candidates[0]
+        if not re.match(r"(?i)(most|almost|few|wait|students|exam|never|only)", pick):
+            pick = f"Most students never hear this: {pick[0].lower()}{pick[1:]}"
+        return pick[:120]
+    return f"Most students can name {title}, but freeze when the exam asks for one real-life example."
 
 
 def default_moves(topic: str) -> list[dict]:
@@ -209,6 +212,16 @@ def ensure_cta(script: str, topic: str) -> str:
     return s
 
 
+def has_real_life_example(script: str) -> bool:
+    return bool(re.search(
+        r"\b(for example|in real life|like when|think of|imagine|when you|"
+        r"on the road|in the kitchen|in class|your phone|your body|"
+        r"a ball|a car|a wire|a plant|cooking|football|walking)\b",
+        script,
+        re.I,
+    ))
+
+
 def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
     short = display_title(topic.get("title") or "Lesson")
     extract = topic.get("extract") or ""
@@ -218,18 +231,34 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
     cleaned = force_hook(cleaned, short)
     cleaned = ensure_cta(cleaned, short)
     if PROMPT_LEAK_RE.search(cleaned):
+        print("PROMPT_LEAK after pack — reject", file=sys.stderr)
         return None
+    if not has_real_life_example(cleaned):
+        # soft inject one line only if AI forgot — still from topic words, not a full template script
+        cleaned = cleaned.rstrip(".! ")
+        cleaned += (
+            f". For example, you meet {short} in everyday situations — "
+            f"name one in the comments."
+        )
+        cleaned = ensure_cta(cleaned, short)
+
+    definition = (definition or short_definition(extract, short)).strip()[:120]
     dyk_final = (dyk or "").strip()
-    if not dyk_final or len(dyk_final) < 20:
-        dyk_final = did_you_know_line(extract, short)
+    if not dyk_final or len(dyk_final) < 25:
+        dyk_final = distinct_dyk(extract, short, definition)
     else:
-        # ensure hooky
-        if not re.match(r"(?i)(most|almost|few|students|exam|stop|never|only|wait)", dyk_final):
+        # force distinct from definition
+        dn = re.sub(r"[^a-z0-9]", "", definition.lower())
+        yn = re.sub(r"[^a-z0-9]", "", dyk_final.lower())
+        if dn and (yn[:35] == dn[:35] or dn[:25] in yn):
+            dyk_final = distinct_dyk(extract, short, definition)
+        elif not re.match(r"(?i)(most|almost|few|wait|students|never|only)", dyk_final):
             dyk_final = f"Most students miss this: {dyk_final[0].lower()}{dyk_final[1:]}"
+
     return {
         "title": topic.get("title") or short,
         "short_title": short,
-        "definition": (definition or short_definition(extract, short))[:120],
+        "definition": definition,
         "did_you_know": dyk_final[:120],
         "cta": random.choice(CTA_ENDINGS),
         "script": cleaned,
@@ -246,19 +275,24 @@ def run_openrouter(topic: dict):
         print("openrouter: no API key", file=sys.stderr)
         return None
     short = display_title(topic.get("title") or "science")
-    extract = (topic.get("extract") or "")[:400]
+    extract = (topic.get("extract") or "")[:450]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     system = (
-        "You write spoken TikTok voiceover for secondary school exam revision. "
-        "Return ONLY the spoken script paragraphs. No headings, no numbered rules."
+        "You write spoken TikTok voiceover for secondary exam revision. "
+        "Return only the spoken paragraphs. No headings or rule lists in the voiceover."
     )
     user = (
         f"Topic: {short}\nFacts:\n{extract}\n\n"
-        "75-105 words. Exam-style hook first. Definition, one exam fact, takeaway. "
-        "End with comment CTA and Follow for more. No religious/political content.\n"
-        "After script only:\n"
-        "DEFINITION: one sentence\n"
-        "DIDYOUKNOW: one HOOKY surprise fact students will stop for (start with Most students… or Wait…)\n"
+        "Write 80-110 words.\n"
+        "1) Exam-pain hook first (marks/test/confusion).\n"
+        "2) Clear definition in plain words.\n"
+        "3) ONE concrete real-life example (kitchen, phone, road, sports, body, weather).\n"
+        "4) One exam takeaway.\n"
+        "5) Soft comment CTA + Follow for more.\n"
+        "No religion, politics, or self-intro as Mike.\n\n"
+        "After the spoken script, on separate lines only:\n"
+        "DEFINITION: one sentence for the board (formal short definition)\n"
+        "DIDYOUKNOW: a DIFFERENT surprise fact — not the definition — start with Most students…\n"
         "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
     )
     try:
@@ -276,7 +310,7 @@ def run_openrouter(topic: dict):
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "max_tokens": 380,
+                "max_tokens": 420,
                 "temperature": 0.4,
             },
             timeout=90,
@@ -315,14 +349,17 @@ def run_gguf(model: Path, topic: dict, engine_name: str):
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
     inp.write_text(json.dumps({
-        "model": str(model), "title": short,
+        "model": str(model),
+        "title": short,
         "extract": (topic.get("extract") or "")[:400],
     }), encoding="utf-8")
     if outp.exists():
         outp.unlink()
     try:
-        r = subprocess.run([sys.executable, str(helper), str(inp), str(outp)],
-                           timeout=360, capture_output=True, text=True)
+        r = subprocess.run(
+            [sys.executable, str(helper), str(inp), str(outp)],
+            timeout=360, capture_output=True, text=True,
+        )
         if r.returncode != 0 or not outp.exists():
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
@@ -354,6 +391,10 @@ def main():
         print("AI_SCRIPT_FAILED: no usable LLM script", file=sys.stderr)
         sys.exit(1)
     if result.get("engine", "").startswith("template"):
+        print("REFUSING template engine", file=sys.stderr)
+        sys.exit(1)
+    if PROMPT_LEAK_RE.search(result.get("script") or ""):
+        print("PROMPT_LEAK in final script", file=sys.stderr)
         sys.exit(1)
 
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -374,6 +415,7 @@ def main():
         encoding="utf-8",
     )
     print("ENGINE", result.get("engine"), "WORDS", len(result["script"].split()), file=sys.stderr)
+    print("DYK", result.get("did_you_know"), file=sys.stderr)
     print(json.dumps(result, indent=2))
 
 
