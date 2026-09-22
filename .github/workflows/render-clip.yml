@@ -85,9 +85,9 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
+          # Fail the whole job if AI fails — no template/synthetic script
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$PHI_FILE" --try-llm --out script_job.json
-          python -c "import json; d=json.load(open('script_job.json')); print(d.get('engine'), d.get('short_title'), len(d.get('script','').split()), 'words'); print(d.get('script','')[:200])"
-          cat moves.json || true
+          python -c "import json; d=json.load(open('script_job.json')); e=d.get('engine',''); assert e and not e.startswith('template'), e; print(e, d.get('short_title'), len(d.get('script','').split()), 'words'); print(d.get('script','')[:240]); print('DYK', d.get('did_you_know')); print('DEF', d.get('definition'))"
 
       - name: topic-image
         continue-on-error: true
@@ -121,6 +121,18 @@ jobs:
         run: |
           ls -lh output.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
+
+      - name: consume-seed-after-success
+        continue-on-error: true
+        run: |
+          # After a successful video, permanently disable any seed so it cannot stick
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mkdir -p data
+          printf '%s\n' '{"disabled": true, "note": "consumed after successful run"}' > data/seed_topic.json
+          git add data/seed_topic.json data/seen_topics.json || true
+          git diff --cached --quiet || git commit -m "chore: consume seed after successful run"
+          git push || true
 
       - name: buffer
         continue-on-error: true
