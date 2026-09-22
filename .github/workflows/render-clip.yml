@@ -53,15 +53,19 @@ jobs:
           cat data/trending_topics.json || true
 
       - name: topic
-        run: python scripts/fetch_topics.py topic.json
+        run: |
+          python scripts/fetch_topics.py topic.json
+          echo "--- topic.json ---"
+          cat topic.json
+          python -c "import json; t=json.load(open('topic.json')); assert 'petroleum' not in t.get('title','').lower() and 'refiner' not in t.get('title','').lower(), t"
 
       - name: commit-seen-topics
         continue-on-error: true
         run: |
           git config user.name "mike-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add data/seen_topics.json data/trending_topics.json || true
-          git diff --cached --quiet || git commit -m "chore: mark topic seen + trends"
+          git add data/seen_topics.json data/trending_topics.json data/seed_topic.json || true
+          git diff --cached --quiet || git commit -m "chore: mark topic seen + trends + seed state"
           git push || true
 
       - name: cache-phi2
@@ -147,5 +151,6 @@ jobs:
             buffer_result.json
             title_short.txt
             hook.txt
+            thumb_style.txt
           if-no-files-found: error
           retention-days: 3
