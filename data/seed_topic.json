@@ -1,4 +1,1 @@
-{
-  "disabled": true,
-  "note": "Seed consumed. Do not re-enable petroleum refining. Delete or leave disabled."
-}
+{"disabled": true, "note": "consumed after successful run"}
