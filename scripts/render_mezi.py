@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Mike Shorts: varied thumbnails, Ken Burns image, full-screen DYK + end CTA."""
+"""Mike Shorts: 5 classroom themes, strong thumbnail variety, same character."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import math
-import random
 import subprocess
 import sys
 import tempfile
@@ -16,12 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 W, H = 1080, 1920
 FPS = 24
-HOOK_END = 2.2
-ACCENT = (255, 180, 50)
-WALL = (255, 244, 230)
-FLOOR = (62, 48, 40)
-BOARD = (18, 72, 92)
-BOARD_FRAME = (28, 36, 48)
+HOOK_END = 2.4
 WHITE = (255, 255, 255)
 BLACK = (10, 12, 16)
 MOUTH = {
@@ -29,9 +23,47 @@ MOUTH = {
     "D": 0.7, "E": 0.85, "F": 0.5, "G": 0.95, "H": 1.0,
 }
 
-# Thumbnail-first variants (TikTok uses first frames)
+# 5 distinct rooms — colors + layout feel
+ROOMS = [
+    {
+        "id": "warm_cream",
+        "wall": (255, 244, 230), "floor": (62, 48, 40), "board": (18, 72, 92),
+        "frame": (28, 36, 48), "accent": (255, 180, 50), "window": (160, 200, 230),
+        "desk": (70, 52, 42), "posters": [(255, 120, 100), (100, 180, 255), (120, 210, 140)],
+    },
+    {
+        "id": "cool_lab",
+        "wall": (230, 238, 248), "floor": (45, 55, 70), "board": (22, 55, 90),
+        "frame": (20, 30, 45), "accent": (80, 180, 255), "window": (180, 220, 255),
+        "desk": (50, 60, 75), "posters": [(100, 200, 255), (180, 140, 255), (100, 220, 180)],
+    },
+    {
+        "id": "green_board",
+        "wall": (245, 240, 230), "floor": (55, 50, 40), "board": (28, 95, 55),
+        "frame": (35, 45, 30), "accent": (255, 200, 60), "window": (170, 210, 160),
+        "desk": (65, 55, 40), "posters": [(255, 160, 80), (90, 190, 120), (255, 220, 100)],
+    },
+    {
+        "id": "night_study",
+        "wall": (35, 40, 55), "floor": (25, 28, 38), "board": (15, 50, 70),
+        "frame": (50, 55, 70), "accent": (255, 140, 80), "window": (40, 55, 90),
+        "desk": (40, 42, 55), "posters": [(255, 120, 90), (100, 140, 255), (180, 100, 220)],
+    },
+    {
+        "id": "purple_studio",
+        "wall": (245, 235, 250), "floor": (55, 40, 60), "board": (55, 35, 90),
+        "frame": (40, 30, 55), "accent": (220, 120, 255), "window": (200, 180, 240),
+        "desk": (70, 50, 75), "posters": [(255, 140, 200), (140, 120, 255), (255, 200, 120)],
+    },
+]
+
+# First-2s layouts (TikTok thumbnail)
 THUMB_STYLES = [
-    "face_dark", "face_warm", "board_big", "side_point", "topic_card", "accent_bar",
+    "close_face",      # big Mike, dark bg, topic top
+    "board_hero",      # huge topic title full screen then Mike small
+    "side_teach",      # Mike left, colored panel right with topic
+    "split_color",     # two-tone bg + Mike center + topic badge
+    "big_topic",       # topic fills upper 60%, Mike lower
 ]
 
 
@@ -97,38 +129,51 @@ def wrap_text(d, text, tf, max_w):
     return lines
 
 
-def pick_thumb_style(topic: str) -> str:
+def pick_room(topic: str) -> dict:
     h = int(hashlib.md5((topic or "x").encode()).hexdigest(), 16)
+    return ROOMS[h % len(ROOMS)]
+
+
+def pick_thumb_style(topic: str) -> str:
+    h = int(hashlib.md5(("thumb:" + (topic or "x")).encode()).hexdigest(), 16)
     return THUMB_STYLES[h % len(THUMB_STYLES)]
 
 
-def draw_classroom(topic: str, definition: str = "") -> Image.Image:
-    """Board shows topic only — CTA is full-screen at end, not on board."""
+def pick_open_move(topic: str) -> str:
+    moves = ["question", "happy", "present", "point", "explain", "think"]
+    h = int(hashlib.md5(("move:" + (topic or "x")).encode()).hexdigest(), 16)
+    return moves[h % len(moves)]
+
+
+def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
     bw, bh = int(W * 1.18), int(H * 1.14)
-    img = Image.new("RGB", (bw, bh), WALL)
+    img = Image.new("RGB", (bw, bh), room["wall"])
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, bw, int(bh * 0.68)], fill=WALL)
-    d.rectangle([0, int(bh * 0.68), bw, bh], fill=FLOOR)
-    d.rectangle([0, int(bh * 0.68) - 14, bw, int(bh * 0.68)], fill=ACCENT)
+    d.rectangle([0, 0, bw, int(bh * 0.68)], fill=room["wall"])
+    d.rectangle([0, int(bh * 0.68), bw, bh], fill=room["floor"])
+    d.rectangle([0, int(bh * 0.68) - 14, bw, int(bh * 0.68)], fill=room["accent"])
 
-    wx0, wy0, wx1, wy1 = 28, 48, 210, 320
-    d.rounded_rectangle([wx0, wy0, wx1, wy1], 14, fill=(160, 200, 230))
-    d.line([(wx0, (wy0 + wy1) // 2), (wx1, (wy0 + wy1) // 2)], fill=WHITE, width=4)
-    d.line([((wx0 + wx1) // 2, wy0), ((wx0 + wx1) // 2, wy1)], fill=WHITE, width=4)
+    # Window left
+    wx0, wy0, wx1, wy1 = 28, 48, 200, 300
+    d.rounded_rectangle([wx0, wy0, wx1, wy1], 14, fill=room["window"])
+    d.line([(wx0, (wy0 + wy1) // 2), (wx1, (wy0 + wy1) // 2)], fill=WHITE, width=3)
+    d.line([((wx0 + wx1) // 2, wy0), ((wx0 + wx1) // 2, wy1)], fill=WHITE, width=3)
 
-    for i, col in enumerate([(255, 120, 100), (100, 180, 255), (120, 210, 140)]):
-        px, py = bw - 170, 50 + i * 100
-        d.rounded_rectangle([px, py, px + 130, py + 85], 12, fill=col)
+    # Posters right
+    for i, col in enumerate(room["posters"]):
+        px, py = bw - 165, 45 + i * 95
+        d.rounded_rectangle([px, py, px + 125, py + 80], 12, fill=col)
 
-    bx0, by0, bx1, by1 = 230, 70, bw - 200, int(bh * 0.58)
-    d.rounded_rectangle([bx0 - 14, by0 - 14, bx1 + 14, by1 + 14], 18, fill=BOARD_FRAME)
-    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=BOARD)
+    # Board
+    bx0, by0, bx1, by1 = 220, 65, bw - 190, int(bh * 0.58)
+    d.rounded_rectangle([bx0 - 12, by0 - 12, bx1 + 12, by1 + 12], 16, fill=room["frame"])
+    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=room["board"])
 
     topic = (topic or "Lesson").strip() or "Lesson"
-    tf = font(58)
+    tf = font(56)
     while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 26:
         tf = font(tf.size - 3)
-    y = by0 + 50
+    y = by0 + 48
     for line in wrap_text(d, topic, tf, bx1 - bx0 - 48)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
@@ -136,32 +181,128 @@ def draw_classroom(topic: str, definition: str = "") -> Image.Image:
         y += tf.size + 12
     if definition:
         df = font(28)
-        y += 20
+        y += 16
         for line in wrap_text(d, definition, df, bx1 - bx0 - 48)[:5]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(200, 230, 240))
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(210, 230, 240))
             y += df.size + 6
 
-    d.rounded_rectangle([bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=(70, 52, 42))
+    d.rounded_rectangle([bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=room["desk"])
     return img
 
 
-def draw_hook_bg(style: str) -> Image.Image:
-    if style == "face_warm":
-        base = (48, 28, 22)
-    elif style == "accent_bar":
-        base = (16, 18, 28)
-    else:
-        base = (18, 16, 24)
-    img = Image.new("RGB", (W, H), base)
+def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.Image) -> Image.Image:
+    """Highly distinct first frames for TikTok cover."""
+    accent = room["accent"]
+    board = room["board"]
+    wall = room["wall"]
+
+    if style == "close_face":
+        img = Image.new("RGB", (W, H), (18, 16, 24))
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, W, 18], fill=accent)
+        # Big Mike centered lower
+        target_h = int(H * 0.95)
+        scale = target_h / char.height
+        nw, nh = int(char.width * scale), int(char.height * scale)
+        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+        img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.2)), c)
+        # Topic pill top
+        tf = font(42)
+        lines = wrap_text(d, topic, tf, W - 80)[:2]
+        box_h = 28 + len(lines) * (tf.size + 8)
+        d.rounded_rectangle([40, 50, W - 40, 50 + box_h], 24, fill=BLACK)
+        y = 64
+        for line in lines:
+            bb = d.textbbox((0, 0), line, font=tf)
+            d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 8
+        return img
+
+    if style == "board_hero":
+        img = Image.new("RGB", (W, H), board)
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, W, 20], fill=accent)
+        d.rectangle([0, H - 20, W, H], fill=accent)
+        tf = font(72)
+        lines = wrap_text(d, topic, tf, W - 60)[:3]
+        total_h = len(lines) * (tf.size + 14)
+        y = H // 2 - total_h // 2 - 80
+        for line in lines:
+            bb = d.textbbox((0, 0), line, font=tf)
+            d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 14
+        # Small Mike bottom
+        target_h = int(H * 0.35)
+        scale = target_h / char.height
+        nw, nh = int(char.width * scale), int(char.height * scale)
+        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+        img.paste(c, ((W - nw) // 2, H - nh - 40), c)
+        return img
+
+    if style == "side_teach":
+        img = Image.new("RGB", (W, H), wall)
+        d = ImageDraw.Draw(img)
+        d.rectangle([W // 2, 0, W, H], fill=board)
+        d.rectangle([W // 2, 0, W // 2 + 12, H], fill=accent)
+        tf = font(48)
+        lines = wrap_text(d, topic, tf, W // 2 - 50)[:4]
+        y = H // 2 - 100
+        for line in lines:
+            bb = d.textbbox((0, 0), line, font=tf)
+            d.text((W // 2 + (W // 2 - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 12
+        target_h = int(H * 0.7)
+        scale = target_h / char.height
+        nw, nh = int(char.width * scale), int(char.height * scale)
+        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+        img.paste(c, (max(10, W // 4 - nw // 2), H - nh + 40), c)
+        return img
+
+    if style == "split_color":
+        img = Image.new("RGB", (W, H), wall)
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, W, H // 2], fill=board)
+        d.rectangle([0, H // 2 - 10, W, H // 2 + 10], fill=accent)
+        tf = font(56)
+        lines = wrap_text(d, topic, tf, W - 80)[:3]
+        y = 80
+        for line in lines:
+            bb = d.textbbox((0, 0), line, font=tf)
+            d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 12
+        target_h = int(H * 0.55)
+        scale = target_h / char.height
+        nw, nh = int(char.width * scale), int(char.height * scale)
+        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+        img.paste(c, ((W - nw) // 2, H - nh + 20), c)
+        return img
+
+    # big_topic default
+    img = Image.new("RGB", (W, H), (12, 12, 18))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, H - 260, W, H], fill=(8, 8, 12))
-    if style == "accent_bar":
-        d.rectangle([0, 0, W, 28], fill=ACCENT)
-        d.rectangle([0, H - 28, W, H], fill=ACCENT)
-    else:
-        d.rectangle([0, 0, W, 12], fill=ACCENT)
+    d.rectangle([0, 0, W, int(H * 0.55)], fill=board)
+    d.rectangle([0, int(H * 0.55) - 12, W, int(H * 0.55) + 12], fill=accent)
+    tf = font(64)
+    lines = wrap_text(d, topic, tf, W - 70)[:3]
+    y = 100
+    for line in lines:
+        bb = d.textbbox((0, 0), line, font=tf)
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+        y += tf.size + 14
+    # hook line under topic
+    hf = font(28)
+    hlines = wrap_text(d, (hook or "")[:70], hf, W - 80)[:2]
+    for line in hlines:
+        bb = d.textbbox((0, 0), line, font=hf)
+        d.text(((W - (bb[2] - bb[0])) // 2, y + 20), line, font=hf, fill=(220, 220, 230))
+        y += hf.size + 8
+    target_h = int(H * 0.5)
+    scale = target_h / char.height
+    nw, nh = int(char.width * scale), int(char.height * scale)
+    c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+    img.paste(c, ((W - nw) // 2, H - nh + 30), c)
     return img
 
 
@@ -189,25 +330,19 @@ def prepare_topic_image(path: Path) -> Image.Image | None:
 
 
 def ken_burns_frame(src: Image.Image, local_t: float, seg_dur: float, phase: str) -> Image.Image:
-    """left pan, center zoom-in, right pan, zoom-out variants."""
     p = min(1.0, max(0.0, local_t / max(seg_dur, 0.01)))
     ease = 0.5 - 0.5 * math.cos(p * math.pi)
     fw, fh = src.size
     if phase == "zoom_in":
-        scale = 1.0 + 0.28 * ease
-        ox, oy = 0.5, 0.4
+        scale, ox, oy = 1.0 + 0.28 * ease, 0.5, 0.4
     elif phase == "zoom_out":
-        scale = 1.28 - 0.28 * ease
-        ox, oy = 0.5, 0.45
+        scale, ox, oy = 1.28 - 0.28 * ease, 0.5, 0.45
     elif phase == "left":
-        scale = 1.12 + 0.1 * ease
-        ox, oy = 0.08 + 0.35 * ease, 0.4
+        scale, ox, oy = 1.12 + 0.1 * ease, 0.08 + 0.35 * ease, 0.4
     elif phase == "right":
-        scale = 1.12 + 0.1 * ease
-        ox, oy = 0.92 - 0.35 * ease, 0.4
-    else:  # center slow
-        scale = 1.05 + 0.15 * ease
-        ox, oy = 0.5, 0.35 + 0.15 * ease
+        scale, ox, oy = 1.12 + 0.1 * ease, 0.92 - 0.35 * ease, 0.4
+    else:
+        scale, ox, oy = 1.05 + 0.15 * ease, 0.5, 0.35 + 0.15 * ease
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
     x = int(max_x * max(0.0, min(1.0, ox)))
@@ -215,34 +350,24 @@ def ken_burns_frame(src: Image.Image, local_t: float, seg_dur: float, phase: str
     return src.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
 
 
-def image_window(duration: float) -> tuple[float, float] | None:
+def image_window(duration: float):
     if duration < 14:
         return None
     start = duration * 0.26
     end = min(duration * 0.55, start + 11.0)
-    if end - start < 4.0:
-        return None
-    return start, end
+    return (start, end) if end - start >= 4.0 else None
 
 
-def dyk_window(duration: float, img_win) -> tuple[float, float] | None:
-    """Full-screen DYK after image (or mid if no image), ~3.5s."""
+def dyk_window(duration: float, img_win):
     if duration < 16:
         return None
-    if img_win:
-        start = img_win[1] + 0.15
-    else:
-        start = duration * 0.48
+    start = (img_win[1] + 0.15) if img_win else duration * 0.48
     end = min(start + 3.6, duration - 2.8)
-    if end - start < 2.5:
-        return None
-    return start, end
+    return (start, end) if end - start >= 2.5 else None
 
 
-def cta_window(duration: float) -> tuple[float, float]:
-    """Last 2.5s full-screen CTA."""
-    start = max(0.0, duration - 2.6)
-    return start, duration
+def cta_window(duration: float):
+    return max(0.0, duration - 2.6), duration
 
 
 def load_moves() -> list[dict]:
@@ -322,36 +447,14 @@ def active_caption(windows, t):
     return (windows[-1][2], windows[-1][3]) if windows else ([""], 0)
 
 
-def draw_hook_text(rgb, hook: str, style: str):
-    d = ImageDraw.Draw(rgb)
-    tf = font(48 if style != "topic_card" else 52)
-    lines = wrap_text(d, hook, tf, W - 80)[:4]
-    box_h = 40 + len(lines) * (tf.size + 10)
-    top = 70 if style != "board_big" else 100
-    d.rounded_rectangle([32, top, W - 32, top + box_h], 28, fill=BLACK)
-    if style == "accent_bar":
-        d.rounded_rectangle([32, top, W - 32, top + 10], 4, fill=ACCENT)
-    y = top + 22
-    for line in lines:
-        bb = d.textbbox((0, 0), line, font=tf)
-        tw = bb[2] - bb[0]
-        d.text(((W - tw) // 2, y), line, font=tf, fill=WHITE)
-        y += tf.size + 10
-
-
-def draw_fullscreen_dyk(base_rgb: Image.Image, dyk: str) -> Image.Image:
-    """Blurred background + centered fact card."""
+def draw_fullscreen_dyk(base_rgb: Image.Image, dyk: str, accent) -> Image.Image:
     blurred = base_rgb.filter(ImageFilter.GaussianBlur(radius=18))
-    # darken
-    overlay = Image.new("RGB", (W, H), (0, 0, 0))
-    blurred = Image.blend(blurred, overlay, 0.45)
+    blurred = Image.blend(blurred, Image.new("RGB", (W, H), (0, 0, 0)), 0.45)
     d = ImageDraw.Draw(blurred)
     label_f = font(26)
-    d.rounded_rectangle([W // 2 - 90, H // 2 - 220, W // 2 + 90, H // 2 - 170], 20, fill=ACCENT)
+    d.rounded_rectangle([W // 2 - 90, H // 2 - 220, W // 2 + 90, H // 2 - 170], 20, fill=accent)
     bb = d.textbbox((0, 0), "DID YOU KNOW", font=label_f)
-    tw = bb[2] - bb[0]
-    d.text((W // 2 - tw // 2, H // 2 - 210), "DID YOU KNOW", font=label_f, fill=BLACK)
-
+    d.text((W // 2 - (bb[2] - bb[0]) // 2, H // 2 - 210), "DID YOU KNOW", font=label_f, fill=BLACK)
     tf = font(40)
     lines = wrap_text(d, dyk, tf, W - 120)[:6]
     box_h = 50 + len(lines) * (tf.size + 12)
@@ -360,39 +463,32 @@ def draw_fullscreen_dyk(base_rgb: Image.Image, dyk: str) -> Image.Image:
     y = top + 28
     for line in lines:
         bb = d.textbbox((0, 0), line, font=tf)
-        tw = bb[2] - bb[0]
-        d.text(((W - tw) // 2, y), line, font=tf, fill=WHITE)
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
         y += tf.size + 12
     return blurred
 
 
-def draw_fullscreen_cta(cta: str, topic: str) -> Image.Image:
+def draw_fullscreen_cta(cta: str, topic: str, accent) -> Image.Image:
     img = Image.new("RGB", (W, H), (12, 10, 18))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, 16], fill=ACCENT)
-    d.rectangle([0, H - 16, W, H], fill=ACCENT)
+    d.rectangle([0, 0, W, 16], fill=accent)
+    d.rectangle([0, H - 16, W, H], fill=accent)
     title_f = font(36)
     bb = d.textbbox((0, 0), (topic or "")[:32], font=title_f)
-    tw = bb[2] - bb[0]
-    d.text(((W - tw) // 2, H // 2 - 180), (topic or "")[:32], font=title_f, fill=(180, 180, 190))
-
+    d.text(((W - (bb[2] - bb[0])) // 2, H // 2 - 180), (topic or "")[:32], font=title_f, fill=(180, 180, 190))
     tf = font(48)
     lines = wrap_text(d, cta or "Comment what you understood", tf, W - 100)[:4]
     box_h = 48 + len(lines) * (tf.size + 14)
     top = H // 2 - box_h // 2
-    d.rounded_rectangle([48, top, W - 48, top + box_h], 32, fill=ACCENT)
+    d.rounded_rectangle([48, top, W - 48, top + box_h], 32, fill=accent)
     y = top + 28
     for line in lines:
         bb = d.textbbox((0, 0), line, font=tf)
-        tw = bb[2] - bb[0]
-        d.text(((W - tw) // 2, y), line, font=tf, fill=BLACK)
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=BLACK)
         y += tf.size + 14
-
     sub = font(30)
-    msg = "Follow for more"
-    bb = d.textbbox((0, 0), msg, font=sub)
-    tw = bb[2] - bb[0]
-    d.text(((W - tw) // 2, top + box_h + 40), msg, font=sub, fill=WHITE)
+    bb = d.textbbox((0, 0), "Follow for more", font=sub)
+    d.text(((W - (bb[2] - bb[0])) // 2, top + box_h + 40), "Follow for more", font=sub, fill=WHITE)
     return img
 
 
@@ -427,14 +523,13 @@ def draw_karaoke(rgb, text, t, duration):
         x += gaps[i] + 16
 
 
-def draw_topic_chip(rgb, topic: str):
-    """Small topic label top-right — never CTA."""
+def draw_topic_chip(rgb, topic: str, accent):
     d = ImageDraw.Draw(rgb)
     af = font(24)
     label = (topic or "Lesson")[:28]
     bb = d.textbbox((0, 0), label, font=af)
     tw = bb[2] - bb[0]
-    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 20, fill=ACCENT)
+    d.rounded_rectangle([W - tw - 60, 24, W - 24, 78], 20, fill=accent)
     d.text((W - tw - 42, 38), label, font=af, fill=BLACK)
 
 
@@ -473,23 +568,19 @@ def main():
     if not hook:
         hook = (args.text or "").split(".")[0].strip()[:90]
 
+    room = pick_room(topic)
     thumb = pick_thumb_style(topic)
-    Path("thumb_style.txt").write_text(thumb, encoding="utf-8")
-    print("THUMB_STYLE", thumb, file=sys.stderr)
+    open_move = pick_open_move(topic)
+    Path("thumb_style.txt").write_text(f"{thumb}|{room['id']}|{open_move}", encoding="utf-8")
+    print("THUMB", thumb, "ROOM", room["id"], "OPEN_MOVE", open_move, file=sys.stderr)
 
-    classroom = draw_classroom(topic, definition)
-    hook_bg = draw_hook_bg(thumb)
+    classroom = draw_classroom(topic, definition, room)
     topic_img = prepare_topic_image(Path(args.topic_image))
     img_win = image_window(duration) if topic_img is not None else None
     dyk_win = dyk_window(duration, img_win) if dyk else None
     cta_win = cta_window(duration)
-    print(
-        f"WINDOWS img={img_win} dyk={dyk_win} cta={cta_win[0]:.1f}-{cta_win[1]:.1f}",
-        file=sys.stderr,
-    )
-
-    # Pre-render static full-screen CTA
-    cta_frame = draw_fullscreen_cta(cta, topic)
+    cta_frame = draw_fullscreen_cta(cta, topic, room["accent"])
+    print(f"WINDOWS img={img_win} dyk={dyk_win} cta={cta_win[0]:.1f}-{cta_win[1]:.1f}", file=sys.stderr)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -499,47 +590,20 @@ def main():
             img_phase = bool(img_win and img_win[0] <= t < img_win[1])
             dyk_phase = bool(dyk_win and dyk_win[0] <= t < dyk_win[1])
             cta_phase = t >= cta_win[0]
-            move = move_at(moves, t, duration)
-            # Thumbnail variety: first pose depends on style
-            if hook_phase:
-                move = {
-                    "face_dark": "question",
-                    "face_warm": "happy",
-                    "board_big": "present",
-                    "side_point": "point",
-                    "topic_card": "explain",
-                    "accent_bar": "talk",
-                }.get(thumb, "question")
+            move = open_move if hook_phase else move_at(moves, t, duration)
             blink = (int(t * 2) % 10 == 0)
+            char = composite_host(move, open_at(cues, t), blink)
 
             if cta_phase:
                 rgb = cta_frame.copy()
             elif dyk_phase and dyk:
-                # blur current classroom look as base
                 base = camera_crop(classroom, t, duration)
-                rgb = draw_fullscreen_dyk(base, dyk)
+                rgb = draw_fullscreen_dyk(base, dyk, room["accent"])
             elif hook_phase:
-                frame = hook_bg.convert("RGBA")
-                char = composite_host(move, open_at(cues, t), blink)
-                if thumb == "board_big":
-                    # more board, smaller face still on screen
-                    target_h = int(H * 0.55)
-                else:
-                    target_h = int(H * 0.92)
-                scale = target_h / char.height
-                nw, nh = int(char.width * scale), int(char.height * scale)
-                char = char.resize((nw, nh), Image.Resampling.LANCZOS)
-                x = (W - nw) // 2
-                if thumb == "side_point":
-                    x = int(W * 0.08)
-                y = H - nh + int(nh * (0.22 if thumb != "board_big" else 0.35))
-                frame.paste(char, (x, y), char)
-                rgb = frame.convert("RGB")
-                draw_hook_text(rgb, hook, thumb)
+                rgb = draw_thumb_frame(thumb, topic, hook, room, char)
             elif img_phase and topic_img is not None and img_win:
                 local = t - img_win[0]
                 seg = img_win[1] - img_win[0]
-                # 4 phases: left, zoom_in, right, zoom_out
                 q = seg / 4.0
                 if local < q:
                     phase, lt, ld = "left", local, q
@@ -550,23 +614,21 @@ def main():
                 else:
                     phase, lt, ld = "zoom_out", local - 3 * q, q
                 rgb = ken_burns_frame(topic_img, lt, ld, phase)
-                # small topic chip only
-                draw_topic_chip(rgb, topic)
+                draw_topic_chip(rgb, topic, room["accent"])
             else:
                 frame = camera_crop(classroom, t, duration).convert("RGBA")
-                char = composite_host(move, open_at(cues, t), blink)
                 target_h = int(H * 0.32)
                 scale = target_h / char.height
                 nw, nh = int(char.width * scale), int(char.height * scale)
-                char = char.resize((nw, nh), Image.Resampling.LANCZOS)
+                c = char.resize((nw, nh), Image.Resampling.LANCZOS)
                 bob = int(2 * math.sin(t * 5))
                 x = (W - nw) // 2
                 if move == "point":
                     x = int(W * 0.22)
                 y = H - nh - 140 + bob
-                frame.paste(char, (x, y), char)
+                frame.paste(c, (x, y), c)
                 rgb = frame.convert("RGB")
-                draw_topic_chip(rgb, topic)
+                draw_topic_chip(rgb, topic, room["accent"])
                 draw_karaoke(rgb, args.text, t, duration)
 
             rgb.save(tmp_path / f"frame_{i:05d}.png")
