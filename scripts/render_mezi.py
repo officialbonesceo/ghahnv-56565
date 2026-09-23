@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike Shorts: 5 classroom themes, strong thumbnail variety, same character."""
+"""Mike Shorts: 5 bold classrooms + 5 thumbnail opens. Same Mike, different world."""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 W, H = 1080, 1920
 FPS = 24
-HOOK_END = 2.4
+HOOK_END = 2.5  # first ~2.5s = TikTok cover
 WHITE = (255, 255, 255)
 BLACK = (10, 12, 16)
 MOUTH = {
@@ -23,48 +23,49 @@ MOUTH = {
     "D": 0.7, "E": 0.85, "F": 0.5, "G": 0.95, "H": 1.0,
 }
 
-# 5 distinct rooms — colors + layout feel
+# 5 rooms — deliberately loud color differences so grid is not identical
 ROOMS = [
     {
         "id": "warm_cream",
-        "wall": (255, 244, 230), "floor": (62, 48, 40), "board": (18, 72, 92),
-        "frame": (28, 36, 48), "accent": (255, 180, 50), "window": (160, 200, 230),
-        "desk": (70, 52, 42), "posters": [(255, 120, 100), (100, 180, 255), (120, 210, 140)],
+        "wall": (255, 236, 210), "floor": (72, 48, 32), "board": (18, 85, 95),
+        "frame": (40, 30, 25), "accent": (255, 170, 40), "window": (140, 200, 230),
+        "desk": (80, 55, 40), "posters": [(255, 110, 90), (90, 170, 255), (100, 200, 120)],
     },
     {
         "id": "cool_lab",
-        "wall": (230, 238, 248), "floor": (45, 55, 70), "board": (22, 55, 90),
-        "frame": (20, 30, 45), "accent": (80, 180, 255), "window": (180, 220, 255),
-        "desk": (50, 60, 75), "posters": [(100, 200, 255), (180, 140, 255), (100, 220, 180)],
+        "wall": (210, 225, 245), "floor": (40, 50, 70), "board": (15, 45, 100),
+        "frame": (20, 35, 55), "accent": (60, 170, 255), "window": (160, 210, 255),
+        "desk": (45, 55, 75), "posters": [(70, 160, 255), (160, 120, 255), (80, 210, 180)],
     },
     {
         "id": "green_board",
-        "wall": (245, 240, 230), "floor": (55, 50, 40), "board": (28, 95, 55),
-        "frame": (35, 45, 30), "accent": (255, 200, 60), "window": (170, 210, 160),
-        "desk": (65, 55, 40), "posters": [(255, 160, 80), (90, 190, 120), (255, 220, 100)],
+        "wall": (235, 245, 220), "floor": (50, 55, 35), "board": (20, 100, 50),
+        "frame": (30, 50, 25), "accent": (255, 210, 40), "window": (150, 210, 140),
+        "desk": (60, 55, 35), "posters": [(255, 150, 60), (70, 190, 100), (255, 230, 80)],
     },
     {
         "id": "night_study",
-        "wall": (35, 40, 55), "floor": (25, 28, 38), "board": (15, 50, 70),
-        "frame": (50, 55, 70), "accent": (255, 140, 80), "window": (40, 55, 90),
-        "desk": (40, 42, 55), "posters": [(255, 120, 90), (100, 140, 255), (180, 100, 220)],
+        "wall": (28, 32, 48), "floor": (18, 20, 30), "board": (12, 55, 80),
+        "frame": (55, 60, 80), "accent": (255, 130, 70), "window": (35, 50, 90),
+        "desk": (35, 38, 50), "posters": [(255, 100, 80), (90, 130, 255), (180, 90, 220)],
     },
     {
         "id": "purple_studio",
-        "wall": (245, 235, 250), "floor": (55, 40, 60), "board": (55, 35, 90),
-        "frame": (40, 30, 55), "accent": (220, 120, 255), "window": (200, 180, 240),
-        "desk": (70, 50, 75), "posters": [(255, 140, 200), (140, 120, 255), (255, 200, 120)],
+        "wall": (240, 225, 250), "floor": (55, 35, 65), "board": (70, 30, 110),
+        "frame": (50, 25, 70), "accent": (230, 100, 255), "window": (200, 170, 240),
+        "desk": (75, 45, 80), "posters": [(255, 120, 190), (130, 100, 255), (255, 190, 100)],
     },
 ]
 
-# First-2s layouts (TikTok thumbnail)
 THUMB_STYLES = [
-    "close_face",      # big Mike, dark bg, topic top
-    "board_hero",      # huge topic title full screen then Mike small
-    "side_teach",      # Mike left, colored panel right with topic
-    "split_color",     # two-tone bg + Mike center + topic badge
-    "big_topic",       # topic fills upper 60%, Mike lower
+    "close_face",   # big Mike, dark, topic pill
+    "board_hero",   # full-board color + giant topic
+    "side_teach",   # split: Mike | topic panel
+    "split_color",  # half room color / half floor
+    "big_topic",    # topic dominates upper half
 ]
+
+OPEN_MOVES = ["question", "happy", "present", "point", "explain", "think"]
 
 
 def asset_dir() -> Path:
@@ -140,9 +141,8 @@ def pick_thumb_style(topic: str) -> str:
 
 
 def pick_open_move(topic: str) -> str:
-    moves = ["question", "happy", "present", "point", "explain", "think"]
     h = int(hashlib.md5(("move:" + (topic or "x")).encode()).hexdigest(), 16)
-    return moves[h % len(moves)]
+    return OPEN_MOVES[h % len(OPEN_MOVES)]
 
 
 def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
@@ -151,20 +151,17 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, bw, int(bh * 0.68)], fill=room["wall"])
     d.rectangle([0, int(bh * 0.68), bw, bh], fill=room["floor"])
-    d.rectangle([0, int(bh * 0.68) - 14, bw, int(bh * 0.68)], fill=room["accent"])
+    d.rectangle([0, int(bh * 0.68) - 16, bw, int(bh * 0.68)], fill=room["accent"])
 
-    # Window left
     wx0, wy0, wx1, wy1 = 28, 48, 200, 300
     d.rounded_rectangle([wx0, wy0, wx1, wy1], 14, fill=room["window"])
     d.line([(wx0, (wy0 + wy1) // 2), (wx1, (wy0 + wy1) // 2)], fill=WHITE, width=3)
     d.line([((wx0 + wx1) // 2, wy0), ((wx0 + wx1) // 2, wy1)], fill=WHITE, width=3)
 
-    # Posters right
     for i, col in enumerate(room["posters"]):
         px, py = bw - 165, 45 + i * 95
         d.rounded_rectangle([px, py, px + 125, py + 80], 12, fill=col)
 
-    # Board
     bx0, by0, bx1, by1 = 220, 65, bw - 190, int(bh * 0.58)
     d.rounded_rectangle([bx0 - 12, by0 - 12, bx1 + 12, by1 + 12], 16, fill=room["frame"])
     d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=room["board"])
@@ -185,124 +182,120 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
         for line in wrap_text(d, definition, df, bx1 - bx0 - 48)[:5]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(210, 230, 240))
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(220, 235, 245))
             y += df.size + 6
 
-    d.rounded_rectangle([bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=room["desk"])
+    d.rounded_rectangle(
+        [bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=room["desk"]
+    )
     return img
 
 
 def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.Image) -> Image.Image:
-    """Highly distinct first frames for TikTok cover."""
-    accent = room["accent"]
-    board = room["board"]
-    wall = room["wall"]
+    accent, board, wall = room["accent"], room["board"], room["wall"]
 
     if style == "close_face":
-        img = Image.new("RGB", (W, H), (18, 16, 24))
+        img = Image.new("RGB", (W, H), (14, 12, 20))
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, 18], fill=accent)
-        # Big Mike centered lower
-        target_h = int(H * 0.95)
+        d.rectangle([0, 0, W, 22], fill=accent)
+        d.rectangle([0, H - 22, W, H], fill=accent)
+        target_h = int(H * 0.98)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.2)), c)
-        # Topic pill top
-        tf = font(42)
-        lines = wrap_text(d, topic, tf, W - 80)[:2]
-        box_h = 28 + len(lines) * (tf.size + 8)
-        d.rounded_rectangle([40, 50, W - 40, 50 + box_h], 24, fill=BLACK)
-        y = 64
+        img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.18)), c)
+        tf = font(44)
+        lines = wrap_text(d, topic, tf, W - 70)[:2]
+        box_h = 32 + len(lines) * (tf.size + 10)
+        d.rounded_rectangle([36, 48, W - 36, 48 + box_h], 28, fill=BLACK)
+        y = 62
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 8
+            y += tf.size + 10
         return img
 
     if style == "board_hero":
         img = Image.new("RGB", (W, H), board)
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, 20], fill=accent)
-        d.rectangle([0, H - 20, W, H], fill=accent)
-        tf = font(72)
-        lines = wrap_text(d, topic, tf, W - 60)[:3]
-        total_h = len(lines) * (tf.size + 14)
-        y = H // 2 - total_h // 2 - 80
+        d.rectangle([0, 0, W, 24], fill=accent)
+        d.rectangle([0, H - 24, W, H], fill=accent)
+        tf = font(76)
+        lines = wrap_text(d, topic, tf, W - 50)[:3]
+        total_h = len(lines) * (tf.size + 16)
+        y = max(80, H // 2 - total_h // 2 - 120)
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 14
-        # Small Mike bottom
-        target_h = int(H * 0.35)
+            y += tf.size + 16
+        target_h = int(H * 0.32)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, ((W - nw) // 2, H - nh - 40), c)
+        img.paste(c, ((W - nw) // 2, H - nh - 50), c)
         return img
 
     if style == "side_teach":
         img = Image.new("RGB", (W, H), wall)
         d = ImageDraw.Draw(img)
-        d.rectangle([W // 2, 0, W, H], fill=board)
-        d.rectangle([W // 2, 0, W // 2 + 12, H], fill=accent)
-        tf = font(48)
-        lines = wrap_text(d, topic, tf, W // 2 - 50)[:4]
-        y = H // 2 - 100
+        d.rectangle([int(W * 0.42), 0, W, H], fill=board)
+        d.rectangle([int(W * 0.42), 0, int(W * 0.42) + 14, H], fill=accent)
+        tf = font(50)
+        lines = wrap_text(d, topic, tf, int(W * 0.52) - 40)[:4]
+        y = H // 2 - 120
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
-            d.text((W // 2 + (W // 2 - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 12
-        target_h = int(H * 0.7)
+            tw = bb[2] - bb[0]
+            d.text((int(W * 0.42) + (int(W * 0.58) - tw) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 14
+        target_h = int(H * 0.75)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, (max(10, W // 4 - nw // 2), H - nh + 40), c)
+        img.paste(c, (max(8, int(W * 0.21) - nw // 2), H - nh + 50), c)
         return img
 
     if style == "split_color":
-        img = Image.new("RGB", (W, H), wall)
+        img = Image.new("RGB", (W, H), room["floor"])
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, H // 2], fill=board)
-        d.rectangle([0, H // 2 - 10, W, H // 2 + 10], fill=accent)
-        tf = font(56)
-        lines = wrap_text(d, topic, tf, W - 80)[:3]
-        y = 80
+        d.rectangle([0, 0, W, int(H * 0.52)], fill=board)
+        d.rectangle([0, int(H * 0.52) - 14, W, int(H * 0.52) + 14], fill=accent)
+        tf = font(58)
+        lines = wrap_text(d, topic, tf, W - 70)[:3]
+        y = 90
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 12
-        target_h = int(H * 0.55)
+            y += tf.size + 14
+        target_h = int(H * 0.52)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, ((W - nw) // 2, H - nh + 20), c)
+        img.paste(c, ((W - nw) // 2, H - nh + 25), c)
         return img
 
-    # big_topic default
-    img = Image.new("RGB", (W, H), (12, 12, 18))
+    # big_topic
+    img = Image.new("RGB", (W, H), (10, 10, 16))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, int(H * 0.55)], fill=board)
-    d.rectangle([0, int(H * 0.55) - 12, W, int(H * 0.55) + 12], fill=accent)
-    tf = font(64)
-    lines = wrap_text(d, topic, tf, W - 70)[:3]
-    y = 100
+    d.rectangle([0, 0, W, int(H * 0.58)], fill=board)
+    d.rectangle([0, int(H * 0.58) - 14, W, int(H * 0.58) + 14], fill=accent)
+    tf = font(68)
+    lines = wrap_text(d, topic, tf, W - 60)[:3]
+    y = 90
     for line in lines:
         bb = d.textbbox((0, 0), line, font=tf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-        y += tf.size + 14
-    # hook line under topic
+        y += tf.size + 16
     hf = font(28)
-    hlines = wrap_text(d, (hook or "")[:70], hf, W - 80)[:2]
-    for line in hlines:
+    for line in wrap_text(d, (hook or "")[:65], hf, W - 80)[:2]:
         bb = d.textbbox((0, 0), line, font=hf)
-        d.text(((W - (bb[2] - bb[0])) // 2, y + 20), line, font=hf, fill=(220, 220, 230))
+        d.text(((W - (bb[2] - bb[0])) // 2, y + 16), line, font=hf, fill=(210, 210, 220))
         y += hf.size + 8
-    target_h = int(H * 0.5)
+    target_h = int(H * 0.48)
     scale = target_h / char.height
     nw, nh = int(char.width * scale), int(char.height * scale)
     c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-    img.paste(c, ((W - nw) // 2, H - nh + 30), c)
+    img.paste(c, ((W - nw) // 2, H - nh + 28), c)
     return img
 
 
@@ -310,11 +303,11 @@ def camera_crop(full: Image.Image, t: float, duration: float) -> Image.Image:
     progress = min(1.0, t / max(duration, 0.1))
     ease = 0.5 - 0.5 * math.cos(progress * math.pi)
     fw, fh = full.size
-    scale, ox, oy = 1.0 + 0.04 * ease, 0.5, 0.16
+    scale = 1.0 + 0.04 * ease
     cw, ch = min(int(W * scale), fw), min(int(H * scale), fh)
     max_x, max_y = max(0, fw - cw), max(0, fh - ch)
-    x = int(max_x * max(0.0, min(1.0, ox)))
-    y = int(max_y * max(0.0, min(1.0, oy)))
+    x = int(max_x * 0.5)
+    y = int(max_y * 0.16)
     return full.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
 
 
@@ -434,8 +427,11 @@ def word_windows(text, duration):
         chunk = words[i : i + 5]
         start, end = i * slot, min(duration, (i + len(chunk)) * slot)
         for j in range(len(chunk)):
-            windows.append((start + j * (end - start) / len(chunk),
-                            start + (j + 1) * (end - start) / len(chunk), chunk, j))
+            windows.append((
+                start + j * (end - start) / len(chunk),
+                start + (j + 1) * (end - start) / len(chunk),
+                chunk, j,
+            ))
         i += len(chunk)
     return windows
 
