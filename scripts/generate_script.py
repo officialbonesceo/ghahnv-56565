@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI-only student scripts: real-life examples, distinct DYK, fail if AI fails."""
+"""AI scripts: phenomenon-first when possible, real-life examples, fail if AI fails."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,26 @@ VALID_MOVES = {
     "talk", "welcome", "point", "sit", "present", "question", "happy",
     "explain", "shrug", "count", "think", "lean",
 }
+
+# Topics that work well with everyday "what you see" openers
+PHENOMENON_OK = re.compile(
+    r"\b("
+    r"condens|evaporat|friction|inertia|gravity|force|pressure|density|"
+    r"buoyanc|osmosis|diffusion|static|electric|magnet|circuit|ohm|"
+    r"heat|temperat|sound|light|reflect|refract|photosynth|respirat|"
+    r"enzyme|catalyst|acid|base|momentum|kinetic|potential|surface tension|"
+    r"capillar|latent|specific heat|electromagnet|induction|stomata|"
+    r"chlorophyll|weather|climate|atmosphere|volcano|earthquake"
+    r")\b",
+    re.I,
+)
+
+# Skip phenomenon-first for pure abstract / language topics
+PHENOMENON_SKIP = re.compile(
+    r"\b(essay|paragraph|quadratic|fraction|percentage|ratio|average|"
+    r"pythagorean|algebra|equation|mitosis|meiosis|dna|genetics|heredity)\b",
+    re.I,
+)
 
 HOOK_TEMPLATES = [
     "Stop scrolling. This is how exams trick you on {topic}.",
@@ -38,11 +58,11 @@ PROMPT_LEAK_RE = re.compile(
     r"(?is)("
     r"tiktok for secondary|before exams\.?\s*\d\."
     r"|first line must|no hey/?hi|definition\s*→|exam-useful fact"
-    r"|75-?105 words|never say mike\.the\.tutor|comment yes"
+    r"|75-?110 words|never say mike\.the\.tutor|comment yes"
     r"|after script:|moves:\s*question@|moves:\s*talk,"
     r"|instruct:|system:|user:|assistant:|you are a helpful"
     r"|write a script|output only|real-life example required"
-    r"|topic:\s*\w+\s*facts:|didyouknow must"
+    r"|topic:\s*\w+\s*facts:|didyouknow must|phenomenon-first"
     r")"
 )
 
@@ -54,9 +74,25 @@ def display_title(title: str) -> str:
     return t[:40]
 
 
+def wants_phenomenon(title: str) -> bool:
+    t = title or ""
+    if PHENOMENON_SKIP.search(t):
+        return False
+    if PHENOMENON_OK.search(t):
+        return True
+    # default: try phenomenon for most science-ish titles
+    return bool(re.search(
+        r"\b(physics|chemistry|biology|energy|motion|water|cell|blood|heart|lung)\b",
+        t, re.I,
+    ))
+
+
 def clean_spoken(text: str) -> str:
     t = (text or "").strip().strip('"').strip("'")
-    t = re.split(r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM|EXAMPLE)\s*:", t)[0]
+    t = re.split(
+        r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM|EXAMPLE|PHENOMENON)\s*:",
+        t,
+    )[0]
     t = re.sub(r"\*\*[^*]+\*\*", " ", t)
     t = re.sub(r"```[\s\S]*?```", " ", t)
     t = re.sub(r"(?im)^#{1,3}\s+.*$", " ", t)
@@ -64,6 +100,7 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"DEFINITION:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"DIDYOUKNOW:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"EXAMPLE:\s*.+$", " ", t, flags=re.I | re.M)
+    t = re.sub(r"PHENOMENON:\s*.+$", " ", t, flags=re.I | re.M)
     t = re.sub(r"Instruct:.*", " ", t, flags=re.I | re.S)
     for p in [r"INTRO:\s*", r"BODY:\s*", r"SCRIPT:\s*"]:
         t = re.sub(p, " ", t, flags=re.I)
@@ -100,7 +137,6 @@ def short_definition(extract: str, title: str) -> str:
 
 
 def distinct_dyk(extract: str, title: str, definition: str) -> str:
-    """Surprise fact — must NOT repeat the board definition."""
     def_norm = re.sub(r"[^a-z0-9]", "", (definition or "").lower())
     sents = re.split(r"(?<=[.!?])\s+", extract or "")
     candidates = []
@@ -109,14 +145,12 @@ def distinct_dyk(extract: str, title: str, definition: str) -> str:
         if not (28 <= len(s) <= 115 and re.match(r"^[A-Z0-9]", s)):
             continue
         sn = re.sub(r"[^a-z0-9]", "", s.lower())
-        # reject if too similar to definition
         if def_norm and (sn[:40] == def_norm[:40] or def_norm[:30] in sn or sn[:30] in def_norm):
             continue
         if re.search(r"\b(is a|are a|refers to|defined as)\b", s, re.I) and len(s) < 70:
             continue
         candidates.append(s)
     if candidates:
-        # prefer 2nd+ sentence (usually less definitional)
         pick = candidates[1] if len(candidates) > 1 else candidates[0]
         if not re.match(r"(?i)(most|almost|few|wait|students|exam|never|only)", pick):
             pick = f"Most students never hear this: {pick[0].lower()}{pick[1:]}"
@@ -176,17 +210,28 @@ def parse_moves(raw: str, topic: str) -> list[dict]:
     return out
 
 
-def force_hook(script: str, topic: str) -> str:
+def force_hook(script: str, topic: str, phenomenon: bool) -> str:
     s = script.strip()
+    # If phenomenon-first, first lines may be story — don't force exam template over a good scene
+    if phenomenon:
+        storyish = re.match(
+            r"^(you |when you |pour |imagine |think of |a cold |cold water|your phone|on a bus|"
+            r"the bottle|have you|notice how|watch what)",
+            s, re.I,
+        )
+        if storyish:
+            return re.sub(r"\s+", " ", s)
     soft = re.match(
         r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is)",
         s, re.I,
     )
     first = s.split(".")[0] if "." in s else s
-    weak = soft or len(first.split()) > 16 or not re.search(
-        r"\b(exam|mark|test|student|wrong|confus|trick|before|stop)\b", first, re.I
+    weak = soft or len(first.split()) > 18 or not re.search(
+        r"\b(exam|mark|test|student|wrong|confus|trick|before|stop|pour|bottle|"
+        r"phone|bus|cold|wet|slide|lurch)\b",
+        first, re.I,
     )
-    if weak:
+    if weak and not phenomenon:
         hook = random.choice(HOOK_TEMPLATES).format(topic=topic)
         rest = s
         if "." in s:
@@ -215,26 +260,25 @@ def ensure_cta(script: str, topic: str) -> str:
 def has_real_life_example(script: str) -> bool:
     return bool(re.search(
         r"\b(for example|in real life|like when|think of|imagine|when you|"
-        r"on the road|in the kitchen|in class|your phone|your body|"
-        r"a ball|a car|a wire|a plant|cooking|football|walking)\b",
+        r"on the road|in the kitchen|your phone|your body|a ball|a car|"
+        r"a bottle|cold water|pour |wet |bus |football|walking|cooking)\b",
         script,
         re.I,
     ))
 
 
-def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
+def pack(topic, text, engine, moves_raw="", definition="", dyk="", phenomenon=False):
     short = display_title(topic.get("title") or "Lesson")
     extract = topic.get("extract") or ""
     cleaned = clean_spoken(text)
     if not cleaned:
         return None
-    cleaned = force_hook(cleaned, short)
+    cleaned = force_hook(cleaned, short, phenomenon)
     cleaned = ensure_cta(cleaned, short)
     if PROMPT_LEAK_RE.search(cleaned):
         print("PROMPT_LEAK after pack — reject", file=sys.stderr)
         return None
     if not has_real_life_example(cleaned):
-        # soft inject one line only if AI forgot — still from topic words, not a full template script
         cleaned = cleaned.rstrip(".! ")
         cleaned += (
             f". For example, you meet {short} in everyday situations — "
@@ -247,7 +291,6 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
     if not dyk_final or len(dyk_final) < 25:
         dyk_final = distinct_dyk(extract, short, definition)
     else:
-        # force distinct from definition
         dn = re.sub(r"[^a-z0-9]", "", definition.lower())
         yn = re.sub(r"[^a-z0-9]", "", dyk_final.lower())
         if dn and (yn[:35] == dn[:35] or dn[:25] in yn):
@@ -266,6 +309,7 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk=""):
         "bg": "classroom",
         "source": topic.get("url") or "",
         "engine": engine,
+        "phenomenon_first": bool(phenomenon),
     }
 
 
@@ -277,21 +321,40 @@ def run_openrouter(topic: dict):
     short = display_title(topic.get("title") or "science")
     extract = (topic.get("extract") or "")[:450]
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
+    phenom = wants_phenomenon(short)
+    print("PHENOMENON_FIRST", phenom, short, file=sys.stderr)
+
     system = (
         "You write spoken TikTok voiceover for secondary exam revision. "
         "Return only the spoken paragraphs. No headings or rule lists in the voiceover."
     )
+    if phenom:
+        structure = (
+            "Write 85-115 words.\n"
+            "STRUCTURE (phenomenon-first):\n"
+            "1) Start with a concrete everyday SCENE students can picture "
+            "(e.g. cold bottle gets wet outside, bus brakes and you lurch, phone slides on table).\n"
+            "2) Ask or state the puzzle: why did that happen?\n"
+            "3) Name the concept and give a plain definition.\n"
+            "4) Tie the scene to the science in one clear sentence.\n"
+            "5) One exam takeaway + soft comment CTA + Follow for more.\n"
+        )
+    else:
+        structure = (
+            "Write 80-110 words.\n"
+            "1) Exam-pain hook first (marks/test/confusion).\n"
+            "2) Clear definition in plain words.\n"
+            "3) ONE concrete real-life example if it fits naturally; skip if forced.\n"
+            "4) One exam takeaway.\n"
+            "5) Soft comment CTA + Follow for more.\n"
+        )
+
     user = (
         f"Topic: {short}\nFacts:\n{extract}\n\n"
-        "Write 80-110 words.\n"
-        "1) Exam-pain hook first (marks/test/confusion).\n"
-        "2) Clear definition in plain words.\n"
-        "3) ONE concrete real-life example (kitchen, phone, road, sports, body, weather).\n"
-        "4) One exam takeaway.\n"
-        "5) Soft comment CTA + Follow for more.\n"
+        f"{structure}"
         "No religion, politics, or self-intro as Mike.\n\n"
         "After the spoken script, on separate lines only:\n"
-        "DEFINITION: one sentence for the board (formal short definition)\n"
+        "DEFINITION: one sentence for the board\n"
         "DIDYOUKNOW: a DIFFERENT surprise fact — not the definition — start with Most students…\n"
         "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
     )
@@ -310,8 +373,8 @@ def run_openrouter(topic: dict):
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "max_tokens": 420,
-                "temperature": 0.4,
+                "max_tokens": 450,
+                "temperature": 0.42,
             },
             timeout=90,
         )
@@ -334,7 +397,9 @@ def run_openrouter(topic: dict):
         m = re.search(r"DIDYOUKNOW:\s*(.+)$", full, re.I | re.M)
         if m:
             dyk, full = m.group(1).strip(), full[: m.start()].strip()
-        return pack(topic, full, f"openrouter:{model}", moves_raw, definition, dyk)
+        return pack(
+            topic, full, f"openrouter:{model}", moves_raw, definition, dyk, phenom
+        )
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
@@ -348,10 +413,12 @@ def run_gguf(model: Path, topic: dict, engine_name: str):
         return None
     inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
     short = display_title(topic.get("title") or "")
+    phenom = wants_phenomenon(short)
     inp.write_text(json.dumps({
         "model": str(model),
         "title": short,
         "extract": (topic.get("extract") or "")[:400],
+        "phenomenon": phenom,
     }), encoding="utf-8")
     if outp.exists():
         outp.unlink()
@@ -363,7 +430,7 @@ def run_gguf(model: Path, topic: dict, engine_name: str):
         if r.returncode != 0 or not outp.exists():
             return None
         data = json.loads(outp.read_text(encoding="utf-8"))
-        return pack(topic, data.get("body") or "", engine_name)
+        return pack(topic, data.get("body") or "", engine_name, phenomenon=phenom)
     except Exception as e:
         print("gguf error", e, file=sys.stderr)
         return None
@@ -405,6 +472,9 @@ def main():
     Path("did_you_know.txt").write_text(result.get("did_you_know") or "", encoding="utf-8")
     Path("cta.txt").write_text(result.get("cta") or "Comment what you understood.", encoding="utf-8")
     Path("bg.txt").write_text("classroom", encoding="utf-8")
+    Path("phenomenon.txt").write_text(
+        "1" if result.get("phenomenon_first") else "0", encoding="utf-8"
+    )
     first = result["script"].split(".")[0].strip()
     Path("hook.txt").write_text(first[:90], encoding="utf-8")
     short = result["short_title"]
@@ -415,6 +485,7 @@ def main():
         encoding="utf-8",
     )
     print("ENGINE", result.get("engine"), "WORDS", len(result["script"].split()), file=sys.stderr)
+    print("PHENOMENON", result.get("phenomenon_first"), file=sys.stderr)
     print("DYK", result.get("did_you_know"), file=sys.stderr)
     print(json.dumps(result, indent=2))
 
