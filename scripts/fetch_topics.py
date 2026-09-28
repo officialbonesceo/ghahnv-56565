@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""School STEM topics — strong dedupe, one-shot seed, hard topic blocks."""
+"""School STEM topics from trends/wiki only — no hardcoded lesson fallback."""
 from __future__ import annotations
 
 import json
@@ -19,35 +19,22 @@ SEEN_PATH = ROOT / "data" / "seen_topics.json"
 TREND_PATH = ROOT / "data" / "trending_topics.json"
 SEED_TOPIC_PATH = ROOT / "data" / "seed_topic.json"
 
-# Never pick these again (spam / sticky seeds)
 HARD_BLOCK = {
     "petroleumrefining", "petroleumref", "fractionaldistillation",
     "fractionaldistil", "dangoterefinery", "oilrefinery", "oilrefining",
     "mithraism", "osmosisjones", "mitsubishi", "kotonemitsuishi",
 }
 
-SEED_TITLES = [
-    "Gravity", "Friction", "Electricity", "Electric current", "Voltage",
-    "Circuit", "Atom", "Molecule", "DNA", "Osmosis", "Diffusion",
-    "Evaporation", "Condensation", "Water cycle", "Respiration", "Enzyme",
-    "Catalyst", "Acid", "Base (chemistry)", "pH", "Speed", "Velocity",
-    "Acceleration", "Force", "Newton's laws of motion", "Work (physics)",
-    "Energy", "Kinetic energy", "Potential energy", "Heat", "Temperature",
-    "Sound", "Light", "Reflection (physics)", "Refraction", "Magnet",
-    "Electromagnet", "Cell (biology)", "Mitosis", "Meiosis", "Blood",
-    "Heart", "Lungs", "Brain", "Sleep", "Memory", "Vaccine", "Antibiotic",
-    "Greenhouse effect", "Global warming", "Solar system", "Eclipse",
-    "Moon", "Earth", "Earthquake", "Volcano", "Fossil", "Evolution",
+SYLLABUS_POOL = [
+    "Gravity", "Friction", "Electric current", "Voltage", "Circuit",
+    "Osmosis", "Diffusion", "Evaporation", "Condensation", "Respiration",
+    "Enzyme", "Catalyst", "Speed", "Velocity", "Acceleration", "Force",
+    "Newton's laws of motion", "Kinetic energy", "Potential energy",
+    "Heat", "Temperature", "Sound", "Light", "Reflection (physics)",
+    "Refraction", "Electromagnet", "Mitosis", "Meiosis", "DNA",
     "Quadratic equation", "Pythagorean theorem", "Fraction", "Percentage",
-    "Ratio", "Average", "Essay", "Paragraph", "Supply and demand",
-    "Inertia", "Momentum", "Pressure", "Density", "Buoyancy",
-    "Surface tension", "Capillarity", "Latent heat", "Specific heat",
-    "Ohm's law", "Series and parallel circuits", "Electromagnetic induction",
-    "Transpiration", "Chlorophyll", "Stomata", "Protein", "Carbohydrate",
-    "Lipid", "Vitamins", "Nervous system", "Digestive system",
-    "Circulatory system", "Immune system", "Genetics", "Heredity",
-    "Natural selection", "Food chain", "Ecosystem", "Atmosphere",
-    "Weather", "Climate", "Rock cycle", "Plate tectonics",
+    "Inertia", "Momentum", "Pressure", "Density", "Ohm's law",
+    "Photosynthesis", "Essay", "Paragraph",
 ]
 
 
@@ -130,21 +117,17 @@ def load_trends() -> list[str]:
 
 
 def try_seed_topic(seen: set[str]) -> dict | None:
-    """One-shot seed only if file valid, not disabled, not already seen/blocked."""
     if not SEED_TOPIC_PATH.exists():
         return None
     try:
         data = json.loads(SEED_TOPIC_PATH.read_text(encoding="utf-8"))
         if data.get("disabled"):
-            print("seed disabled — skip", file=sys.stderr)
             return None
         title = (data.get("title") or "").strip()
         extract = (data.get("extract") or "").strip()
         if not title or len(extract) < 80:
             return None
         if is_hard_blocked(title) or is_seen(seen, title):
-            print("seed blocked/seen — skip", title, file=sys.stderr)
-            # disable sticky seed in workspace so commit can persist
             SEED_TOPIC_PATH.write_text(
                 json.dumps({"disabled": True, "note": f"blocked/seen: {title}"}, indent=2),
                 encoding="utf-8",
@@ -153,9 +136,7 @@ def try_seed_topic(seen: set[str]) -> dict | None:
         if not is_school_safe(title, extract):
             return None
         data.setdefault("bg", "classroom")
-        data["topic_source"] = data.get("topic_source") or "seed"
-        data["trend"] = bool(data.get("trend", True))
-        # disable permanently after one use
+        data["topic_source"] = "seed"
         SEED_TOPIC_PATH.write_text(
             json.dumps({"disabled": True, "used_title": title, "note": "consumed"}, indent=2),
             encoding="utf-8",
@@ -200,19 +181,6 @@ def summary(title: str) -> dict:
     return {}
 
 
-def build_pool(seen: set[str]) -> tuple[list[str], list[str]]:
-    trend_pool, seed_pool = [], []
-    for t in load_trends():
-        if is_seen(seen, t) or is_hard_blocked(t) or not is_school_safe(t):
-            continue
-        trend_pool.append(t)
-    for t in SEED_TITLES:
-        if is_seen(seen, t) or is_hard_blocked(t):
-            continue
-        seed_pool.append(t)
-    return trend_pool, seed_pool
-
-
 def main() -> None:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "topic.json")
     seen = load_seen()
@@ -225,25 +193,25 @@ def main() -> None:
         print(json.dumps(seeded, indent=2))
         return
 
-    trend_pool, seed_pool = build_pool(seen)
-    if trend_pool and (not seed_pool or random.random() < 0.65):
-        primary, source_tag = trend_pool, "trend"
-    else:
-        primary, source_tag = seed_pool or [t for t in SEED_TITLES if not is_hard_blocked(t)], "seed"
+    trends = load_trends()
+    primary = [t for t in trends if not is_seen(seen, t) and not is_hard_blocked(t)]
+    source_tag = "trend"
 
     if not primary:
-        # Keep hard blocks; only soft-reset other seen titles
         hard_keys = set(HARD_BLOCK)
-        kept = []
-        for s in sorted(seen):
-            if is_hard_blocked(str(s)):
-                kept.append(s)
-            elif len(str(s)) > 12 and len(kept) < 50:
-                kept.append(s)
+        kept = [s for s in sorted(seen) if is_hard_blocked(str(s))][:80]
         seen = set(kept) | hard_keys
-        primary = [t for t in SEED_TITLES if not is_seen(seen, t)]
-        source_tag = "seed-reset"
-        print("seen soft-reset (hard blocks kept)", file=sys.stderr)
+        primary = [t for t in trends if not is_seen(seen, t)]
+        if not primary:
+            primary = [t for t in SYLLABUS_POOL if not is_seen(seen, t) and is_school_safe(t)]
+            source_tag = "syllabus"
+        else:
+            source_tag = "trend-reset"
+        print("pool rebuild", source_tag, len(primary), file=sys.stderr)
+
+    if not primary:
+        print("TOPIC_FAIL: no school topics available after trends+syllabus", file=sys.stderr)
+        sys.exit(1)
 
     random.shuffle(primary)
     candidates = []
@@ -252,41 +220,19 @@ def main() -> None:
             continue
         s = summary(title)
         if s and not is_seen(seen, s["title"]) and not is_hard_blocked(s["title"]):
-            s["trend"] = source_tag == "trend"
+            if not is_school_safe(s["title"], s.get("extract") or ""):
+                continue
+            s["trend"] = source_tag.startswith("trend")
             s["topic_source"] = source_tag
             candidates.append(s)
         if len(candidates) >= 8:
             break
 
     if not candidates:
-        for title in SEED_TITLES:
-            if is_seen(seen, title) or is_hard_blocked(title):
-                continue
-            s = summary(title)
-            if s and not is_hard_blocked(s["title"]):
-                s["topic_source"] = "seed-fallback"
-                candidates.append(s)
-            if len(candidates) >= 5:
-                break
-
-    if not candidates:
-        candidates = [{
-            "title": "Inertia",
-            "extract": (
-                "Inertia is the tendency of an object to keep doing what it is already doing. "
-                "If it is still, it stays still. If it is moving, it keeps moving until a force acts. "
-                "Students meet this idea in Newton's first law questions in almost every physics exam."
-            ),
-            "description": "physics",
-            "url": "",
-            "bg": "classroom",
-            "trend": False,
-            "topic_source": "hardcoded",
-        }]
+        print("TOPIC_FAIL: Wikipedia returned no safe school extracts", file=sys.stderr)
+        sys.exit(1)
 
     pick = random.choice(candidates)
-    if is_hard_blocked(pick["title"]):
-        pick = candidates[0]
     save_seen(seen, pick["title"])
     out.write_text(json.dumps(pick, indent=2), encoding="utf-8")
     print("TOPIC_SOURCE", pick.get("topic_source"), pick.get("title"), file=sys.stderr)
