@@ -45,9 +45,7 @@ HOOK_TEMPLATES = [
 ]
 
 CTA_ENDINGS = [
-    "Comment what you understood in one line.",
-    "Comment the next topic you want.",
-    "Comment one exam tip you will use.",
+    "Comment the next topic you want us to treat. Follow for more.",
 ]
 
 PROMPT_LEAK_RE = re.compile(
@@ -106,6 +104,17 @@ def clean_spoken(text: str) -> str:
     t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\s*", "", t, flags=re.I)
     t = re.sub(r"comment yes[^.]*\.?", "", t, flags=re.I)
     t = re.sub(r"follow\s+mike\.the\.tutor[^.]*\.?", "", t, flags=re.I)
+    t = re.sub(
+        r"(?i)for example,? you meet [^.]+ in everyday (life|situations)[^.]*\.?",
+        "",
+        t,
+    )
+    t = re.sub(
+        r"(?i)you (can )?meet [^.]+ in everyday (life|situations)[^.]*\.?",
+        "",
+        t,
+    )
+    t = re.sub(r"(?i)name one in the comments[^.]*\.?", "", t)
     t = re.sub(r"\s+", " ", t).strip()
     words = t.split()
     if len(words) < 50:
@@ -154,8 +163,8 @@ def distinct_dyk(extract: str, title: str, definition: str) -> str:
         pick = candidates[1] if len(candidates) > 1 else candidates[0]
         if not re.match(r"(?i)(wait|most|almost|few|students|exam|never|only)", pick):
             pick = f"Wait — {pick[0].lower()}{pick[1:]}"
-        return pick[:120]
-    return f"Wait — exams often ask for one real example of {title}, not only the definition."
+        return pick[:100]
+    return f"Wait — write the definition of {title} first, then give one labelled example."
 
 
 def default_moves(topic: str) -> list[dict]:
@@ -244,17 +253,16 @@ def force_hook(script: str, topic: str, phenomenon: bool) -> str:
 def ensure_cta(script: str, topic: str) -> str:
     s = script.rstrip(".! ")
     s = re.sub(r"(?i)comment yes[^.]*", "", s)
-    s = re.sub(r"(?i)follow\s+(mike\.the\.tutor|@?mike\.the\.tutor|for more)[^.]*\.?", "", s)
-    s = re.sub(r"(?i)\bfollow for more\b\.?", "", s)
+    s = re.sub(r"(?i)follow\s+mike\.the\.tutor[^.]*\.?", "", s)
     s = re.sub(r"(?i)\b(subscribe|like and|smash that)\b[^.]*\.?", "", s)
     s = re.sub(r"\s+", " ", s).strip().rstrip(".! ")
-    cta = random.choice(CTA_ENDINGS)
     s = re.sub(
-        r"(?i)(comment what you understood[^.]*|comment the next topic[^.]*|comment one[^.]*\.)\s*$",
+        r"(?i)(comment what you understood[^.]*|comment the next topic[^.]*|"
+        r"comment one[^.]*|follow for more)[^.]*\.?",
         "",
         s,
     ).strip().rstrip(".! ")
-    s += f". {cta}"
+    s += ". Comment the next topic you want us to treat. Follow for more."
     if not s.endswith((".", "!", "?")):
         s += "."
     return s
@@ -281,10 +289,13 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk="", phenomenon=Fa
     if PROMPT_LEAK_RE.search(cleaned):
         print("PROMPT_LEAK after pack — reject", file=sys.stderr)
         return None
+    if re.search(r"(?i)meet .+ in everyday", cleaned):
+        print("VAGUE_EXAMPLE reject", file=sys.stderr)
+        return None
     if not has_real_life_example(cleaned) and not phenomenon:
         print("WARN no concrete example in script", file=sys.stderr)
 
-    definition = (definition or short_definition(extract, short)).strip()[:120]
+    definition = (definition or short_definition(extract, short)).strip()[:100]
     dyk_final = (dyk or "").strip()
     if not dyk_final or len(dyk_final) < 25:
         dyk_final = distinct_dyk(extract, short, definition)
@@ -300,8 +311,8 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk="", phenomenon=Fa
         "title": topic.get("title") or short,
         "short_title": short,
         "definition": definition,
-        "did_you_know": dyk_final[:120],
-        "cta": "Comment what you understood in one line.",
+        "did_you_know": dyk_final[:100],
+        "cta": "Comment the next topic you want us to treat. Follow for more.",
         "script": cleaned,
         "moves": parse_moves(moves_raw, short),
         "bg": "classroom",
@@ -325,6 +336,7 @@ def run_openrouter(topic: dict):
     system = (
         "You write spoken TikTok voiceover for secondary school exam revision in West Africa style English. "
         "Sound like a sharp tutor, not a textbook. Short sentences. No filler. "
+        "Stay strictly on the school topic. Never celebrity or biography. "
         "Return ONLY the spoken paragraphs — never list rules inside the voiceover."
     )
     if phenom:
@@ -336,19 +348,18 @@ def run_openrouter(topic: dict):
             "3) NAME + plain definition of the topic (one sentence students can write in an exam).\n"
             "4) LINK: connect the scene to the definition in one sentence.\n"
             "5) EXAM tip: one line on how to answer it in a test.\n"
-            "6) OUTRO: exactly one line — Comment what you understood in one line.\n"
-            "Do NOT say Follow, subscribe, like, or any username.\n"
+            "6) OUTRO: Comment the next topic you want us to treat. Follow for more.\n"
         )
     else:
         structure = (
-            "Write 85-115 words.\n"
+            "Write 85-115 words. Stay ON the exam topic only — never celebrity or biography.\n"
             "STRUCTURE:\n"
-            "1) INTRO: exam-pain hook (marks lost / common confusion). One short sentence.\n"
-            "2) DEFINITION: plain words, one clear sentence.\n"
-            "3) EXAMPLE: one specific real scene (not generic). If none fits, skip example.\n"
-            "4) EXAM tip: how to use this on a paper.\n"
-            "5) OUTRO: exactly — Comment what you understood in one line.\n"
-            "Do NOT say Follow, subscribe, like, or any username.\n"
+            "1) INTRO: exam-pain hook about THIS topic only. One short sentence.\n"
+            "2) DEFINITION: plain words, one clear sentence students can write.\n"
+            "3) EXAMPLE: only if a concrete school/home/lab scene fits THIS topic. "
+            "NEVER say 'you meet X in everyday life'. If no good scene, skip example.\n"
+            "4) EXAM tip: how to answer this on a paper.\n"
+            "5) OUTRO: Comment the next topic you want us to treat. Follow for more.\n"
         )
 
     user = (
@@ -356,8 +367,8 @@ def run_openrouter(topic: dict):
         f"{structure}"
         "Rules: no religion, no politics, no self-intro, no prompt language in the speech.\n\n"
         "After the spoken script, on separate lines ONLY:\n"
-        "DEFINITION: formal exam-ready sentence under 18 words for the board\n"
-        "DIDYOUKNOW: one surprising fact NOT the same as the definition, under 20 words, start with Wait —\n"
+        "DEFINITION: formal exam-ready sentence under 16 words for the board\n"
+        "DIDYOUKNOW: one exam tip fact NOT the same as the definition, under 18 words, start with Wait —\n"
         "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
     )
     try:
@@ -376,7 +387,7 @@ def run_openrouter(topic: dict):
                     {"role": "user", "content": user},
                 ],
                 "max_tokens": 450,
-                "temperature": 0.35,
+                "temperature": 0.32,
             },
             timeout=90,
         )
@@ -473,7 +484,8 @@ def main():
     Path("definition.txt").write_text(result.get("definition") or "", encoding="utf-8")
     Path("did_you_know.txt").write_text(result.get("did_you_know") or "", encoding="utf-8")
     Path("cta.txt").write_text(
-        result.get("cta") or "Comment what you understood in one line.", encoding="utf-8"
+        result.get("cta") or "Comment the next topic you want us to treat. Follow for more.",
+        encoding="utf-8",
     )
     Path("bg.txt").write_text("classroom", encoding="utf-8")
     Path("phenomenon.txt").write_text(
