@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Mike Shorts: 5 classrooms, phenomenon support, pan + bounce."""
+"""Mike Shorts: 6 themed classrooms, phenomenon support, pan + bounce."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import math
+import random
 import subprocess
 import sys
 import tempfile
@@ -21,21 +22,24 @@ BLACK = (10, 12, 16)
 MOUTH = {"X": 0.0, "B": 0.25, "A": 1.0, "C": 0.55, "D": 0.7, "E": 0.85, "F": 0.5, "G": 0.95, "H": 1.0}
 
 ROOMS = [
-    {"id": "warm_cream", "wall": (255, 236, 210), "floor": (72, 48, 32), "board": (18, 85, 95),
-     "frame": (40, 30, 25), "accent": (255, 170, 40), "window": (140, 200, 230),
-     "desk": (80, 55, 40), "posters": [(255, 110, 90), (90, 170, 255), (100, 200, 120)]},
-    {"id": "cool_lab", "wall": (210, 225, 245), "floor": (40, 50, 70), "board": (15, 45, 100),
-     "frame": (20, 35, 55), "accent": (60, 170, 255), "window": (160, 210, 255),
-     "desk": (45, 55, 75), "posters": [(70, 160, 255), (160, 120, 255), (80, 210, 180)]},
-    {"id": "green_board", "wall": (235, 245, 220), "floor": (50, 55, 35), "board": (20, 100, 50),
-     "frame": (30, 50, 25), "accent": (255, 210, 40), "window": (150, 210, 140),
-     "desk": (60, 55, 35), "posters": [(255, 150, 60), (70, 190, 100), (255, 230, 80)]},
-    {"id": "night_study", "wall": (28, 32, 48), "floor": (18, 20, 30), "board": (12, 55, 80),
-     "frame": (55, 60, 80), "accent": (255, 130, 70), "window": (35, 50, 90),
-     "desk": (35, 38, 50), "posters": [(255, 100, 80), (90, 130, 255), (180, 90, 220)]},
-    {"id": "purple_studio", "wall": (240, 225, 250), "floor": (55, 35, 65), "board": (70, 30, 110),
-     "frame": (50, 25, 70), "accent": (230, 100, 255), "window": (200, 170, 240),
-     "desk": (75, 45, 80), "posters": [(255, 120, 190), (130, 100, 255), (255, 190, 100)]},
+    {"id": "purple_minimal", "wall": (210, 185, 235), "floor": (90, 75, 110), "board": (35, 40, 55),
+     "frame": (120, 95, 70), "accent": (160, 100, 220), "window": (230, 220, 245),
+     "desk": (140, 110, 80), "theme": "minimal", "text": (245, 245, 250)},
+    {"id": "dark_tech", "wall": (18, 22, 40), "floor": (12, 14, 28), "board": (10, 15, 35),
+     "frame": (40, 80, 140), "accent": (0, 220, 255), "window": (30, 50, 90),
+     "desk": (25, 35, 55), "theme": "tech", "text": (180, 255, 255)},
+    {"id": "green_nature", "wall": (210, 230, 200), "floor": (90, 110, 70), "board": (55, 100, 60),
+     "frame": (100, 80, 50), "accent": (80, 170, 90), "window": (160, 200, 140),
+     "desk": (120, 90, 55), "theme": "nature", "text": (245, 255, 240)},
+    {"id": "blue_modern", "wall": (175, 205, 235), "floor": (70, 95, 130), "board": (240, 245, 255),
+     "frame": (90, 130, 180), "accent": (50, 120, 210), "window": (200, 220, 245),
+     "desk": (80, 110, 150), "theme": "modern", "text": (30, 50, 90)},
+    {"id": "cozy_library", "wall": (250, 230, 180), "floor": (120, 85, 50), "board": (60, 45, 30),
+     "frame": (100, 70, 40), "accent": (230, 170, 50), "window": (255, 240, 200),
+     "desk": (140, 100, 60), "theme": "library", "text": (255, 245, 220)},
+    {"id": "glitch_vhs", "wall": (15, 15, 20), "floor": (10, 10, 14), "board": (8, 8, 12),
+     "frame": (80, 20, 60), "accent": (255, 40, 120), "window": (40, 20, 50),
+     "desk": (30, 25, 35), "theme": "vhs", "text": (255, 200, 220)},
 ]
 THUMB_STYLES = ["close_face", "side_teach", "solid_blast", "mike_top", "topic_wall"]
 OPEN_MOVES = ["question", "happy", "present", "point", "explain", "think"]
@@ -117,45 +121,127 @@ def pick_open_move(topic: str) -> str:
 
 def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
     bw, bh = int(W * 1.18), int(H * 1.14)
-    img = Image.new("RGB", (bw, bh), room["wall"])
+    theme = room.get("theme", "minimal")
+    wall, floor = room["wall"], room["floor"]
+    board_c, frame_c = room["board"], room["frame"]
+    accent, desk_c = room["accent"], room["desk"]
+    text_c = room.get("text", WHITE)
+
+    img = Image.new("RGB", (bw, bh), wall)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, bw, int(bh * 0.68)], fill=room["wall"])
-    d.rectangle([0, int(bh * 0.68), bw, bh], fill=room["floor"])
-    d.rectangle([0, int(bh * 0.68) - 16, bw, int(bh * 0.68)], fill=room["accent"])
-    wx0, wy0, wx1, wy1 = 28, 48, 200, 300
-    d.rounded_rectangle([wx0, wy0, wx1, wy1], 14, fill=room["window"])
-    d.line([(wx0, (wy0 + wy1) // 2), (wx1, (wy0 + wy1) // 2)], fill=WHITE, width=3)
-    d.line([((wx0 + wx1) // 2, wy0), ((wx0 + wx1) // 2, wy1)], fill=WHITE, width=3)
-    for i, col in enumerate(room["posters"]):
-        px, py = bw - 165, 45 + i * 95
-        d.rounded_rectangle([px, py, px + 125, py + 80], 12, fill=col)
-    bx0, by0, bx1, by1 = 220, 65, bw - 190, int(bh * 0.58)
-    d.rounded_rectangle([bx0 - 12, by0 - 12, bx1 + 12, by1 + 12], 16, fill=room["frame"])
-    d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=room["board"])
+    d.rectangle([0, 0, bw, int(bh * 0.68)], fill=wall)
+    d.rectangle([0, int(bh * 0.68), bw, bh], fill=floor)
+    d.rectangle([0, int(bh * 0.68) - 14, bw, int(bh * 0.68)], fill=accent)
+
+    if theme == "minimal":
+        d.rounded_rectangle([bw - 160, 80, bw - 30, 110], 6, fill=(180, 150, 100))
+        for i, col in enumerate([(90, 160, 90), (70, 140, 80)]):
+            px = bw - 140 + i * 55
+            d.ellipse([px, 50, px + 36, 80], fill=col)
+            d.rectangle([px + 10, 78, px + 26, 100], fill=(160, 130, 90))
+        bx0, by0, bx1, by1 = 200, 70, bw - 200, int(bh * 0.55)
+        d.rounded_rectangle([bx0 - 14, by0 - 14, bx1 + 14, by1 + 14], 8, fill=frame_c)
+        d.rounded_rectangle([bx0, by0, bx1, by1], 4, fill=board_c)
+
+    elif theme == "tech":
+        for i, col in enumerate([(0, 200, 255), (180, 80, 255), (80, 255, 180)]):
+            y0 = 60 + i * 110
+            d.rounded_rectangle([30, y0, 180, y0 + 90], 10, fill=(20, 30, 50), outline=col, width=3)
+            d.line([(45, y0 + 25), (165, y0 + 25)], fill=col, width=2)
+            d.line([(45, y0 + 45), (140, y0 + 45)], fill=col, width=2)
+            d.line([(45, y0 + 65), (155, y0 + 65)], fill=col, width=2)
+        bx0, by0, bx1, by1 = 220, 70, bw - 80, int(bh * 0.55)
+        d.rounded_rectangle([bx0 - 8, by0 - 8, bx1 + 8, by1 + 8], 12, fill=frame_c)
+        d.rounded_rectangle([bx0, by0, bx1, by1], 8, fill=board_c)
+        for x in range(bx0 + 20, bx1 - 20, 40):
+            d.ellipse([x, by1 - 30, x + 6, by1 - 24], fill=accent)
+
+    elif theme == "nature":
+        for i in range(4):
+            px = 40 + i * 45
+            d.line([(px + 12, 30), (px + 12, 70)], fill=(100, 80, 50), width=2)
+            d.ellipse([px, 65, px + 28, 95], fill=(60, 140, 70))
+            d.ellipse([px + 8, 55, px + 30, 80], fill=(80, 160, 90))
+        d.rounded_rectangle([bw - 220, 50, bw - 30, 320], 12, fill=(150, 190, 130))
+        d.rectangle([bw - 220, 180, bw - 30, 185], fill=WHITE)
+        d.rectangle([bw - 125, 50, bw - 120, 320], fill=WHITE)
+        bx0, by0, bx1, by1 = 200, 80, bw - 250, int(bh * 0.54)
+        d.rounded_rectangle([bx0 - 12, by0 - 12, bx1 + 12, by1 + 12], 10, fill=frame_c)
+        d.rounded_rectangle([bx0, by0, bx1, by1], 6, fill=board_c)
+
+    elif theme == "modern":
+        bx0, by0, bx1, by1 = 180, 70, bw - 120, int(bh * 0.55)
+        d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 16, fill=frame_c)
+        d.rounded_rectangle([bx0, by0, bx1, by1], 12, fill=board_c)
+        d.ellipse([bw - 100, 40, bw - 40, 100], fill=(255, 250, 220))
+        d.rectangle([bw - 78, 100, bw - 62, 160], fill=(180, 190, 200))
+        d.rounded_rectangle([40, 100, 150, 280], 10, fill=(200, 220, 245), outline=accent, width=3)
+        d.polygon([(60, 220), (90, 140), (120, 200), (130, 160)], outline=accent)
+
+    elif theme == "library":
+        for side in (30, bw - 160):
+            d.rectangle([side, 40, side + 130, int(bh * 0.62)], fill=(100, 70, 40))
+            for row in range(5):
+                ry = 55 + row * 70
+                d.rectangle([side + 8, ry, side + 122, ry + 12], fill=(80, 55, 30))
+                for b in range(5):
+                    col = [(180, 60, 60), (60, 100, 180), (200, 160, 50), (80, 140, 80), (140, 80, 160)][b]
+                    d.rectangle([side + 12 + b * 22, ry + 16, side + 28 + b * 22, ry + 58], fill=col)
+        bx0, by0, bx1, by1 = 200, 80, bw - 200, int(bh * 0.52)
+        d.rounded_rectangle([bx0 - 10, by0 - 10, bx1 + 10, by1 + 10], 8, fill=frame_c)
+        d.rounded_rectangle([bx0, by0, bx1, by1], 4, fill=board_c)
+        d.ellipse([bw // 2 + 200, int(bh * 0.58), bw // 2 + 250, int(bh * 0.62)], fill=(255, 220, 120))
+
+    else:  # vhs
+        bx0, by0, bx1, by1 = 180, 80, bw - 160, int(bh * 0.55)
+        d.rounded_rectangle([bx0 - 20, by0 - 20, bx1 + 20, by1 + 40], 8, fill=(40, 40, 45))
+        d.rectangle([bx0, by0, bx1, by1], fill=board_c)
+        for y in range(by0, by1, 8):
+            d.line([(bx0, y), (bx1, y)], fill=(30, 10, 25), width=1)
+        d.rounded_rectangle([40, 50, 160, 100], 8, fill=(180, 20, 40))
+        rf = font(22)
+        d.text((55, 62), "REC", font=rf, fill=WHITE)
+        rng = random.Random(42)
+        for _ in range(80):
+            x = rng.randint(bx0, bx1)
+            y = rng.randint(by0, by1)
+            d.point((x, y), fill=(accent if rng.random() > 0.5 else WHITE))
+
     topic = (topic or "Lesson").strip() or "Lesson"
+    bx0, by0, bx1, by1 = 220, 90, bw - 200, int(bh * 0.52)
+    if theme == "tech":
+        bx0, by0, bx1, by1 = 230, 85, bw - 90, int(bh * 0.52)
+    elif theme == "nature":
+        bx0, by0, bx1, by1 = 210, 95, bw - 260, int(bh * 0.52)
+    elif theme == "modern":
+        bx0, by0, bx1, by1 = 195, 85, bw - 130, int(bh * 0.52)
+    elif theme == "vhs":
+        bx0, by0, bx1, by1 = 200, 100, bw - 180, int(bh * 0.52)
+
     tf = font(56)
     while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 26:
         tf = font(tf.size - 3)
-    y = by0 + 48
+    y = by0 + 40
     for line in wrap_text(d, topic, tf, bx1 - bx0 - 48)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
-        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=WHITE)
+        d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=text_c)
         y += tf.size + 12
     if definition:
         df = font(28)
-        y += 16
+        y += 12
+        def_col = text_c if theme != "modern" else (50, 70, 110)
         for line in wrap_text(d, definition, df, bx1 - bx0 - 48)[:5]:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
-            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=(220, 235, 245))
+            d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=def_col)
             y += df.size + 6
-    d.rounded_rectangle([bw // 2 - 280, int(bh * 0.72), bw // 2 + 280, int(bh * 0.78)], 10, fill=room["desk"])
+
+    d.rounded_rectangle([bw // 2 - 300, int(bh * 0.72), bw // 2 + 300, int(bh * 0.79)], 10, fill=desk_c)
     return img
 
 
 def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.Image) -> Image.Image:
-    """First ~3s only — must NOT look like the normal classroom teach frame."""
     accent, board, wall = room["accent"], room["board"], room["wall"]
 
     if style == "close_face":
@@ -239,7 +325,6 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
             y += tf.size + 12
         return img
 
-    # topic_wall
     img = Image.new("RGB", (W, H), accent)
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 40], fill=BLACK)
