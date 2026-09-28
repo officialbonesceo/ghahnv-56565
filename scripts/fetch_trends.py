@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover student-teachable topics: Google Trends + DuckDuckGo + Wikipedia."""
+"""Discover exam/scheme-of-work topics: Google Trends + DuckDuckGo + Wikipedia."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
 
 import requests
 
@@ -17,26 +16,30 @@ UA = {"User-Agent": "MikeTutorTrends/1.0 (educational; school STEM)"}
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import filter_title_list, is_school_safe  # noqa: E402
 
-# Student-intent search seeds (exam / WAEC / JAMB style)
+# Question-style queries — not "Topic X" pasted into search
 SEARCH_SEEDS = [
-    "WAEC physics topics students struggle",
-    "JAMB chemistry most tested topics",
-    "secondary school biology exam concepts",
-    "math exam topics students fail",
-    "photosynthesis exam tips",
-    "newton laws of motion explained for students",
-    "osmosis vs diffusion exam",
-    "quadratic equation word problems",
-    "electric current series parallel circuits",
-    "how to write essay for exams",
-    "kinetic energy potential energy difference",
-    "mitosis meiosis difference exam",
+    "WAEC 2025 physics scheme of work topics",
+    "JAMB 2025 chemistry syllabus most tested",
+    "NECO SSCE biology topics students fail",
+    "secondary school math scheme of work 2024 2025",
+    "what topics come out every year in WAEC physics",
+    "hardest JAMB biology questions topics",
+    "SS1 SS2 SS3 physics scheme of work electricity",
+    "WAEC chemistry practical topics common",
+    "quadratic equations exam questions students miss",
+    "osmosis diffusion exam difference secondary",
+    "Newton laws of motion WAEC past questions",
+    "photosynthesis exam definition and equation",
+    "essay writing structure for secondary exams",
+    "electric current series parallel circuits exam",
+    "kinetic energy potential energy WAEC",
 ]
 
 WIKI_SEEDS = [
     "Photosynthesis", "Friction", "Electric current", "Osmosis",
     "Mitosis", "Quadratic equation", "Newton's laws of motion",
     "Kinetic energy", "DNA", "Enzyme", "Inertia", "Pressure",
+    "Ohm's law", "Diffusion", "Respiration",
 ]
 
 NORMALIZE = {
@@ -61,17 +64,20 @@ NORMALIZE = {
     "momentum": "Momentum",
     "pressure": "Pressure",
     "density": "Density",
+    "diffusion": "Diffusion",
+    "respiration": "Respiration",
 }
 
 HARD_SKIP = re.compile(
-    r"petroleum|refiner|dangote|mithraism|mitsubishi|porn|login|pdf download",
+    r"petroleum|refiner|dangote|mithraism|mitsubishi|porn|login|pdf download|"
+    r"actress|actor|celebrity|singer|netflix|k-pop|idol",
     re.I,
 )
 
 
 def clean_title(q: str) -> str | None:
     q = (q or "").strip()
-    if not q or len(q) < 3 or len(q) > 60:
+    if not q or len(q) < 3 or len(q) > 55:
         return None
     if HARD_SKIP.search(q) or re.search(r"https?://|www\.", q, re.I):
         return None
@@ -81,14 +87,15 @@ def clean_title(q: str) -> str | None:
     if key in NORMALIZE:
         return NORMALIZE[key]
     key2 = re.sub(
-        r"\b(20\d{2}|waec|jamb|neco|ssce|exam|past question[s]?|tips?|explained|for students)\b",
+        r"\b(20\d{2}|waec|jamb|neco|ssce|exam|past question[s]?|tips?|explained|"
+        r"for students|scheme of work|syllabus|most tested|hardest)\b",
         "",
         key,
     )
     key2 = re.sub(r"\s+", " ", key2).strip(" -_:")
     if key2 in NORMALIZE:
         return NORMALIZE[key2]
-    if 3 <= len(key2) <= 45 and re.match(r"^[a-z0-9][a-z0-9\s'\-]+$", key2):
+    if 3 <= len(key2) <= 40 and re.match(r"^[a-z0-9][a-z0-9\s'\-]+$", key2):
         titled = key2.title()
         if is_school_safe(titled) and not HARD_SKIP.search(titled):
             return titled
@@ -101,9 +108,9 @@ def from_pytrends() -> list[str]:
         from pytrends.request import TrendReq
         pytrends = TrendReq(hl="en-US", tz=60, retries=2, backoff_factor=1.5)
         seeds = [
-            "photosynthesis", "quadratic equation", "newton laws",
-            "osmosis", "electric current", "kinetic energy",
-            "mitosis", "friction physics", "essay writing", "ohms law",
+            "WAEC physics", "JAMB chemistry", "photosynthesis",
+            "quadratic equation", "newton laws", "osmosis",
+            "electric current", "kinetic energy", "mitosis", "ohms law",
         ]
         for seed in seeds:
             try:
@@ -127,9 +134,8 @@ def from_pytrends() -> list[str]:
 
 
 def from_duckduckgo() -> list[str]:
-    """DuckDuckGo related topics via Instant Answer API (no key)."""
     found: list[str] = []
-    for q in SEARCH_SEEDS[:8]:
+    for q in SEARCH_SEEDS:
         try:
             r = requests.get(
                 "https://api.duckduckgo.com/",
@@ -147,7 +153,6 @@ def from_duckduckgo() -> list[str]:
             for rel in data.get("RelatedTopics") or []:
                 if isinstance(rel, dict):
                     text = rel.get("Text") or rel.get("Name") or ""
-                    # first clause often the topic name
                     first = text.split(" - ")[0].split(".")[0]
                     t = clean_title(first)
                     if t:
@@ -159,7 +164,7 @@ def from_duckduckgo() -> list[str]:
                             t = clean_title(first)
                             if t:
                                 found.append(t)
-            time.sleep(0.4)
+            time.sleep(0.35)
         except Exception as e:
             print("ddg fail", q[:40], e, file=sys.stderr)
     return found
@@ -174,7 +179,7 @@ def from_wikipedia() -> list[str]:
                 params={
                     "action": "opensearch",
                     "search": seed,
-                    "limit": 10,
+                    "limit": 8,
                     "namespace": 0,
                     "format": "json",
                 },
@@ -188,14 +193,13 @@ def from_wikipedia() -> list[str]:
                     t = clean_title(title)
                     if t:
                         found.append(t)
-            # also related via search
             r2 = requests.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={
                     "action": "query",
                     "list": "search",
-                    "srsearch": f"{seed} secondary school OR exam OR physics OR chemistry OR biology",
-                    "srlimit": 8,
+                    "srsearch": f"{seed} secondary school OR WAEC OR exam syllabus",
+                    "srlimit": 6,
                     "format": "json",
                 },
                 headers=UA,
@@ -218,7 +222,6 @@ def dedupe(titles: list[str]) -> list[str]:
         k = re.sub(r"[^a-z0-9]", "", t.lower())
         if not k or k in seen or HARD_SKIP.search(t):
             continue
-        # prefix collision
         if any(k.startswith(s[:8]) or s.startswith(k[:8]) for s in seen if len(s) >= 8 and len(k) >= 8):
             if any(k == s or abs(len(k) - len(s)) <= 3 for s in seen):
                 continue
@@ -234,23 +237,18 @@ def main() -> None:
     titles.extend(from_duckduckgo())
     titles.extend(from_wikipedia())
     titles = filter_title_list(dedupe(titles))
-    # Prefer school-looking titles; drop junk fragments
-    cleaned = []
-    for t in titles:
-        if len(t.split()) > 6:
-            continue
-        cleaned.append(t)
+    cleaned = [t for t in titles if len(t.split()) <= 6]
     titles = cleaned[:50]
-    if len(titles) < 5:
-        # minimal safe pool only if discovery almost empty — still real wiki titles
+    # Minimal recovery: only known syllabus titles if discovery almost empty
+    if len(titles) < 3:
         for s in WIKI_SEEDS:
-            if s not in titles:
+            if is_school_safe(s) and s not in titles:
                 titles.append(s)
-        titles = titles[:20]
+        titles = titles[:15]
 
     payload = {
         "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "source": "google_trends+duckduckgo+wikipedia",
+        "source": "scheme_queries+google_trends+duckduckgo+wikipedia",
         "titles": titles,
     }
     OUT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
