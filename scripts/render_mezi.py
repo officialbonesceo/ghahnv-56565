@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 W, H = 1080, 1920
 FPS = 24
-HOOK_END = 2.5
+HOOK_END = 3.2
 WHITE = (255, 255, 255)
 BLACK = (10, 12, 16)
 MOUTH = {"X": 0.0, "B": 0.25, "A": 1.0, "C": 0.55, "D": 0.7, "E": 0.85, "F": 0.5, "G": 0.95, "H": 1.0}
@@ -37,7 +37,7 @@ ROOMS = [
      "frame": (50, 25, 70), "accent": (230, 100, 255), "window": (200, 170, 240),
      "desk": (75, 45, 80), "posters": [(255, 120, 190), (130, 100, 255), (255, 190, 100)]},
 ]
-THUMB_STYLES = ["close_face", "board_hero", "side_teach", "split_color", "big_topic"]
+THUMB_STYLES = ["close_face", "side_teach", "solid_blast", "mike_top", "topic_wall"]
 OPEN_MOVES = ["question", "happy", "present", "point", "explain", "think"]
 
 
@@ -155,104 +155,107 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
 
 
 def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.Image) -> Image.Image:
+    """First ~3s only — must NOT look like the normal classroom teach frame."""
     accent, board, wall = room["accent"], room["board"], room["wall"]
+
     if style == "close_face":
-        img = Image.new("RGB", (W, H), (14, 12, 20))
+        img = Image.new("RGB", (W, H), (12, 10, 18))
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, 22], fill=accent)
-        d.rectangle([0, H - 22, W, H], fill=accent)
-        target_h = int(H * 0.98)
+        d.rectangle([0, 0, W, 28], fill=accent)
+        d.rectangle([0, H - 28, W, H], fill=accent)
+        target_h = int(H * 1.05)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.18)), c)
-        tf = font(44)
-        lines = wrap_text(d, topic, tf, W - 70)[:2]
-        box_h = 32 + len(lines) * (tf.size + 10)
-        d.rounded_rectangle([36, 48, W - 36, 48 + box_h], 28, fill=BLACK)
-        y = 62
+        img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.22)), c)
+        tf = font(48)
+        lines = wrap_text(d, topic, tf, W - 64)[:2]
+        box_h = 36 + len(lines) * (tf.size + 10)
+        d.rounded_rectangle([28, 48, W - 28, 48 + box_h], 28, fill=BLACK)
+        y = 64
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
             y += tf.size + 10
         return img
-    if style == "board_hero":
+
+    if style == "side_teach":
+        img = Image.new("RGB", (W, H), wall)
+        d = ImageDraw.Draw(img)
+        d.rectangle([int(W * 0.40), 0, W, H], fill=board)
+        d.rectangle([int(W * 0.40) - 8, 0, int(W * 0.40) + 8, H], fill=accent)
+        tf = font(52)
+        lines = wrap_text(d, topic, tf, int(W * 0.55) - 48)[:4]
+        y = H // 2 - 140
+        for line in lines:
+            bb = d.textbbox((0, 0), line, font=tf)
+            tw = bb[2] - bb[0]
+            d.text((int(W * 0.40) + (int(W * 0.60) - tw) // 2, y), line, font=tf, fill=WHITE)
+            y += tf.size + 14
+        target_h = int(H * 0.82)
+        scale = target_h / char.height
+        nw, nh = int(char.width * scale), int(char.height * scale)
+        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
+        img.paste(c, (max(4, int(W * 0.20) - nw // 2), H - nh + 60), c)
+        return img
+
+    if style == "solid_blast":
         img = Image.new("RGB", (W, H), board)
         d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, 24], fill=accent)
-        d.rectangle([0, H - 24, W, H], fill=accent)
-        tf = font(76)
-        lines = wrap_text(d, topic, tf, W - 50)[:3]
-        total_h = len(lines) * (tf.size + 16)
-        y = max(80, H // 2 - total_h // 2 - 120)
+        d.rectangle([0, 0, W, 36], fill=accent)
+        d.rectangle([0, H - 36, W, H], fill=accent)
+        tf = font(80)
+        lines = wrap_text(d, topic, tf, W - 40)[:3]
+        total_h = len(lines) * (tf.size + 18)
+        y = max(100, H // 2 - total_h // 2 - 160)
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 16
-        target_h = int(H * 0.32)
+            y += tf.size + 18
+        target_h = int(H * 0.28)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
         img.paste(c, ((W - nw) // 2, H - nh - 50), c)
         return img
-    if style == "side_teach":
-        img = Image.new("RGB", (W, H), wall)
+
+    if style == "mike_top":
+        img = Image.new("RGB", (W, H), (16, 14, 22))
         d = ImageDraw.Draw(img)
-        d.rectangle([int(W * 0.42), 0, W, H], fill=board)
-        d.rectangle([int(W * 0.42), 0, int(W * 0.42) + 14, H], fill=accent)
-        tf = font(50)
-        lines = wrap_text(d, topic, tf, int(W * 0.52) - 40)[:4]
-        y = H // 2 - 120
-        for line in lines:
-            bb = d.textbbox((0, 0), line, font=tf)
-            tw = bb[2] - bb[0]
-            d.text((int(W * 0.42) + (int(W * 0.58) - tw) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 14
-        target_h = int(H * 0.75)
+        d.rectangle([0, 0, W, int(H * 0.62)], fill=wall)
+        d.rectangle([0, int(H * 0.62), W, H], fill=board)
+        d.rectangle([0, int(H * 0.62) - 12, W, int(H * 0.62) + 12], fill=accent)
+        target_h = int(H * 0.70)
         scale = target_h / char.height
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, (max(8, int(W * 0.21) - nw // 2), H - nh + 50), c)
-        return img
-    if style == "split_color":
-        img = Image.new("RGB", (W, H), room["floor"])
-        d = ImageDraw.Draw(img)
-        d.rectangle([0, 0, W, int(H * 0.52)], fill=board)
-        d.rectangle([0, int(H * 0.52) - 14, W, int(H * 0.52) + 14], fill=accent)
-        tf = font(58)
-        lines = wrap_text(d, topic, tf, W - 70)[:3]
-        y = 90
+        img.paste(c, ((W - nw) // 2, int(H * 0.58) - nh + 40), c)
+        tf = font(56)
+        lines = wrap_text(d, topic, tf, W - 60)[:3]
+        y = int(H * 0.68)
         for line in lines:
             bb = d.textbbox((0, 0), line, font=tf)
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
-            y += tf.size + 14
-        target_h = int(H * 0.52)
-        scale = target_h / char.height
-        nw, nh = int(char.width * scale), int(char.height * scale)
-        c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-        img.paste(c, ((W - nw) // 2, H - nh + 25), c)
+            y += tf.size + 12
         return img
-    img = Image.new("RGB", (W, H), (10, 10, 16))
+
+    # topic_wall
+    img = Image.new("RGB", (W, H), accent)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, int(H * 0.58)], fill=board)
-    d.rectangle([0, int(H * 0.58) - 14, W, int(H * 0.58) + 14], fill=accent)
-    tf = font(68)
-    lines = wrap_text(d, topic, tf, W - 60)[:3]
-    y = 90
+    d.rectangle([0, 0, W, 40], fill=BLACK)
+    d.rectangle([0, H - 40, W, H], fill=BLACK)
+    tf = font(72)
+    lines = wrap_text(d, topic, tf, W - 50)[:3]
+    y = 120
     for line in lines:
         bb = d.textbbox((0, 0), line, font=tf)
-        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=BLACK)
         y += tf.size + 16
-    hf = font(28)
-    for line in wrap_text(d, (hook or "")[:65], hf, W - 80)[:2]:
-        bb = d.textbbox((0, 0), line, font=hf)
-        d.text(((W - (bb[2] - bb[0])) // 2, y + 16), line, font=hf, fill=(210, 210, 220))
-        y += hf.size + 8
-    target_h = int(H * 0.48)
+    target_h = int(H * 0.55)
     scale = target_h / char.height
     nw, nh = int(char.width * scale), int(char.height * scale)
     c = char.resize((nw, nh), Image.Resampling.LANCZOS)
-    img.paste(c, ((W - nw) // 2, H - nh + 28), c)
+    img.paste(c, (W - nw - 20, H - nh - 60), c)
     return img
 
 
