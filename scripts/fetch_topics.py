@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""School STEM topics from trends/wiki only — no hardcoded lesson fallback."""
+"""School STEM topics from trends/wiki — retry wiki, DDG abstract if wiki 429."""
 from __future__ import annotations
 
 import json
 import random
 import re
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -13,7 +14,10 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import is_school_safe, filter_title_list
 
-UA = {"User-Agent": "MikeTutor/1.0 (educational)"}
+UA = {
+    "User-Agent": "MikeTutor/1.2 (educational; contact: github.com/officialbonesceo)",
+    "Accept": "application/json",
+}
 ROOT = Path(__file__).resolve().parents[1]
 SEEN_PATH = ROOT / "data" / "seen_topics.json"
 TREND_PATH = ROOT / "data" / "trending_topics.json"
@@ -26,15 +30,15 @@ HARD_BLOCK = {
 }
 
 SYLLABUS_POOL = [
-    "Gravity", "Friction", "Electric current", "Voltage", "Circuit",
+    "Gravity", "Friction", "Electric current", "Voltage",
     "Osmosis", "Diffusion", "Evaporation", "Condensation", "Respiration",
-    "Enzyme", "Catalyst", "Speed", "Velocity", "Acceleration", "Force",
+    "Enzyme", "Speed", "Velocity", "Acceleration", "Force",
     "Newton's laws of motion", "Kinetic energy", "Potential energy",
-    "Heat", "Temperature", "Sound", "Light", "Reflection (physics)",
-    "Refraction", "Electromagnet", "Mitosis", "Meiosis", "DNA",
-    "Quadratic equation", "Pythagorean theorem", "Fraction", "Percentage",
+    "Heat", "Temperature", "Sound", "Light",
+    "Refraction", "Mitosis", "DNA",
+    "Quadratic equation", "Percentage",
     "Inertia", "Momentum", "Pressure", "Density", "Ohm's law",
-    "Photosynthesis", "Essay", "Paragraph",
+    "Photosynthesis",
 ]
 
 
@@ -52,6 +56,8 @@ def is_hard_blocked(title: str) -> bool:
         if len(b) >= 8 and (b in k or k in b):
             return True
     if "petroleum" in k or "refiner" in k or "dangote" in k:
+        return True
+    if "jones" in k and "osmosis" in k:
         return True
     return False
 
@@ -148,7 +154,25 @@ def try_seed_topic(seen: set[str]) -> dict | None:
         return None
 
 
-def summary(title: str) -> dict:
+def _get_json(url: str, retries: int = 3) -> dict | None:
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, headers=UA, timeout=30)
+            if r.status_code == 429:
+                wait = 2.5 * (attempt + 1)
+                print("wiki 429 backoff", wait, url[-40:], file=sys.stderr)
+                time.sleep(wait)
+                continue
+            if r.status_code >= 400:
+                return None
+            return r.json()
+        except Exception as e:
+            print("get_json", e, file=sys.stderr)
+            time.sleep(1.2 * (attempt + 1))
+    return None
+
+
+def summary_wikipedia(title: str) -> dict:
     if is_hard_blocked(title) or not is_school_safe(title):
         return {}
     slug = title.replace(" ", "_")
@@ -156,29 +180,78 @@ def summary(title: str) -> dict:
         "https://simple.wikipedia.org/api/rest_v1/page/summary/",
         "https://en.wikipedia.org/api/rest_v1/page/summary/",
     ):
-        try:
-            r = requests.get(base + requests.utils.quote(slug), headers=UA, timeout=25)
-            r.raise_for_status()
-            data = r.json()
-            if data.get("type") == "disambiguation":
-                continue
-            extract = (data.get("extract") or "").strip()
-            if len(extract) < 100:
-                continue
-            got = data.get("title") or title
-            if is_hard_blocked(got) or not is_school_safe(got, extract):
-                continue
-            return {
-                "title": got,
-                "extract": extract[:650],
-                "description": data.get("description") or "",
-                "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                "bg": "classroom",
-                "trend": False,
-            }
-        except Exception:
+        data = _get_json(base + requests.utils.quote(slug), retries=3)
+        if not data:
+            time.sleep(0.4)
             continue
+        if data.get("type") == "disambiguation":
+            continue
+        extract = (data.get("extract") or "").strip()
+        if len(extract) < 80:
+            continue
+        got = data.get("title") or title
+        if is_hard_blocked(got) or not is_school_safe(got, extract):
+            continue
+        return {
+            "title": got,
+            "extract": extract[:650],
+            "description": data.get("description") or "",
+            "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+            "bg": "classroom",
+            "trend": False,
+            "extract_source": "wikipedia",
+        }
     return {}
+
+
+def summary_duckduckgo(title: str) -> dict:
+    """Fallback extract when Wikipedia is rate-limited — still grounded, not invented."""
+    if is_hard_blocked(title) or not is_school_safe(title):
+        return {}
+    try:
+        r = requests.get(
+            "https://api.duckduckgo.com/",
+            params={"q": title, "format": "json", "no_html": 1, "skip_disambig": 1},
+            headers=UA,
+            timeout=25,
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        abstract = (data.get("AbstractText") or "").strip()
+        heading = (data.get("Heading") or title).strip()
+        if len(abstract) < 80:
+            # try related first paragraph
+            for rel in data.get("RelatedTopics") or []:
+                if isinstance(rel, dict):
+                    text = (rel.get("Text") or "").strip()
+                    if len(text) >= 80 and title.lower().split()[0] in text.lower():
+                        abstract = text
+                        break
+        if len(abstract) < 80:
+            return {}
+        if is_hard_blocked(heading) or not is_school_safe(heading, abstract):
+            return {}
+        return {
+            "title": title if len(title) >= 3 else heading,
+            "extract": abstract[:650],
+            "description": (data.get("AbstractSource") or "DuckDuckGo")[:80],
+            "url": data.get("AbstractURL") or "",
+            "bg": "classroom",
+            "trend": False,
+            "extract_source": "duckduckgo",
+        }
+    except Exception as e:
+        print("ddg summary fail", title, e, file=sys.stderr)
+        return {}
+
+
+def summary(title: str) -> dict:
+    s = summary_wikipedia(title)
+    if s:
+        return s
+    time.sleep(0.5)
+    return summary_duckduckgo(title)
 
 
 def main() -> None:
@@ -209,6 +282,11 @@ def main() -> None:
             source_tag = "trend-reset"
         print("pool rebuild", source_tag, len(primary), file=sys.stderr)
 
+    # Always mix a few syllabus titles so 429 on trendy junk does not empty the pool
+    for t in SYLLABUS_POOL:
+        if t not in primary and not is_seen(seen, t) and is_school_safe(t):
+            primary.append(t)
+
     if not primary:
         print("TOPIC_FAIL: no school topics available after trends+syllabus", file=sys.stderr)
         sys.exit(1)
@@ -223,13 +301,14 @@ def main() -> None:
             if not is_school_safe(s["title"], s.get("extract") or ""):
                 continue
             s["trend"] = source_tag.startswith("trend")
-            s["topic_source"] = source_tag
+            s["topic_source"] = source_tag + "+" + (s.get("extract_source") or "wiki")
             candidates.append(s)
-        if len(candidates) >= 8:
+        if len(candidates) >= 6:
             break
+        time.sleep(0.35)
 
     if not candidates:
-        print("TOPIC_FAIL: Wikipedia returned no safe school extracts", file=sys.stderr)
+        print("TOPIC_FAIL: no safe extracts from Wikipedia or DuckDuckGo", file=sys.stderr)
         sys.exit(1)
 
     pick = random.choice(candidates)
