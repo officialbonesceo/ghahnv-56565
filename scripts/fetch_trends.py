@@ -12,11 +12,13 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "trending_topics.json"
-UA = {"User-Agent": "MikeTutorTrends/1.0 (educational; school STEM)"}
+UA = {
+    "User-Agent": "MikeTutorTrends/1.2 (educational; github.com/officialbonesceo)",
+    "Accept": "application/json",
+}
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import filter_title_list, is_school_safe  # noqa: E402
 
-# Question-style queries — not "Topic X" pasted into search
 SEARCH_SEEDS = [
     "WAEC 2025 physics scheme of work topics",
     "JAMB 2025 chemistry syllabus most tested",
@@ -30,7 +32,6 @@ SEARCH_SEEDS = [
     "osmosis diffusion exam difference secondary",
     "Newton laws of motion WAEC past questions",
     "photosynthesis exam definition and equation",
-    "essay writing structure for secondary exams",
     "electric current series parallel circuits exam",
     "kinetic energy potential energy WAEC",
 ]
@@ -70,7 +71,7 @@ NORMALIZE = {
 
 HARD_SKIP = re.compile(
     r"petroleum|refiner|dangote|mithraism|mitsubishi|porn|login|pdf download|"
-    r"actress|actor|celebrity|singer|netflix|k-pop|idol",
+    r"actress|actor|celebrity|singer|netflix|k-pop|idol|osmosis jones|records",
     re.I,
 )
 
@@ -106,7 +107,12 @@ def from_pytrends() -> list[str]:
     found: list[str] = []
     try:
         from pytrends.request import TrendReq
-        pytrends = TrendReq(hl="en-US", tz=60, retries=2, backoff_factor=1.5)
+
+        # urllib3 v2 removed method_whitelist — TrendReq may break; fail soft
+        try:
+            pytrends = TrendReq(hl="en-US", tz=60, retries=1, backoff_factor=0.5)
+        except TypeError:
+            pytrends = TrendReq(hl="en-US", tz=60)
         seeds = [
             "WAEC physics", "JAMB chemistry", "photosynthesis",
             "quadratic equation", "newton laws", "osmosis",
@@ -121,15 +127,15 @@ def from_pytrends() -> list[str]:
                     df = block.get(bucket)
                     if df is None or getattr(df, "empty", True):
                         continue
-                    for q in list(df["query"].head(6)):
+                    for q in list(df["query"].head(5)):
                         t = clean_title(str(q))
                         if t:
                             found.append(t)
-                time.sleep(1.0)
+                time.sleep(1.2)
             except Exception as e:
                 print("pytrends seed fail", seed, e, file=sys.stderr)
     except Exception as e:
-        print("pytrends fail", e, file=sys.stderr)
+        print("pytrends fail (skipped)", e, file=sys.stderr)
     return found
 
 
@@ -157,14 +163,7 @@ def from_duckduckgo() -> list[str]:
                     t = clean_title(first)
                     if t:
                         found.append(t)
-                elif isinstance(rel, list):
-                    for item in rel:
-                        if isinstance(item, dict):
-                            first = (item.get("Text") or "").split(" - ")[0]
-                            t = clean_title(first)
-                            if t:
-                                found.append(t)
-            time.sleep(0.35)
+            time.sleep(0.4)
         except Exception as e:
             print("ddg fail", q[:40], e, file=sys.stderr)
     return found
@@ -172,20 +171,25 @@ def from_duckduckgo() -> list[str]:
 
 def from_wikipedia() -> list[str]:
     found = []
-    for seed in WIKI_SEEDS:
+    # Fewer seeds + longer pause to avoid 429
+    for seed in WIKI_SEEDS[:8]:
         try:
             r = requests.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={
                     "action": "opensearch",
                     "search": seed,
-                    "limit": 8,
+                    "limit": 5,
                     "namespace": 0,
                     "format": "json",
                 },
                 headers=UA,
                 timeout=20,
             )
+            if r.status_code == 429:
+                print("wiki 429 stop early", file=sys.stderr)
+                time.sleep(3)
+                break
             r.raise_for_status()
             data = r.json()
             if isinstance(data, list) and len(data) > 1:
@@ -193,26 +197,10 @@ def from_wikipedia() -> list[str]:
                     t = clean_title(title)
                     if t:
                         found.append(t)
-            r2 = requests.get(
-                "https://en.wikipedia.org/w/api.php",
-                params={
-                    "action": "query",
-                    "list": "search",
-                    "srsearch": f"{seed} secondary school OR WAEC OR exam syllabus",
-                    "srlimit": 6,
-                    "format": "json",
-                },
-                headers=UA,
-                timeout=20,
-            )
-            if r2.status_code == 200:
-                for hit in (r2.json().get("query") or {}).get("search") or []:
-                    t = clean_title(hit.get("title") or "")
-                    if t:
-                        found.append(t)
-            time.sleep(0.25)
+            time.sleep(0.6)
         except Exception as e:
             print("wiki fail", seed, e, file=sys.stderr)
+            time.sleep(0.8)
     return found
 
 
@@ -222,9 +210,6 @@ def dedupe(titles: list[str]) -> list[str]:
         k = re.sub(r"[^a-z0-9]", "", t.lower())
         if not k or k in seen or HARD_SKIP.search(t):
             continue
-        if any(k.startswith(s[:8]) or s.startswith(k[:8]) for s in seen if len(s) >= 8 and len(k) >= 8):
-            if any(k == s or abs(len(k) - len(s)) <= 3 for s in seen):
-                continue
         seen.add(k)
         out.append(t)
     return out
@@ -236,15 +221,13 @@ def main() -> None:
     titles.extend(from_pytrends())
     titles.extend(from_duckduckgo())
     titles.extend(from_wikipedia())
+    # Always seed known syllabus so topic step has safe names even if APIs die
+    for s in WIKI_SEEDS:
+        if is_school_safe(s):
+            titles.append(s)
     titles = filter_title_list(dedupe(titles))
     cleaned = [t for t in titles if len(t.split()) <= 6]
-    titles = cleaned[:50]
-    # Minimal recovery: only known syllabus titles if discovery almost empty
-    if len(titles) < 3:
-        for s in WIKI_SEEDS:
-            if is_school_safe(s) and s not in titles:
-                titles.append(s)
-        titles = titles[:15]
+    titles = cleaned[:40]
 
     payload = {
         "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
