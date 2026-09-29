@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# School-flavoured teasers only — auto-drawn in render_teaser.py
+# School-flavoured teasers — auto-drawn in render_teaser.py
+# Outline shapes must be clear geometry (no blob silhouettes).
 BANK = [
     # --- OPTIONS (exam traps) ---
     {
@@ -59,39 +59,68 @@ BANK = [
         "question": "What is one half of one third?",
         "choices": ["A) 1/5", "B) 1/6", "C) 2/3"],
         "answer": "B",
-        "reason": "Half of one third is one sixth. Multiply: 1/2 × 1/3 = 1/6.",
+        "reason": "Half of one third is one sixth. Multiply: 1/2 times 1/3 equals 1/6.",
         "visual": {"kind": "options"},
     },
-    # --- OUTLINE match (silhouette + 3 choices) ---
+    # --- OUTLINE match (clear geometry only) ---
     {
         "format": "outline",
-        "title": "Shape match",
+        "title": "Triangle outline",
         "hook": "99 percent rush this. Look once.",
-        "question": "Which shape matches the outline?",
-        "choices": ["A", "B", "C"],
+        "question": "Which shape matches the red outline?",
+        "choices": ["A) Circle", "B) Triangle", "C) Square"],
         "answer": "B",
-        "reason": "The outline matches choice B — count the bumps carefully.",
-        "visual": {"kind": "outline", "shape": "croc", "correct_index": 1},
+        "reason": "Three sides — the outline is a triangle.",
+        "visual": {
+            "kind": "outline",
+            "shape": "triangle",
+            "correct_index": 1,
+            "choices": ["circle", "triangle", "square"],
+        },
     },
     {
         "format": "outline",
-        "title": "Egg count outline",
+        "title": "Star outline",
+        "hook": "Match the outline. Comment A B or C.",
+        "question": "Which shape matches the red outline?",
+        "choices": ["A) Square", "B) Circle", "C) Star"],
+        "answer": "C",
+        "reason": "Five points — the outline is a star.",
+        "visual": {
+            "kind": "outline",
+            "shape": "star",
+            "correct_index": 2,
+            "choices": ["square", "circle", "star"],
+        },
+    },
+    {
+        "format": "outline",
+        "title": "House outline",
+        "hook": "Simple shape. Easy to mis-click.",
+        "question": "Which shape matches the red outline?",
+        "choices": ["A) House", "B) Circle", "C) Triangle"],
+        "answer": "A",
+        "reason": "Square base plus roof — the outline is a house.",
+        "visual": {
+            "kind": "outline",
+            "shape": "house",
+            "correct_index": 0,
+            "choices": ["house", "circle", "triangle"],
+        },
+    },
+    {
+        "format": "outline",
+        "title": "Egg count",
         "hook": "Count before you comment.",
         "question": "How many eggs match the outline row?",
         "choices": ["A) 2", "B) 3", "C) 4"],
         "answer": "B",
-        "reason": "Three eggs line up with the three outline circles.",
-        "visual": {"kind": "outline", "shape": "eggs", "correct_index": 1},
-    },
-    {
-        "format": "outline",
-        "title": "Triangle outline",
-        "hook": "Simple shape. Easy to mis-click.",
-        "question": "Which option matches the red outline?",
-        "choices": ["A) Circle", "B) Triangle", "C) Square"],
-        "answer": "B",
-        "reason": "Three sides — triangle is the match.",
-        "visual": {"kind": "outline", "shape": "triangle", "correct_index": 1},
+        "reason": "Three outline eggs — answer is three.",
+        "visual": {
+            "kind": "outline",
+            "shape": "eggs",
+            "correct_index": 1,
+        },
     },
     # --- TRAFFIC / path logic ---
     {
@@ -101,7 +130,7 @@ BANK = [
         "question": "Which numbered car in reverse clears the jam?",
         "choices": ["3", "5", "7"],
         "answer": "3",
-        "reason": "Car 3 is the one that can reverse out and free the path in this layout.",
+        "reason": "Car 3 can reverse out and free the path in this layout.",
         "visual": {"kind": "traffic", "correct": 3},
     },
     {
@@ -119,7 +148,7 @@ BANK = [
         "format": "pattern",
         "title": "Missing number",
         "hook": "Pattern check. Comment the missing number.",
-        "question": "2, 4, 8, 16, ?",
+        "question": "2, 4, 8, 16, question mark.",
         "choices": ["A) 24", "B) 32", "C) 20"],
         "answer": "B",
         "reason": "Each term doubles. 16 times 2 is 32.",
@@ -132,7 +161,7 @@ BANK = [
         "question": "Which number breaks the pattern: 3, 6, 9, 15, 12?",
         "choices": ["A) 15", "B) 12", "C) 9"],
         "answer": "A",
-        "reason": "Multiples of 3 in order would go 3,6,9,12 — 15 is out of place here.",
+        "reason": "Multiples of 3 in order go 3, 6, 9, 12 — 15 is out of place.",
         "visual": {"kind": "pattern", "seq": [3, 6, 9, 15, 12]},
     },
 ]
@@ -141,7 +170,6 @@ BANK = [
 def pick() -> dict:
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     h = int(hashlib.md5(day.encode()).hexdigest(), 16)
-    # rotate by day, small random among same format bucket
     item = BANK[h % len(BANK)].copy()
     item["id"] = f"teaser-{day}-{item['format']}"
     item["picked_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
