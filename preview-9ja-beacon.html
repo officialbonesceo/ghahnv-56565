@@ -3,81 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>9JA Beacon — SVG Presenter Preview</title>
+  <title>9JA Beacon — SVG Presenter Preview v2</title>
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: system-ui, Arial, sans-serif;
-      background: #050b14;
-      color: #e8eef8;
-      line-height: 1.4;
-    }
-    header {
-      padding: 1.25rem 1.5rem;
-      border-bottom: 1px solid #1a6dff44;
-      background: #0a1628;
-    }
+    body { margin: 0; font-family: system-ui, Arial, sans-serif; background: #050b14; color: #e8eef8; line-height: 1.4; }
+    header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #1a6dff44; background: #0a1628; }
     header h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
     header p { margin: 0; opacity: 0.75; font-size: 0.95rem; }
     main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
-    section {
-      margin-bottom: 2.5rem;
-      background: #0d1524;
-      border: 1px solid #1a6dff33;
-      border-radius: 12px;
-      padding: 1.25rem;
-    }
-    section h2 {
-      margin: 0 0 0.75rem;
-      font-size: 1.05rem;
-      color: #8ab4ff;
-    }
-    .stage {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #060d18;
-      border-radius: 8px;
-      padding: 1rem;
-      overflow: auto;
-    }
-    .stage svg { max-width: 100%; height: auto; display: block; }
-    .controls {
-      margin-top: 1rem;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-    button {
-      background: #1a6dff;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 0.55rem 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button:hover { filter: brightness(1.1); }
+    section { margin-bottom: 2.5rem; background: #0d1524; border: 1px solid #1a6dff33; border-radius: 12px; padding: 1.25rem; }
+    section h2 { margin: 0 0 0.75rem; font-size: 1.05rem; color: #8ab4ff; }
+    .stage { display: flex; justify-content: center; align-items: center; background: #060d18; border-radius: 8px; padding: 1rem; overflow: auto; }
+    .controls { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    button { background: #1a6dff; color: #fff; border: none; border-radius: 8px; padding: 0.55rem 0.9rem; font-weight: 600; cursor: pointer; }
     button.secondary { background: #243044; }
     button.active { outline: 2px solid #e10600; }
     .note { font-size: 0.85rem; opacity: 0.65; margin-top: 0.75rem; }
-    .phone {
-      width: min(320px, 100%);
-      aspect-ratio: 9 / 16;
-      border: 3px solid #333;
-      border-radius: 18px;
-      overflow: hidden;
-      background: #0a1628;
-    }
+    .phone { width: min(320px, 100%); aspect-ratio: 9 / 16; border: 3px solid #333; border-radius: 18px; overflow: hidden; background: #0a1628; }
   </style>
 </head>
 <body>
   <header>
-    <h1>9JA Beacon — SVG template preview (v2)</h1>
-    <p>Slimmer build · fixed ears/hair/hands · cleaner suit</p>
+    <h1>9JA Beacon — presenter preview v2</h1>
+    <p>Slimmer torso · ears on head · finger hands · tighter hair · cleaner suit</p>
   </header>
-
   <main>
     <section>
       <h2>1. Layered anchor</h2>
@@ -93,67 +42,177 @@
               <stop offset="100%" stop-color="#b07d52"/>
             </linearGradient>
           </defs>
-
-          <!-- LEFT ARM idle -->
           <g id="arm_left">
-            <path d="M118 268 Q70 310 78 390" stroke="#1c2230" stroke-width="28" stroke-linecap="round" fill="none"/>
-            <!-- hand with fingers -->
-            <g transform="translate(78,400)">
-              <ellipse cx="0" cy="0" rx="14" ry="12" fill="#b07d52"/>
-              <rect x="-4" y="8" width="5" height="14" rx="2" fill="#b07d52"/>
-              <rect x="3" y="9" width="5" height="15" rx="2" fill="#b07d52"/>
-              <rect x="-11" y="6" width="5" height="12" rx="2" fill="#b07d52"/>
-              <rect x="10" y="5" width="5" height="11" rx="2" fill="#b07d52" transform="rotate(15)"/>
-            </g>
-          </g>
-
-          <!-- RIGHT ARM idle -->
-          <g id="arm_right">
-            <path d="M282 268 Q330 310 322 390" stroke="#1c2230" stroke-width="28" stroke-linecap="round" fill="none"/>
-            <g transform="translate(322,400)">
-              <ellipse cx="0" cy="0" rx="14" ry="12" fill="#b07d52"/>
-              <rect x="-4" y="8" width="5" height="14" rx="2" fill="#b07d52"/>
-              <rect x="3" y="9" width="5" height="15" rx="2" fill="#b07d52"/>
-              <rect x="-11" y="6" width="5" height="12" rx="2" fill="#b07d52"/>
-              <rect x="10" y="5" width="5" height="11" rx="2" fill="#b07d52" transform="rotate(-15)"/>
-            </g>
-          </g>
-
-          <!-- RIGHT ARM point -->
-          <g id="arm_right_point" opacity="0">
-            <path d="M282 260 Q350 230 365 160" stroke="#1c2230" stroke-width="26" stroke-linecap="round" fill="none"/>
-            <g transform="translate(368,148) rotate(-20)">
+            <path d="M122 275 Q78 315 85 385" stroke="#1c2230" stroke-width="26" stroke-linecap="round" fill="none"/>
+            <g transform="translate(85,395)">
               <ellipse cx="0" cy="0" rx="13" ry="11" fill="#b07d52"/>
-              <rect x="-3" y="-18" width="5" height="16" rx="2" fill="#b07d52"/>
-              <rect x="4" y="-16" width="5" height="14" rx="2" fill="#b07d52"/>
-              <rect x="-10" y="-14" width="5" height="12" rx="2" fill="#b07d52"/>
+              <rect x="-10" y="6" width="4.5" height="11" rx="2" fill="#b07d52"/>
+              <rect x="-4" y="8" width="4.5" height="13" rx="2" fill="#b07d52"/>
+              <rect x="2" y="8" width="4.5" height="12" rx="2" fill="#b07d52"/>
+              <rect x="8" y="5" width="4.5" height="10" rx="2" fill="#b07d52" transform="rotate(12)"/>
             </g>
           </g>
-
-          <!-- TORSO — slim, not balloon -->
-          <g id="torso">
-            <!-- jacket body: tapered waist -->
-            <path d="M125 250
-                     C125 250 130 245 200 242
-                     C270 245 275 250 275 250
-                     L265 400
-                     C265 400 220 415 200 415
-                     C180 415 135 400 135 400 Z"
-                  fill="url(#suitGrad)"/>
-            <!-- white shirt triangle -->
-            <path d="M188 248 L200 355 L212 248 Z" fill="#f2f3f6"/>
-            <!-- collar points -->
-            <path d="M188 248 L175 268 L200 258 Z" fill="#fff"/>
-            <path d="M212 248 L225 268 L200 258 Z" fill="#eee"/>
-            <!-- red tie — narrow -->
-            <path d="M200 255 L194 300 L200 375 L206 300 Z" fill="#e10600"/>
-            <path d="M200 255 L195 268 L200 272 L205 268 Z" fill="#c40500"/>
-            <!-- lapels slim -->
-            <path d="M130 255 L188 248 L182 360 L138 350 Z" fill="#181c28" opacity="0.95"/>
-            <path d="M270 255 L212 248 L218 360 L262 350 Z" fill="#181c28" opacity="0.95"/>
-            <!-- pocket hint -->
-            <rect x="230" y="310" width="28" height="22" rx="2" fill="none" stroke="#2a3142" stroke-width="1.5"/>
+          <g id="arm_right">
+            <path d="M278 275 Q322 315 315 385" stroke="#1c2230" stroke-width="26" stroke-linecap="round" fill="none"/>
+            <g transform="translate(315,395)">
+              <ellipse cx="0" cy="0" rx="13" ry="11" fill="#b07d52"/>
+              <rect x="-10" y="6" width="4.5" height="11" rx="2" fill="#b07d52"/>
+              <rect x="-4" y="8" width="4.5" height="13" rx="2" fill="#b07d52"/>
+              <rect x="2" y="8" width="4.5" height="12" rx="2" fill="#b07d52"/>
+              <rect x="8" y="5" width="4.5" height="10" rx="2" fill="#b07d52" transform="rotate(-12)"/>
+            </g>
           </g>
-
-          <!-- NECK -->
-          <rect x=
+          <g id="arm_right_point" opacity="0">
+            <path d="M278 268 Q340 240 355 175" stroke="#1c2230" stroke-width="24" stroke-linecap="round" fill="none"/>
+            <g transform="translate(358,162) rotate(-25)">
+              <ellipse cx="0" cy="0" rx="12" ry="10" fill="#b07d52"/>
+              <rect x="-3" y="-16" width="4.5" height="14" rx="2" fill="#b07d52"/>
+              <rect x="3" y="-14" width="4.5" height="12" rx="2" fill="#b07d52"/>
+              <rect x="-9" y="-12" width="4.5" height="11" rx="2" fill="#b07d52"/>
+            </g>
+          </g>
+          <g id="torso">
+            <path d="M130 255 C145 248 175 245 200 244 C225 245 255 248 270 255 L258 395 C250 408 220 418 200 418 C180 418 150 408 142 395 Z" fill="url(#suitGrad)"/>
+            <path d="M190 250 L200 348 L210 250 Z" fill="#f2f3f6"/>
+            <path d="M190 250 L178 268 L200 258 Z" fill="#fff"/>
+            <path d="M210 250 L222 268 L200 258 Z" fill="#eceef2"/>
+            <path d="M200 256 L195 298 L200 365 L205 298 Z" fill="#e10600"/>
+            <path d="M200 256 L196 268 L200 271 L204 268 Z" fill="#c40500"/>
+            <path d="M135 258 L190 250 L185 355 L145 345 Z" fill="#181c28"/>
+            <path d="M265 258 L210 250 L215 355 L255 345 Z" fill="#181c28"/>
+            <rect x="228" y="305" width="26" height="20" rx="2" fill="none" stroke="#2a3142" stroke-width="1.5"/>
+          </g>
+          <rect x="185" y="208" width="30" height="42" rx="6" fill="#b07d52"/>
+          <g id="head">
+            <ellipse cx="200" cy="128" rx="58" ry="62" fill="#1a120e"/>
+            <ellipse cx="200" cy="138" rx="52" ry="58" fill="url(#skinGrad)"/>
+            <path d="M148 125 C150 88 175 78 200 76 C225 78 250 88 252 125 C245 108 225 100 200 99 C175 100 155 108 148 125 Z" fill="#1a120e"/>
+            <path d="M148 130 C145 145 148 160 152 168 L158 155 C154 145 152 135 148 130 Z" fill="#1a120e"/>
+            <path d="M252 130 C255 145 252 160 248 168 L242 155 C246 145 248 135 252 130 Z" fill="#1a120e"/>
+            <ellipse cx="148" cy="142" rx="9" ry="14" fill="#b07d52"/>
+            <ellipse cx="148" cy="142" rx="5" ry="8" fill="#c9956c"/>
+            <ellipse cx="252" cy="142" rx="9" ry="14" fill="#b07d52"/>
+            <ellipse cx="252" cy="142" rx="5" ry="8" fill="#c9956c"/>
+            <ellipse cx="180" cy="135" rx="11" ry="13" fill="#fff"/>
+            <ellipse cx="220" cy="135" rx="11" ry="13" fill="#fff"/>
+            <ellipse cx="181" cy="137" rx="5.5" ry="6.5" fill="#2a1810"/>
+            <ellipse cx="221" cy="137" rx="5.5" ry="6.5" fill="#2a1810"/>
+            <circle cx="183" cy="134" r="2" fill="#fff"/>
+            <circle cx="223" cy="134" r="2" fill="#fff"/>
+            <path d="M168 120 Q180 115 192 120" stroke="#1a120e" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+            <path d="M208 120 Q220 115 232 120" stroke="#1a120e" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+            <path d="M200 140 L196 158 Q200 161 204 158 Z" fill="#a07050"/>
+          </g>
+          <g id="mouth_closed">
+            <path d="M185 172 Q200 180 215 172" stroke="#5c3028" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+          </g>
+          <g id="mouth_smile" opacity="0">
+            <path d="M182 170 Q200 186 218 170" stroke="#5c3028" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </g>
+          <g id="mouth_open" opacity="0">
+            <ellipse cx="200" cy="178" rx="12" ry="11" fill="#6b2030"/>
+            <ellipse cx="200" cy="172" rx="9" ry="4" fill="#f0e8e0"/>
+          </g>
+          <g id="mouth_wide" opacity="0">
+            <ellipse cx="200" cy="180" rx="15" ry="14" fill="#6b2030"/>
+            <ellipse cx="200" cy="172" rx="11" ry="5" fill="#f0e8e0"/>
+          </g>
+        </svg>
+      </div>
+      <div class="controls">
+        <button type="button" data-mouth="closed" class="active">Mouth closed</button>
+        <button type="button" data-mouth="smile">Smile</button>
+        <button type="button" data-mouth="open">Open</button>
+        <button type="button" data-mouth="wide">Wide</button>
+        <button type="button" id="btn-point" class="secondary">Toggle point arm</button>
+        <button type="button" id="btn-talk" class="secondary">Demo talk</button>
+      </div>
+      <p class="note">v2: less tummy, ears on head, finger hands, hair attached, tighter suit</p>
+    </section>
+    <section>
+      <h2>2. Lower third</h2>
+      <div class="stage">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 200" width="100%" style="max-width:900px">
+          <rect x="40" y="40" width="220" height="44" rx="4" fill="#e10600"/>
+          <text x="150" y="70" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="22" font-weight="700" fill="#fff">BREAKING NEWS</text>
+          <rect x="40" y="90" width="1000" height="56" rx="4" fill="#f4f6fa"/>
+          <rect x="40" y="90" width="8" height="56" fill="#1a6dff"/>
+          <text x="60" y="128" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0a1628">MAJOR DEVELOPMENTS ACROSS NIGERIA</text>
+          <text x="60" y="175" font-family="Arial, sans-serif" font-size="16" fill="#c8d0dc">Stay informed · Real news · Real time</text>
+        </svg>
+      </div>
+    </section>
+    <section>
+      <h2>3. Vertical 9:16 mock</h2>
+      <div class="stage">
+        <div class="phone">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="100%" height="100%">
+            <defs>
+              <linearGradient id="vwall" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#0a1628"/>
+                <stop offset="100%" stop-color="#122040"/>
+              </linearGradient>
+            </defs>
+            <rect width="1080" height="1920" fill="url(#vwall)"/>
+            <rect x="820" y="40" width="220" height="56" rx="6" fill="#0a1628" stroke="#1a6dff" stroke-width="2"/>
+            <text x="900" y="62" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="16" fill="#fff">9JA</text>
+            <rect x="930" y="48" width="95" height="20" rx="3" fill="#e10600"/>
+            <text x="977" y="63" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">BEACON</text>
+            <circle cx="940" cy="82" r="4" fill="#e10600"/>
+            <text x="980" y="86" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">LIVE</text>
+            <g transform="translate(340,380) scale(1.05)">
+              <path d="M130 255 C145 248 175 245 200 244 C225 245 255 248 270 255 L258 395 C250 408 220 418 200 418 C180 418 150 408 142 395 Z" fill="#222836"/>
+              <path d="M190 250 L200 348 L210 250 Z" fill="#f2f3f6"/>
+              <path d="M200 256 L195 298 L200 365 L205 298 Z" fill="#e10600"/>
+              <ellipse cx="200" cy="138" rx="52" ry="58" fill="#d4a574"/>
+              <path d="M148 125 C150 88 175 78 200 76 C225 78 250 88 252 125 C245 108 225 100 200 99 C175 100 155 108 148 125 Z" fill="#1a120e"/>
+              <ellipse cx="148" cy="142" rx="9" ry="14" fill="#b07d52"/>
+              <ellipse cx="252" cy="142" rx="9" ry="14" fill="#b07d52"/>
+              <ellipse cx="180" cy="135" rx="11" ry="13" fill="#fff"/>
+              <ellipse cx="220" cy="135" rx="11" ry="13" fill="#fff"/>
+              <ellipse cx="181" cy="137" rx="5.5" ry="6.5" fill="#2a1810"/>
+              <ellipse cx="221" cy="137" rx="5.5" ry="6.5" fill="#2a1810"/>
+              <path d="M185 172 Q200 180 215 172" stroke="#5c3028" stroke-width="2.8" fill="none"/>
+            </g>
+            <rect x="40" y="1450" width="200" height="40" rx="4" fill="#e10600"/>
+            <text x="140" y="1478" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="18" fill="#fff">BREAKING NEWS</text>
+            <rect x="40" y="1500" width="1000" height="70" rx="4" fill="#f4f6fa"/>
+            <rect x="40" y="1500" width="8" height="70" fill="#1a6dff"/>
+            <text x="60" y="1545" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#0a1628">NIGERIA ANNOUNCES NEW POLICY</text>
+            <text x="60" y="1610" font-family="Arial, sans-serif" font-size="18" fill="#a0a8b8">What it means for you</text>
+          </svg>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const mouths = ["mouth_closed", "mouth_smile", "mouth_open", "mouth_wide"];
+    function setMouth(name) {
+      mouths.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute("opacity", id === "mouth_" + name ? "1" : "0");
+      });
+      document.querySelectorAll("[data-mouth]").forEach(b => {
+        b.classList.toggle("active", b.getAttribute("data-mouth") === name);
+      });
+    }
+    document.querySelectorAll("[data-mouth]").forEach(btn => {
+      btn.addEventListener("click", () => setMouth(btn.getAttribute("data-mouth")));
+    });
+    document.getElementById("btn-point").addEventListener("click", () => {
+      const idle = document.getElementById("arm_right");
+      const point = document.getElementById("arm_right_point");
+      const on = point.getAttribute("opacity") !== "1";
+      point.setAttribute("opacity", on ? "1" : "0");
+      idle.setAttribute("opacity", on ? "0" : "1");
+    });
+    let talkTimer = null;
+    document.getElementById("btn-talk").addEventListener("click", () => {
+      if (talkTimer) { clearInterval(talkTimer); talkTimer = null; setMouth("closed"); return; }
+      const seq = ["open", "closed", "wide", "closed", "open", "smile", "closed"];
+      let i = 0;
+      talkTimer = setInterval(() => { setMouth(seq[i % seq.length]); i++; }, 120);
+    });
+  </script>
+</body>
+</html>
