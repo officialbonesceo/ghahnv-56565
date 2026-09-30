@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>9JA Beacon — SVG Presenter Preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, Arial, sans-serif;
+      background: #050b14;
+      color: #e8eef8;
+      line-height: 1.4;
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #1a6dff44;
+      background: #0a1628;
+    }
+    header h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
+    header p { margin: 0; opacity: 0.75; font-size: 0.95rem; }
+    main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+    section {
+      margin-bottom: 2.5rem;
+      background: #0d1524;
+      border: 1px solid #1a6dff33;
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    section h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.05rem;
+      color: #8ab4ff;
+    }
+    .stage {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #060d18;
+      border-radius: 8px;
+      padding: 1rem;
+      overflow: auto;
+    }
+    .stage svg { max-width: 100%; height: auto; display: block; }
+    .controls {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    button {
+      background: #1a6dff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.secondary { background: #243044; }
+    button.active { outline: 2px solid #e10600; }
+    .note { font-size: 0.85rem; opacity: 0.65; margin-top: 0.75rem; }
+    .phone {
+      width: min(320px, 100%);
+      aspect-ratio: 9 / 16;
+      border: 3px solid #333;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #0a1628;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>9JA Beacon — SVG template preview</h1>
+    <p>Open in browser · toggle mouth / arm · not a GitHub Action</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. Layered anchor (lip-sync + gesture)</h2>
+      <div class="stage">
+        <svg id="anchor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 520" width="280" height="364">
+          <defs>
+            <linearGradient id="suitGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#1a1f2e"/>
+              <stop offset="100%" stop-color="#0d111a"/>
+            </linearGradient>
+            <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#c9956c"/>
+              <stop offset="100%" stop-color="#a6744f"/>
+            </linearGradient>
+          </defs>
+          <g id="torso">
+            <path d="M70 260 Q200 220 330 260 L310 420 Q200 450 90 420 Z" fill="url(#suitGrad)"/>
+            <path d="M185 255 L200 360 L215 255 Z" fill="#f5f5f7"/>
+            <path d="M200 258 L188 320 L200 400 L212 320 Z" fill="#e10600"/>
+            <path d="M200 258 L192 275 L200 280 L208 275 Z" fill="#c40500"/>
+            <path d="M120 265 L185 255 L175 400 L100 390 Z" fill="#151a28" opacity="0.9"/>
+            <path d="M280 265 L215 255 L225 400 L300 390 Z" fill="#151a28" opacity="0.9"/>
+          </g>
+          <g id="arm_left">
+            <path d="M95 280 Q40 320 55 400" stroke="#1a1f2e" stroke-width="42" stroke-linecap="round" fill="none"/>
+            <ellipse cx="55" cy="410" rx="22" ry="18" fill="#a6744f"/>
+          </g>
+          <g id="arm_right">
+            <path d="M305 280 Q360 320 345 400" stroke="#1a1f2e" stroke-width="42" stroke-linecap="round" fill="none"/>
+            <ellipse cx="345" cy="410" rx="22" ry="18" fill="#a6744f"/>
+          </g>
+          <g id="arm_right_point" opacity="0">
+            <path d="M305 275 Q380 250 390 180" stroke="#1a1f2e" stroke-width="40" stroke-linecap="round" fill="none"/>
+            <ellipse cx="392" cy="168" rx="20" ry="16" fill="#a6744f"/>
+          </g>
+          <rect x="178" y="200" width="44" height="50" rx="8" fill="#a6744f"/>
+          <g id="head">
+            <ellipse cx="200" cy="120" rx="78" ry="70" fill="#1a120e"/>
+            <ellipse cx="200" cy="135" rx="68" ry="72" fill="url(#skinGrad)"/>
+            <path d="M130 120 Q140 70 200 65 Q260 70 270 120 Q250 95 200 90 Q150 95 130 120 Z" fill="#1a120e"/>
+            <ellipse cx="130" cy="140" rx="12" ry="18" fill="#a6744f"/>
+            <ellipse cx="270" cy="140" rx="12" ry="18" fill="#a6744f"/>
+            <g id="eyes_open">
+              <ellipse cx="175" cy="130" rx="14" ry="16" fill="#fff"/>
+              <ellipse cx="225" cy="130" rx="14" ry="16" fill="#fff"/>
+              <ellipse cx="177" cy="132" rx="7" ry="8" fill="#2a1810"/>
+              <ellipse cx="227" cy="132" rx="7" ry="8" fill="#2a1810"/>
+              <circle cx="179" cy="129" r="2.5" fill="#fff"/>
+              <circle cx="229" cy="129" r="2.5" fill="#fff"/>
+            </g>
+            <path d="M158 112 Q175 105 190 112" stroke="#1a120e" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <path d="M210 112 Q225 105 242 112" stroke="#1a120e" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <path d="M200 138 L195 158 Q200 162 205 158 Z" fill="#956348"/>
+          </g>
+          <g id="mouth_closed">
+            <path d="M180 175 Q200 185 220 175" stroke="#5c3028" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </g>
+          <g id="mouth_smile" opacity="0">
+            <path d="M175 172 Q200 192 225 172" stroke="#5c3028" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          </g>
+          <g id="mouth_open" opacity="0">
+            <ellipse cx="200" cy="180" rx="16" ry="14" fill="#6b2030"/>
+            <ellipse cx="200" cy="174" rx="12" ry="5" fill="#f0e8e0"/>
+          </g>
+          <g id="mouth_wide" opacity="0">
+            <ellipse cx="200" cy="182" rx="20" ry="18" fill="#6b2030"/>
+            <ellipse cx="200" cy="174" rx="14" ry="6" fill="#f0e8e0"/>
+          </g>
+        </svg>
+      </div>
+      <div class="controls">
+        <button type="button" data-mouth="closed" class="active">Mouth closed</button>
+        <button type="button" data-mouth="smile">Smile</button>
+        <button type="button" data-mouth="open">Open</button>
+        <button type="button" data-mouth="wide">Wide</button>
+        <button type="button" id="btn-point" class="secondary">Toggle point arm</button>
+        <button type="button" id="btn-talk" class="secondary">Demo talk</button>
+      </div>
+      <p class="note">Toggle mouth for lip-sync idea · point arm for gesture</p>
+    </section>
+
+    <section>
+      <h2>2. Lower third</h2>
+      <div class="stage">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 200" width="100%" style="max-width:900px">
+          <rect x="40" y="40" width="220" height="44" rx="4" fill="#e10600"/>
+          <text x="150" y="70" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="22" font-weight="700" fill="#fff">BREAKING NEWS</text>
+          <rect x="40" y="90" width="1000" height="56" rx="4" fill="#f4f6fa"/>
+          <rect x="40" y="90" width="8" height="56" fill="#1a6dff"/>
+          <text x="60" y="128" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0a1628">MAJOR DEVELOPMENTS ACROSS NIGERIA</text>
+          <text x="60" y="175" font-family="Arial, sans-serif" font-size="16" fill="#c8d0dc">Stay informed · Real news · Real time</text>
+        </svg>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. LIVE badge + intro</h2>
+      <div class="stage" style="gap:2rem;flex-wrap:wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 56" width="200" height="56">
+          <rect x="0" y="0" width="200" height="56" rx="6" fill="#0a1628" stroke="#1a6dff" stroke-width="2"/>
+          <text x="70" y="28" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="18" fill="#fff">9JA</text>
+          <rect x="95" y="10" width="90" height="22" rx="3" fill="#e10600"/>
+          <text x="140" y="26" text-anchor="middle" font-family="Arial" font-size="12" font-weight="700" fill="#fff">BEACON</text>
+          <circle cx="108" cy="42" r="5" fill="#e10600"/>
+          <text x="145" y="46" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">LIVE</text>
+        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 280" width="320" height="224">
+          <rect width="400" height="280" fill="#050b14"/>
+          <circle cx="200" cy="120" r="70" fill="none" stroke="#1a6dff" stroke-width="2" opacity="0.5"/>
+          <text x="155" y="130" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="28" fill="#fff">9JA</text>
+          <rect x="175" y="108" width="90" height="28" rx="4" fill="#e10600"/>
+          <text x="220" y="128" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="14" fill="#fff">BEACON</text>
+          <text x="200" y="200" text-anchor="middle" font-family="Arial" font-size="11" fill="#8ab4ff">REAL NEWS · REAL TIME · FOR YOU</text>
+        </svg>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Vertical 9:16 Shorts mock</h2>
+      <div class="stage">
+        <div class="phone">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="100%" height="100%">
+            <defs>
+              <linearGradient id="vwall" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#0a1628"/>
+                <stop offset="100%" stop-color="#122040"/>
+              </linearGradient>
+            </defs>
+            <rect width="1080" height="1920" fill="url(#vwall)"/>
+            <rect x="820" y="40" width="220" height="56" rx="6" fill="#0a1628" stroke="#1a6dff" stroke-width="2"/>
+            <text x="900" y="62" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="16" fill="#fff">9JA</text>
+            <rect x="930" y="48" width="95" height="20" rx="3" fill="#e10600"/>
+            <text x="977" y="63" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">BEACON</text>
+            <circle cx="940" cy="82" r="4" fill="#e10600"/>
+            <text x="980" y="86" text-anchor="middle" font-family="Arial" font-size="11" font-weight="700" fill="#fff">LIVE</text>
+            <g transform="translate(340,420) scale(1.05)">
+              <path d="M70 260 Q200 220 330 260 L310 420 Q200 450 90 420 Z" fill="#1a1f2e"/>
+              <path d="M185 255 L200 360 L215 255 Z" fill="#f5f5f7"/>
+              <path d="M200 258 L188 320 L200 400 L212 320 Z" fill="#e10600"/>
+              <ellipse cx="200" cy="135" rx="68" ry="72" fill="#c9956c"/>
+              <ellipse cx="200" cy="120" rx="78" ry="70" fill="#1a120e"/>
+              <path d="M130 120 Q140 70 200 65 Q260 70 270 120 Q250 95 200 90 Q150 95 130 120 Z" fill="#1a120e"/>
+              <ellipse cx="175" cy="130" rx="14" ry="16" fill="#fff"/>
+              <ellipse cx="225" cy="130" rx="14" ry="16" fill="#fff"/>
+              <ellipse cx="177" cy="132" rx="7" ry="8" fill="#2a1810"/>
+              <ellipse cx="227" cy="132" rx="7" ry="8" fill="#2a1810"/>
+              <path d="M180 175 Q200 185 220 175" stroke="#5c3028" stroke-width="3" fill="none"/>
+            </g>
+            <rect x="40" y="1450" width="200" height="40" rx="4" fill="#e10600"/>
+            <text x="140" y="1478" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="18" fill="#fff">BREAKING NEWS</text>
+            <rect x="40" y="1500" width="1000" height="70" rx="4" fill="#f4f6fa"/>
+            <rect x="40" y="1500" width="8" height="70" fill="#1a6dff"/>
+            <text x="60" y="1545" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#0a1628">NIGERIA ANNOUNCES NEW POLICY</text>
+            <text x="60" y="1610" font-family="Arial, sans-serif" font-size="18" fill="#a0a8b8">What it means for you</text>
+          </svg>
+        </div>
+      </div>
+      <p class="note">Phone-shaped 9:16 mock</p>
+    </section>
+  </main>
+
+  <script>
+    const mouths = ["mouth_closed", "mouth_smile", "mouth_open", "mouth_wide"];
+    function setMouth(name) {
+      mouths.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute("opacity", id === "mouth_" + name ? "1" : "0");
+      });
+      document.querySelectorAll("[data-mouth]").forEach(b => {
+        b.classList.toggle("active", b.getAttribute("data-mouth") === name);
+      });
+    }
+    document.querySelectorAll("[data-mouth]").forEach(btn => {
+      btn.addEventListener("click", () => setMouth(btn.getAttribute("data-mouth")));
+    });
+    document.getElementById("btn-point").addEventListener("click", () => {
+      const idle = document.getElementById("arm_right");
+      const point = document.getElementById("arm_right_point");
+      const on = point.getAttribute("opacity") !== "1";
+      point.setAttribute("opacity", on ? "1" : "0");
+      idle.setAttribute("opacity", on ? "0" : "1");
+    });
+    let talkTimer = null;
+    document.getElementById("btn-talk").addEventListener("click", () => {
+      if (talkTimer) { clearInterval(talkTimer); talkTimer = null; setMouth("closed"); return; }
+      const seq = ["open", "closed", "wide", "closed", "open", "smile", "closed"];
+      let i = 0;
+      talkTimer = setInterval(() => {
+        setMouth(seq[i % seq.length]);
+        i++;
+      }, 120);
+    });
+  </script>
+</body>
+</html>
