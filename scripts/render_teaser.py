@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render Q&A teaser with visible 5-second countdown."""
+"""Render multi-question language teaser from timeline (ask → 5s → reveal)."""
 from __future__ import annotations
 
 import argparse
@@ -15,11 +15,13 @@ from PIL import Image, ImageDraw, ImageFont
 W, H = 1080, 1920
 FPS = 24
 WHITE = (255, 255, 255)
-BLACK = (12, 14, 20)
-ACCENT = (255, 200, 40)
-CARD = (24, 28, 40)
-GREEN = (40, 130, 75)
-COUNTDOWN_SECS = 5
+BLACK = (15, 18, 28)
+YELLOW = (255, 210, 50)
+CARD = (28, 34, 52)
+GREEN = (36, 140, 85)
+RED = (220, 60, 70)
+SOFT = (160, 170, 190)
+BG = (14, 18, 32)
 
 
 def font(size: int):
@@ -48,110 +50,181 @@ def wrap(d, text, tf, max_w):
     return lines
 
 
-def draw_countdown(d, remaining: int):
-    """Big circle + number at lower third."""
-    n = max(0, min(COUNTDOWN_SECS, int(remaining)))
-    cx, cy, r = W // 2, H - 320, 110
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=ACCENT, width=10)
-    d.ellipse([cx - r + 16, cy - r + 16, cx + r - 16, cy + r - 16], fill=CARD)
-    tf = font(120)
-    s = str(n) if n > 0 else "!"
-    bb = d.textbbox((0, 0), s, font=tf)
-    d.text((cx - (bb[2] - bb[0]) // 2, cy - (bb[3] - bb[1]) // 2 - 10), s, font=tf, fill=ACCENT)
-    lf = font(28)
-    label = "seconds left" if n > 0 else "time up"
-    bb2 = d.textbbox((0, 0), label, font=lf)
-    d.text((cx - (bb2[2] - bb2[0]) // 2, cy + r + 16), label, font=lf, fill=(180, 185, 195))
+def q_by_index(job: dict, qi: int | None) -> dict | None:
+    if not qi:
+        return None
+    for q in job.get("questions") or []:
+        if q.get("index") == qi:
+            return q
+    return None
 
 
-def draw_ask(item: dict, remaining: int) -> Image.Image:
-    img = Image.new("RGB", (W, H), (18, 20, 30))
+def draw_intro() -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, 90], fill=ACCENT)
-    tf = font(36)
-    label = "Comment your answer"
+    d.rectangle([0, 0, W, 120], fill=YELLOW)
+    t = font(48)
+    s = "ENGLISH QUIZ"
+    bb = d.textbbox((0, 0), s, font=t)
+    d.text(((W - (bb[2] - bb[0])) // 2, 36), s, font=t, fill=BLACK)
+    sub = font(40)
+    msg = "Easy questions · Comment A B or C"
+    bb = d.textbbox((0, 0), msg, font=sub)
+    d.text(((W - (bb[2] - bb[0])) // 2, 900), msg, font=sub, fill=WHITE)
+    tip = font(32)
+    m2 = "Get ready!"
+    bb = d.textbbox((0, 0), m2, font=tip)
+    d.text(((W - (bb[2] - bb[0])) // 2, 1000), m2, font=tip, fill=YELLOW)
+    return img
+
+
+def draw_outro(job: dict) -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 120], fill=GREEN)
+    t = font(44)
+    s = "HOW MANY DID YOU GET?"
+    bb = d.textbbox((0, 0), s, font=t)
+    d.text(((W - (bb[2] - bb[0])) // 2, 38), s, font=t, fill=WHITE)
+    y = 400
+    for q in job.get("questions") or []:
+        line = f"Q{q['index']}: {q['answer']}"
+        tf = font(48)
+        bb = d.textbbox((0, 0), line, font=tf)
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=YELLOW)
+        y += 90
+    cta = font(34)
+    msg = "Comment your score · Follow for more"
+    bb = d.textbbox((0, 0), msg, font=cta)
+    d.text(((W - (bb[2] - bb[0])) // 2, H - 200), msg, font=cta, fill=SOFT)
+    return img
+
+
+def draw_ask(q: dict, remaining: int | None = None) -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 100], fill=YELLOW)
+    label = f"Question {q.get('index', '')}"
+    tf = font(40)
     bb = d.textbbox((0, 0), label, font=tf)
     d.text(((W - (bb[2] - bb[0])) // 2, 28), label, font=tf, fill=BLACK)
 
-    title = item.get("title") or "Quiz"
-    ttf = font(32)
-    bb = d.textbbox((0, 0), title, font=ttf)
-    d.text(((W - (bb[2] - bb[0])) // 2, 110), title, font=ttf, fill=ACCENT)
-
-    qf = font(42)
-    y = 180
-    for line in wrap(d, item.get("question") or "", qf, W - 100)[:5]:
+    qf = font(44)
+    y = 160
+    for line in wrap(d, q.get("question") or "", qf, W - 100)[:5]:
         bb = d.textbbox((0, 0), line, font=qf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=WHITE)
-        y += qf.size + 14
+        y += 58
 
-    choices = item.get("choices") or []
-    box_h = 100
-    start_y = min(y + 40, 520)
-    for i, ch in enumerate(choices[:3]):
-        top = start_y + i * (box_h + 28)
-        d.rounded_rectangle([70, top, W - 70, top + box_h], 22, fill=CARD, outline=(70, 75, 90), width=3)
-        cf = font(40)
+    start_y = max(y + 40, 480)
+    for i, ch in enumerate((q.get("choices") or [])[:3]):
+        top = start_y + i * 130
+        d.rounded_rectangle([60, top, W - 60, top + 110], 24, fill=CARD, outline=(60, 70, 95), width=3)
+        cf = font(42)
         bb = d.textbbox((0, 0), ch, font=cf)
-        d.text(((W - (bb[2] - bb[0])) // 2, top + 28), ch, font=cf, fill=WHITE)
+        d.text(((W - (bb[2] - bb[0])) // 2, top + 32), ch, font=cf, fill=WHITE)
 
-    draw_countdown(d, remaining)
+    if remaining is not None:
+        n = max(0, int(remaining))
+        cx, cy, r = W // 2, H - 280, 100
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=YELLOW, width=10)
+        d.ellipse([cx - r + 14, cy - r + 14, cx + r - 14, cy + r - 14], fill=CARD)
+        nf = font(110)
+        s = str(n) if n > 0 else "!"
+        bb = d.textbbox((0, 0), s, font=nf)
+        d.text((cx - (bb[2] - bb[0]) // 2, cy - (bb[3] - bb[1]) // 2 - 8), s, font=nf, fill=YELLOW)
+        lf = font(28)
+        lab = "seconds left — comment now" if n > 0 else "time up"
+        bb = d.textbbox((0, 0), lab, font=lf)
+        d.text((cx - (bb[2] - bb[0]) // 2, cy + r + 18), lab, font=lf, fill=SOFT)
+    else:
+        tip = font(32)
+        msg = "Get ready to comment…"
+        bb = d.textbbox((0, 0), msg, font=tip)
+        d.text(((W - (bb[2] - bb[0])) // 2, H - 180), msg, font=tip, fill=YELLOW)
     return img
 
 
-def draw_reveal(item: dict) -> Image.Image:
-    img = Image.new("RGB", (W, H), (18, 20, 30))
+def draw_reveal(q: dict) -> Image.Image:
+    img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, 90], fill=GREEN)
-    tf = font(36)
-    label = "Answer"
+    d.rectangle([0, 0, W, 100], fill=GREEN)
+    tf = font(40)
+    label = f"Answer · Question {q.get('index', '')}"
     bb = d.textbbox((0, 0), label, font=tf)
     d.text(((W - (bb[2] - bb[0])) // 2, 28), label, font=tf, fill=WHITE)
 
-    ans = str(item.get("answer") or "").upper()
-    choices = item.get("choices") or []
+    ans = str(q.get("answer") or "").upper()
+    y = 160
     qf = font(36)
-    y = 140
-    for line in wrap(d, item.get("question") or "", qf, W - 100)[:3]:
+    for line in wrap(d, q.get("question") or "", qf, W - 100)[:3]:
         bb = d.textbbox((0, 0), line, font=qf)
-        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=(180, 185, 195))
-        y += qf.size + 10
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=SOFT)
+        y += 48
 
-    box_h = 100
-    start_y = y + 30
-    for i, ch in enumerate(choices[:3]):
-        top = start_y + i * (box_h + 28)
+    start_y = y + 36
+    for i, ch in enumerate((q.get("choices") or [])[:3]):
+        top = start_y + i * 130
         letter = ch.strip()[0].upper() if ch else "?"
         hit = letter == ans or ch.upper().startswith(ans)
         fill = GREEN if hit else CARD
-        outline = ACCENT if hit else (70, 75, 90)
-        d.rounded_rectangle([70, top, W - 70, top + box_h], 22, fill=fill, outline=outline, width=4)
-        cf = font(40)
+        outline = YELLOW if hit else (50, 58, 78)
+        d.rounded_rectangle([60, top, W - 60, top + 110], 24, fill=fill, outline=outline, width=4)
+        cf = font(42)
         bb = d.textbbox((0, 0), ch, font=cf)
-        d.text(((W - (bb[2] - bb[0])) // 2, top + 28), ch, font=cf, fill=WHITE)
+        d.text(((W - (bb[2] - bb[0])) // 2, top + 32), ch, font=cf, fill=WHITE)
 
-    rf = font(34)
-    reason = (item.get("reason") or "")[:120]
-    y = start_y + 3 * (box_h + 28) + 40
-    for line in wrap(d, reason, rf, W - 100)[:4]:
+    rf = font(36)
+    reason = (q.get("reason") or "")[:100]
+    y = start_y + 3 * 130 + 30
+    for line in wrap(d, reason, rf, W - 100)[:3]:
         bb = d.textbbox((0, 0), line, font=rf)
-        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=rf, fill=ACCENT)
-        y += rf.size + 10
-
-    cta = font(30)
-    msg = "Comment the next topic · Follow for more"
-    bb = d.textbbox((0, 0), msg, font=cta)
-    d.text(((W - (bb[2] - bb[0])) // 2, H - 120), msg, font=cta, fill=(200, 205, 210))
+        d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=rf, fill=YELLOW)
+        y += 48
     return img
+
+
+def frame_at(job: dict, timeline: list, t: float) -> Image.Image:
+    # find segment
+    seg = timeline[-1]
+    for s in timeline:
+        if s["start"] <= t < s["end"] or (s is timeline[-1] and t >= s["start"]):
+            if t < s["end"] or s is timeline[-1]:
+                seg = s
+                if t < s["end"]:
+                    break
+    phase = seg.get("phase")
+    qi = seg.get("q")
+    q = q_by_index(job, qi)
+
+    if phase == "intro":
+        return draw_intro()
+    if phase == "outro":
+        return draw_outro(job)
+    if phase == "countdown" and q:
+        remaining = max(0, math.ceil(seg["end"] - t))
+        return draw_ask(q, remaining=remaining)
+    if phase == "ask" and q:
+        return draw_ask(q, remaining=None)
+    if phase == "reveal" and q:
+        return draw_reveal(q)
+    return draw_intro()
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--job", default="teaser_job.json")
+    p.add_argument("--timeline", default="teaser_timeline.json")
     p.add_argument("--audio", required=True)
     p.add_argument("--out", default="output.mp4")
     args = p.parse_args()
-    item = json.loads(Path(args.job).read_text(encoding="utf-8"))
+
+    job = json.loads(Path(args.job).read_text(encoding="utf-8"))
+    tl_path = Path(args.timeline)
+    if not tl_path.exists():
+        sys.exit("missing teaser_timeline.json — run assemble_teaser_audio.py first")
+    tl = json.loads(tl_path.read_text(encoding="utf-8"))
+    timeline = tl["timeline"]
     audio = Path(args.audio)
     if not audio.exists():
         sys.exit("missing audio")
@@ -171,27 +244,13 @@ def main():
             text=True,
         ).strip()
     )
-    dur = min(max(dur, 10.0), 40.0)
-
-    # Fixed: first 5s = countdown ask (or until 55% of audio if shorter)
-    ask_end = min(float(COUNTDOWN_SECS), dur * 0.55)
-    # If audio is longer, keep showing last second of countdown until ask_end from proportion
-    # Prefer hard 5s ask window when audio allows
-    if dur >= COUNTDOWN_SECS + 4:
-        ask_end = float(COUNTDOWN_SECS)
-
     n = max(FPS, int(math.ceil(dur * FPS)))
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for i in range(n):
             t = i / float(FPS)
-            if t < ask_end:
-                remaining = max(0, math.ceil(ask_end - t))
-                frame = draw_ask(item, remaining)
-            else:
-                frame = draw_reveal(item)
-            frame.save(tmp_path / f"frame_{i:05d}.png")
-
+            frame_at(job, timeline, t).save(tmp_path / f"frame_{i:05d}.png")
         out = Path(args.out).resolve()
         subprocess.check_call(
             [
@@ -221,7 +280,7 @@ def main():
                 str(out),
             ]
         )
-        print("OK", out, out.stat().st_size, "ask_end", ask_end)
+        print("OK", out, out.stat().st_size)
 
 
 if __name__ == "__main__":

@@ -40,16 +40,22 @@ jobs:
           python scripts/generate_teaser.py
           echo "--- teaser_job ---"
           cat teaser_job.json
-          echo "--- script ---"
-          cat script.txt
 
-      - name: tts
+      - name: assemble-audio
         run: |
-          python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate="$RATE" --audio-out speech.mp3
+          # Ask audio never includes answers; 5s silence between ask and reveal
+          python scripts/assemble_teaser_audio.py
+          echo "--- timeline ---"
+          cat teaser_timeline.json
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3
 
       - name: render
-        run: python scripts/render_teaser.py --job teaser_job.json --audio speech.mp3 --out output.mp4
+        run: |
+          python scripts/render_teaser.py \
+            --job teaser_job.json \
+            --timeline teaser_timeline.json \
+            --audio speech.mp3 \
+            --out output.mp4
 
       - name: verify
         run: |
@@ -74,6 +80,7 @@ jobs:
             output.mp4
             script.txt
             teaser_job.json
+            teaser_timeline.json
             tiktok_caption.txt
             tiktok_comment.txt
             buffer_result.json

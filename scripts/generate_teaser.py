@@ -1,227 +1,264 @@
 #!/usr/bin/env python3
-"""Daily brain-teaser: medium exam Q&A only (no hard SVG riddles)."""
+"""Daily language teaser: 3–4 easy questions. Answers NEVER in the ask audio."""
 from __future__ import annotations
 
 import hashlib
 import json
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Medium difficulty — imaginable, not baby, not olympiad
+# Easy language / English class — clear words, no hard physics/math
 BANK = [
     {
-        "title": "Series current",
-        "hook": "Quick exam check.",
-        "question": "Three same resistors in series. Current in the middle one is…",
-        "choices": ["A) Same as the others", "B) Half of the first", "C) Zero"],
+        "question": "What is the opposite of hot?",
+        "choices": ["A) Warm", "B) Cold", "C) Soft"],
+        "answer": "B",
+        "reason": "Cold is the opposite of hot.",
+    },
+    {
+        "question": "Which word means a place where you learn?",
+        "choices": ["A) Market", "B) School", "C) River"],
+        "answer": "B",
+        "reason": "School is where we learn.",
+    },
+    {
+        "question": "Choose the correct plural of child.",
+        "choices": ["A) Childs", "B) Children", "C) Childes"],
+        "answer": "B",
+        "reason": "The plural of child is children.",
+    },
+    {
+        "question": "She ___ to school every day.",
+        "choices": ["A) go", "B) goes", "C) going"],
+        "answer": "B",
+        "reason": "With she, we use goes.",
+    },
+    {
+        "question": "What is a synonym of happy?",
+        "choices": ["A) Sad", "B) Glad", "C) Angry"],
+        "answer": "B",
+        "reason": "Glad means almost the same as happy.",
+    },
+    {
+        "question": "Which word is a noun?",
+        "choices": ["A) Run", "B) Quickly", "C) Book"],
+        "answer": "C",
+        "reason": "Book is a thing — a noun.",
+    },
+    {
+        "question": "I have ___ apple.",
+        "choices": ["A) a", "B) an", "C) the two"],
+        "answer": "B",
+        "reason": "An comes before a vowel sound: an apple.",
+    },
+    {
+        "question": "The past tense of eat is…",
+        "choices": ["A) Eated", "B) Ate", "C) Eating"],
+        "answer": "B",
+        "reason": "Eat → ate → eaten.",
+    },
+    {
+        "question": "Which is a question word?",
+        "choices": ["A) Because", "B) Where", "C) And"],
+        "answer": "B",
+        "reason": "Where asks about place.",
+    },
+    {
+        "question": "Big and large are…",
+        "choices": ["A) Opposites", "B) Synonyms", "C) Numbers"],
+        "answer": "B",
+        "reason": "They mean almost the same — synonyms.",
+    },
+    {
+        "question": "Which sentence is correct?",
+        "choices": ["A) He don't know", "B) He doesn't know", "C) He no know"],
+        "answer": "B",
+        "reason": "He / she / it → doesn't.",
+    },
+    {
+        "question": "A person who teaches is a…",
+        "choices": ["A) Teacher", "B) Farmer", "C) Driver"],
         "answer": "A",
-        "reason": "Series: same current through every part.",
+        "reason": "A teacher teaches.",
     },
     {
-        "title": "Average velocity",
-        "hook": "Trap question.",
-        "question": "60 km north then 60 km south in 2 hours. Average velocity?",
-        "choices": ["A) 60 km/h", "B) 0", "C) 120 km/h"],
+        "question": "Which word starts with a vowel sound?",
+        "choices": ["A) Ball", "B) Umbrella", "C) Cat"],
         "answer": "B",
-        "reason": "Back to start — displacement zero, velocity zero.",
+        "reason": "Umbrella starts with a vowel sound.",
     },
     {
-        "title": "Work on a wall",
-        "hook": "Physics definition.",
-        "question": "You push a wall hard. It does not move. Work done is…",
-        "choices": ["A) Maximum", "B) Zero", "C) Equal to force"],
-        "answer": "B",
-        "reason": "No movement means no work.",
-    },
-    {
-        "title": "Parallel resistors",
-        "hook": "Circuit basics.",
-        "question": "Two 4 ohm resistors in parallel. Combined resistance?",
-        "choices": ["A) 8 ohm", "B) 2 ohm", "C) 4 ohm"],
-        "answer": "B",
-        "reason": "Equal parallels: half → 2 ohm.",
-    },
-    {
-        "title": "pH step",
-        "hook": "Chemistry.",
-        "question": "pH 3 compared to pH 5 is…",
-        "choices": ["A) 2× more acidic", "B) 100× more acidic", "C) Less acidic"],
-        "answer": "B",
-        "reason": "Each pH step is ×10. Two steps = 100×.",
-    },
-    {
-        "title": "Osmosis",
-        "hook": "Biology trap.",
-        "question": "Water only, through a selectively permeable membrane, is…",
-        "choices": ["A) Diffusion", "B) Osmosis", "C) Active transport"],
-        "answer": "B",
-        "reason": "That is the definition of osmosis.",
-    },
-    {
-        "title": "Photosynthesis gas",
-        "hook": "Do not mix with respiration.",
-        "question": "Gas released by green plants in light is mainly…",
-        "choices": ["A) Carbon dioxide", "B) Oxygen", "C) Nitrogen"],
-        "answer": "B",
-        "reason": "Photosynthesis releases oxygen.",
-    },
-    {
-        "title": "Half of a third",
-        "hook": "Quick maths.",
-        "question": "What is one half of one third?",
-        "choices": ["A) 2/3", "B) 1/6", "C) 1/5"],
-        "answer": "B",
-        "reason": "1/2 × 1/3 = 1/6.",
-    },
-    {
-        "title": "Discount",
-        "hook": "WAEC-style %.",
-        "question": "Shirt costs 800. 25% off. Sale price?",
-        "choices": ["A) 600", "B) 200", "C) 825"],
+        "question": "The opposite of full is…",
+        "choices": ["A) Empty", "B) Tall", "C) Loud"],
         "answer": "A",
-        "reason": "25% of 800 is 200. Sale = 600.",
+        "reason": "Empty is the opposite of full.",
     },
     {
-        "title": "Triangle angles",
-        "hook": "Geometry.",
-        "question": "Angles in a triangle add up to…",
-        "choices": ["A) 90°", "B) 180°", "C) 360°"],
+        "question": "We ___ football yesterday.",
+        "choices": ["A) play", "B) played", "C) playing"],
         "answer": "B",
-        "reason": "Always 180 degrees.",
+        "reason": "Yesterday needs past tense: played.",
     },
     {
-        "title": "Speed vs velocity",
-        "hook": "True or false style.",
-        "question": "Speed is a vector quantity.",
-        "choices": ["A) True", "B) False"],
-        "answer": "B",
-        "reason": "Speed is scalar. Velocity is vector.",
-    },
-    {
-        "title": "Mass on the moon",
-        "hook": "True or false.",
-        "question": "Mass changes when you go to the moon.",
-        "choices": ["A) True", "B) False"],
-        "answer": "B",
-        "reason": "Mass stays the same. Weight changes.",
-    },
-    {
-        "title": "Plants at night",
-        "hook": "Biology.",
-        "question": "Plants only respire at night.",
-        "choices": ["A) True", "B) False"],
-        "answer": "B",
-        "reason": "Respiration is day and night.",
-    },
-    {
-        "title": "Cold bottle",
-        "hook": "Everyday science.",
-        "question": "Cold bottle from fridge gets wet outside because…",
-        "choices": ["A) Water leaked", "B) Moisture condensed", "C) Plastic melted"],
-        "answer": "B",
-        "reason": "Warm air moisture condenses on the cold surface.",
-    },
-    {
-        "title": "Power formula",
-        "hook": "Electricity.",
-        "question": "Electrical power P equals…",
-        "choices": ["A) V × I", "B) V ÷ I", "C) V + I"],
+        "question": "Which is an adjective?",
+        "choices": ["A) Beautiful", "B) Run", "C) Quickly"],
         "answer": "A",
-        "reason": "P = VI.",
+        "reason": "Beautiful describes a noun.",
     },
     {
-        "title": "Acceleration",
-        "hook": "Definition.",
-        "question": "Acceleration is rate of change of…",
-        "choices": ["A) Distance", "B) Velocity", "C) Mass"],
+        "question": "Hello is used to…",
+        "choices": ["A) Say goodbye", "B) Greet someone", "C) Count numbers"],
         "answer": "B",
-        "reason": "Acceleration = change of velocity over time.",
+        "reason": "Hello is a greeting.",
     },
     {
-        "title": "Neutralisation",
-        "hook": "Chemistry.",
-        "question": "Acid + base mainly produces…",
-        "choices": ["A) Salt and water", "B) Only gas", "C) Only acid"],
-        "answer": "A",
-        "reason": "Neutralisation → salt + water.",
-    },
-    {
-        "title": "Heart",
-        "hook": "Human body.",
-        "question": "Which organ pumps blood?",
-        "choices": ["A) Lungs", "B) Heart", "C) Liver"],
+        "question": "One book, two…",
+        "choices": ["A) Book", "B) Books", "C) Bookes"],
         "answer": "B",
-        "reason": "The heart pumps blood.",
+        "reason": "Add s for most plurals: books.",
     },
     {
-        "title": "Mean",
-        "hook": "Maths.",
-        "question": "Mean of 2, 4, 6, 8 is…",
-        "choices": ["A) 4", "B) 5", "C) 6"],
+        "question": "Which word means very big?",
+        "choices": ["A) Tiny", "B) Huge", "C) Slow"],
         "answer": "B",
-        "reason": "Sum 20 ÷ 4 = 5.",
+        "reason": "Huge means very big.",
     },
     {
-        "title": "Square pattern",
-        "hook": "Find the next number.",
-        "question": "1, 4, 9, 16, ?",
-        "choices": ["A) 20", "B) 25", "C) 24"],
+        "question": "She is ___ honest girl.",
+        "choices": ["A) a", "B) an", "C) the a"],
         "answer": "B",
-        "reason": "1² 2² 3² 4² 5² → 25.",
+        "reason": "Honest starts with a vowel sound → an.",
+    },
+    {
+        "question": "The present continuous of write is…",
+        "choices": ["A) Writed", "B) Writing", "C) Wrote"],
+        "answer": "B",
+        "reason": "Write → writing (drop e, add ing).",
+    },
+    {
+        "question": "Which is a pronoun?",
+        "choices": ["A) Table", "B) They", "C) Jump"],
+        "answer": "B",
+        "reason": "They stands in for people — a pronoun.",
+    },
+    {
+        "question": "Good morning is said…",
+        "choices": ["A) At night", "B) In the morning", "C) Only in class"],
+        "answer": "B",
+        "reason": "We say good morning in the morning.",
+    },
+    {
+        "question": "The opposite of start is…",
+        "choices": ["A) Begin", "B) Stop", "C) Open"],
+        "answer": "B",
+        "reason": "Stop is the opposite of start.",
     },
 ]
 
 
-def pick() -> dict:
+def pick_pack(n: int = 4) -> list[dict]:
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    h = int(hashlib.md5(day.encode()).hexdigest(), 16)
-    item = BANK[h % len(BANK)].copy()
-    item["format"] = "options"
-    item["visual"] = {"kind": "options"}
-    item["id"] = f"teaser-{day}-{h % len(BANK)}"
-    item["picked_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return item
-
-
-def build_script(item: dict) -> str:
-    choices = ". ".join(item["choices"])
-    # Short script so on-screen 5s countdown can breathe
-    return (
-        f"{item['hook']} {item['question']} "
-        f"{choices}. "
-        f"You have five seconds. Comment your answer. "
-        f"The answer is {item['answer']}. {item['reason']} "
-        f"Comment the next topic. Follow for more."
-    )
+    seed = int(hashlib.md5(f"teaser-lang-{day}".encode()).hexdigest(), 16)
+    rng = random.Random(seed)
+    pool = BANK[:]
+    rng.shuffle(pool)
+    n = max(3, min(4, n, len(pool)))
+    out = []
+    for i, q in enumerate(pool[:n]):
+        item = q.copy()
+        item["index"] = i + 1
+        out.append(item)
+    return out
 
 
 def main() -> None:
-    item = pick()
-    script = build_script(item)
-    out = {
-        **item,
-        "script": script,
-        "cta": "Comment the next topic. Follow for more.",
-        "short_title": item["title"][:40],
+    questions = pick_pack(4)
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Segments: ask (no answer) → countdown → reveal (answer only here)
+    segments: list[dict] = []
+    segments.append(
+        {
+            "phase": "intro",
+            "text": "Language quiz time. Easy questions. Comment A, B, or C before time is up.",
+        }
+    )
+    for q in questions:
+        choices = ". ".join(q["choices"])
+        segments.append(
+            {
+                "phase": "ask",
+                "q": q["index"],
+                "text": (
+                    f"Question {q['index']}. {q['question']} "
+                    f"{choices}. "
+                    f"Comment your answer now. You have five seconds."
+                ),
+            }
+        )
+        segments.append({"phase": "countdown", "q": q["index"], "secs": 5})
+        segments.append(
+            {
+                "phase": "reveal",
+                "q": q["index"],
+                "text": (
+                    f"The answer is {q['answer']}. {q['reason']}"
+                ),
+            }
+        )
+    segments.append(
+        {
+            "phase": "outro",
+            "text": "How many did you get right? Comment your score. Follow for more.",
+        }
+    )
+
+    # Full scripts for debugging — ask-only must not contain answers
+    ask_only = " ".join(
+        s["text"] for s in segments if s["phase"] in ("intro", "ask", "outro")
+    )
+    for letter in ("A", "B", "C"):
+        # soft check: answer letter alone may appear in choices text; block reason spoilers
+        pass
+    for q in questions:
+        if q["reason"].lower() in ask_only.lower():
+            print("WARN reason leaked into ask", file=sys.stderr)
+
+    job = {
+        "id": f"teaser-lang-{day}",
+        "picked_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "theme": "language",
+        "title": "Easy English quiz",
+        "short_title": "Easy English quiz",
+        "questions": questions,
+        "segments": segments,
         "countdown_seconds": 5,
+        "cta": "Comment your score. Follow for more.",
     }
-    Path("teaser_job.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
-    Path("script.txt").write_text(script + "\n", encoding="utf-8")
-    Path("title_short.txt").write_text(out["short_title"], encoding="utf-8")
-    Path("cta.txt").write_text(out["cta"], encoding="utf-8")
+
+    Path("teaser_job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
+    # Placeholder script.txt for older steps; real audio built segment-wise
+    Path("script.txt").write_text(
+        " ".join(s.get("text", "") for s in segments if s.get("text")) + "\n",
+        encoding="utf-8",
+    )
+    Path("title_short.txt").write_text(job["short_title"], encoding="utf-8")
+    Path("cta.txt").write_text(job["cta"], encoding="utf-8")
     Path("tiktok_caption.txt").write_text(
-        f"{out['short_title']} — comment A B or C\n\n"
-        f"{out['cta']}\n\n"
-        f"#brainteaser #examtips #study #fyp #learntok #waec #jamb",
+        "Easy English quiz — comment A B or C before the timer ends!\n\n"
+        f"{job['cta']}\n\n"
+        "#english #learnenglish #quiz #fyp #studytok #vocabulary #grammar",
         encoding="utf-8",
     )
+    answers = ", ".join(f"Q{q['index']}={q['answer']}" for q in questions)
     Path("tiktok_comment.txt").write_text(
-        f"Answer: {item['answer']} — {item['reason'][:80]}",
+        f"Answers: {answers}. How many did you get?",
         encoding="utf-8",
     )
-    print(json.dumps(out, indent=2))
-    print("TEASER", item["title"], "answer", item["answer"], file=sys.stderr)
+    print(json.dumps(job, indent=2))
+    print("TEASER language pack", len(questions), "questions", file=sys.stderr)
 
 
 if __name__ == "__main__":
