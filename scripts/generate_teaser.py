@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily language teaser: exactly 3 easy questions. Answers NEVER in the ask audio."""
+"""Daily language teaser: 3 easy questions, 20 marks each (60 total)."""
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +8,10 @@ import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+MARKS_EACH = 20
+NUM_QUESTIONS = 3
+TOTAL_MARKS = MARKS_EACH * NUM_QUESTIONS
 
 # Easy language / English class — clear words, no hard physics/math
 BANK = [
@@ -158,41 +162,48 @@ BANK = [
 ]
 
 
-def pick_pack(n: int = 3) -> list[dict]:
+def pick_pack(n: int = NUM_QUESTIONS) -> list[dict]:
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     seed = int(hashlib.md5(f"teaser-lang-{day}".encode()).hexdigest(), 16)
     rng = random.Random(seed)
     pool = BANK[:]
     rng.shuffle(pool)
-    n = min(3, len(pool))  # always exactly 3
+    n = min(NUM_QUESTIONS, len(pool))
     out = []
     for i, q in enumerate(pool[:n]):
         item = q.copy()
         item["index"] = i + 1
+        item["marks"] = MARKS_EACH
         out.append(item)
     return out
 
 
 def main() -> None:
-    questions = pick_pack(3)
+    questions = pick_pack()
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Segments: ask (no answer) → countdown → reveal (answer only here)
     segments: list[dict] = []
     segments.append(
         {
             "phase": "intro",
-            "text": "Language quiz time. Three easy questions. Comment A, B, or C before time is up.",
+            "text": (
+                f"English quiz. Three questions. "
+                f"Each question is worth {MARKS_EACH} marks. "
+                f"Total {TOTAL_MARKS} marks. "
+                f"Comment A, B, or C before the timer ends."
+            ),
         }
     )
     for q in questions:
         choices = ". ".join(q["choices"])
+        marks = q["marks"]
         segments.append(
             {
                 "phase": "ask",
                 "q": q["index"],
                 "text": (
-                    f"Question {q['index']}. {q['question']} "
+                    f"Question {q['index']}. {marks} marks. "
+                    f"{q['question']} "
                     f"{choices}. "
                     f"Comment your answer now. You have five seconds."
                 ),
@@ -203,13 +214,21 @@ def main() -> None:
             {
                 "phase": "reveal",
                 "q": q["index"],
-                "text": f"The answer is {q['answer']}. {q['reason']}",
+                "text": (
+                    f"The answer is {q['answer']}. {q['reason']} "
+                    f"That is {marks} marks."
+                ),
             }
         )
     segments.append(
         {
             "phase": "outro",
-            "text": "How many did you get right out of three? Comment your score. Follow for more.",
+            "text": (
+                f"Total was {TOTAL_MARKS} marks. "
+                f"How many marks did you get? "
+                f"If you got all three, comment {TOTAL_MARKS}. "
+                f"Comment your score now. Follow for more."
+            ),
         }
     )
 
@@ -228,8 +247,10 @@ def main() -> None:
         "short_title": "Easy English quiz",
         "questions": questions,
         "segments": segments,
+        "marks_each": MARKS_EACH,
+        "total_marks": TOTAL_MARKS,
         "countdown_seconds": 5,
-        "cta": "Comment your score. Follow for more.",
+        "cta": f"Comment your score out of {TOTAL_MARKS}. Follow for more.",
     }
 
     Path("teaser_job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
@@ -240,18 +261,19 @@ def main() -> None:
     Path("title_short.txt").write_text(job["short_title"], encoding="utf-8")
     Path("cta.txt").write_text(job["cta"], encoding="utf-8")
     Path("tiktok_caption.txt").write_text(
-        "Easy English quiz (3 questions) — comment A B or C before the timer ends!\n\n"
+        f"English quiz — 3 questions × {MARKS_EACH} marks = {TOTAL_MARKS}\n"
+        "Comment A B or C before the timer!\n\n"
         f"{job['cta']}\n\n"
         "#english #learnenglish #quiz #fyp #studytok #vocabulary #grammar",
         encoding="utf-8",
     )
-    answers = ", ".join(f"Q{q['index']}={q['answer']}" for q in questions)
+    answers = ", ".join(f"Q{q['index']}={q['answer']} ({q['marks']})" for q in questions)
     Path("tiktok_comment.txt").write_text(
-        f"Answers: {answers}. Score out of 3?",
+        f"Answers: {answers}. Full marks = {TOTAL_MARKS}. What did you score?",
         encoding="utf-8",
     )
     print(json.dumps(job, indent=2))
-    print("TEASER language pack", len(questions), "questions", file=sys.stderr)
+    print("TEASER", len(questions), "questions", TOTAL_MARKS, "marks", file=sys.stderr)
 
 
 if __name__ == "__main__":
