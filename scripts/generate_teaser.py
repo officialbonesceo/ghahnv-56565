@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily language teaser: 3–4 easy questions. Answers NEVER in the ask audio."""
+"""Daily language teaser: exactly 3 easy questions. Answers NEVER in the ask audio."""
 from __future__ import annotations
 
 import hashlib
@@ -158,13 +158,13 @@ BANK = [
 ]
 
 
-def pick_pack(n: int = 4) -> list[dict]:
+def pick_pack(n: int = 3) -> list[dict]:
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     seed = int(hashlib.md5(f"teaser-lang-{day}".encode()).hexdigest(), 16)
     rng = random.Random(seed)
     pool = BANK[:]
     rng.shuffle(pool)
-    n = max(3, min(4, n, len(pool)))
+    n = min(3, len(pool))  # always exactly 3
     out = []
     for i, q in enumerate(pool[:n]):
         item = q.copy()
@@ -174,7 +174,7 @@ def pick_pack(n: int = 4) -> list[dict]:
 
 
 def main() -> None:
-    questions = pick_pack(4)
+    questions = pick_pack(3)
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Segments: ask (no answer) → countdown → reveal (answer only here)
@@ -182,7 +182,7 @@ def main() -> None:
     segments.append(
         {
             "phase": "intro",
-            "text": "Language quiz time. Easy questions. Comment A, B, or C before time is up.",
+            "text": "Language quiz time. Three easy questions. Comment A, B, or C before time is up.",
         }
     )
     for q in questions:
@@ -203,25 +203,19 @@ def main() -> None:
             {
                 "phase": "reveal",
                 "q": q["index"],
-                "text": (
-                    f"The answer is {q['answer']}. {q['reason']}"
-                ),
+                "text": f"The answer is {q['answer']}. {q['reason']}",
             }
         )
     segments.append(
         {
             "phase": "outro",
-            "text": "How many did you get right? Comment your score. Follow for more.",
+            "text": "How many did you get right out of three? Comment your score. Follow for more.",
         }
     )
 
-    # Full scripts for debugging — ask-only must not contain answers
     ask_only = " ".join(
         s["text"] for s in segments if s["phase"] in ("intro", "ask", "outro")
     )
-    for letter in ("A", "B", "C"):
-        # soft check: answer letter alone may appear in choices text; block reason spoilers
-        pass
     for q in questions:
         if q["reason"].lower() in ask_only.lower():
             print("WARN reason leaked into ask", file=sys.stderr)
@@ -239,7 +233,6 @@ def main() -> None:
     }
 
     Path("teaser_job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
-    # Placeholder script.txt for older steps; real audio built segment-wise
     Path("script.txt").write_text(
         " ".join(s.get("text", "") for s in segments if s.get("text")) + "\n",
         encoding="utf-8",
@@ -247,14 +240,14 @@ def main() -> None:
     Path("title_short.txt").write_text(job["short_title"], encoding="utf-8")
     Path("cta.txt").write_text(job["cta"], encoding="utf-8")
     Path("tiktok_caption.txt").write_text(
-        "Easy English quiz — comment A B or C before the timer ends!\n\n"
+        "Easy English quiz (3 questions) — comment A B or C before the timer ends!\n\n"
         f"{job['cta']}\n\n"
         "#english #learnenglish #quiz #fyp #studytok #vocabulary #grammar",
         encoding="utf-8",
     )
     answers = ", ".join(f"Q{q['index']}={q['answer']}" for q in questions)
     Path("tiktok_comment.txt").write_text(
-        f"Answers: {answers}. How many did you get?",
+        f"Answers: {answers}. Score out of 3?",
         encoding="utf-8",
     )
     print(json.dumps(job, indent=2))
