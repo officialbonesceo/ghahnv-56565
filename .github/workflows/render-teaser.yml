@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  VOICE: en-US-ChristopherNeural
-  RATE: "+8%"
+  VOICE: en-US-AndrewNeural
+  RATE: "+0%"
 
 jobs:
   teaser:
@@ -23,6 +23,7 @@ jobs:
         run: |
           echo "event=${{ github.event_name }}"
           date -u
+          echo "VOICE=$VOICE RATE=$RATE"
 
       - uses: actions/setup-python@v5
         with:
@@ -43,7 +44,6 @@ jobs:
 
       - name: assemble-audio
         run: |
-          # Ask audio never includes answers; 5s silence between ask and reveal
           python scripts/assemble_teaser_audio.py
           echo "--- timeline ---"
           cat teaser_timeline.json
