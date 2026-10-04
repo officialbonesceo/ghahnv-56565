@@ -19,7 +19,6 @@ BLACK = (15, 18, 28)
 YELLOW = (255, 210, 50)
 CARD = (28, 34, 52)
 GREEN = (36, 140, 85)
-RED = (220, 60, 70)
 SOFT = (160, 170, 190)
 BG = (14, 18, 32)
 
@@ -59,7 +58,7 @@ def q_by_index(job: dict, qi: int | None) -> dict | None:
     return None
 
 
-def draw_intro() -> Image.Image:
+def draw_intro(job: dict) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 120], fill=YELLOW)
@@ -67,47 +66,66 @@ def draw_intro() -> Image.Image:
     s = "ENGLISH QUIZ"
     bb = d.textbbox((0, 0), s, font=t)
     d.text(((W - (bb[2] - bb[0])) // 2, 36), s, font=t, fill=BLACK)
-    sub = font(40)
-    msg = "Easy questions · Comment A B or C"
+
+    total = int(job.get("total_marks") or 60)
+    each = int(job.get("marks_each") or 20)
+    big = font(72)
+    score_line = f"{total} MARKS"
+    bb = d.textbbox((0, 0), score_line, font=big)
+    d.text(((W - (bb[2] - bb[0])) // 2, 720), score_line, font=big, fill=YELLOW)
+
+    sub = font(36)
+    msg = f"3 questions · {each} marks each"
     bb = d.textbbox((0, 0), msg, font=sub)
-    d.text(((W - (bb[2] - bb[0])) // 2, 900), msg, font=sub, fill=WHITE)
+    d.text(((W - (bb[2] - bb[0])) // 2, 820), msg, font=sub, fill=WHITE)
+
     tip = font(32)
-    m2 = "Get ready!"
+    m2 = "Comment A, B or C before time is up"
     bb = d.textbbox((0, 0), m2, font=tip)
-    d.text(((W - (bb[2] - bb[0])) // 2, 1000), m2, font=tip, fill=YELLOW)
+    d.text(((W - (bb[2] - bb[0])) // 2, 920), m2, font=tip, fill=SOFT)
     return img
 
 
 def draw_outro(job: dict) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
+    total = int(job.get("total_marks") or 60)
     d.rectangle([0, 0, W, 120], fill=GREEN)
-    t = font(44)
-    s = "HOW MANY DID YOU GET?"
+    t = font(40)
+    s = f"YOUR SCORE / {total}?"
     bb = d.textbbox((0, 0), s, font=t)
     d.text(((W - (bb[2] - bb[0])) // 2, 38), s, font=t, fill=WHITE)
-    y = 400
+
+    y = 320
     for q in job.get("questions") or []:
-        line = f"Q{q['index']}: {q['answer']}"
-        tf = font(48)
+        marks = int(q.get("marks") or job.get("marks_each") or 20)
+        line = f"Q{q['index']}: {q['answer']}  (+{marks})"
+        tf = font(44)
         bb = d.textbbox((0, 0), line, font=tf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=YELLOW)
-        y += 90
-    cta = font(34)
-    msg = "Comment your score · Follow for more"
-    bb = d.textbbox((0, 0), msg, font=cta)
-    d.text(((W - (bb[2] - bb[0])) // 2, H - 200), msg, font=cta, fill=SOFT)
+        y += 100
+
+    full = font(48)
+    msg = f"All correct = {total}"
+    bb = d.textbbox((0, 0), msg, font=full)
+    d.text(((W - (bb[2] - bb[0])) // 2, y + 40), msg, font=full, fill=WHITE)
+
+    cta = font(32)
+    msg2 = "Comment your marks · Follow for more"
+    bb = d.textbbox((0, 0), msg2, font=cta)
+    d.text(((W - (bb[2] - bb[0])) // 2, H - 200), msg2, font=cta, fill=SOFT)
     return img
 
 
 def draw_ask(q: dict, remaining: int | None = None) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
+    marks = int(q.get("marks") or 20)
     d.rectangle([0, 0, W, 100], fill=YELLOW)
-    label = f"Question {q.get('index', '')}"
-    tf = font(40)
+    label = f"Question {q.get('index', '')}  ·  {marks} marks"
+    tf = font(36)
     bb = d.textbbox((0, 0), label, font=tf)
-    d.text(((W - (bb[2] - bb[0])) // 2, 28), label, font=tf, fill=BLACK)
+    d.text(((W - (bb[2] - bb[0])) // 2, 30), label, font=tf, fill=BLACK)
 
     qf = font(44)
     y = 160
@@ -148,11 +166,12 @@ def draw_ask(q: dict, remaining: int | None = None) -> Image.Image:
 def draw_reveal(q: dict) -> Image.Image:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
+    marks = int(q.get("marks") or 20)
     d.rectangle([0, 0, W, 100], fill=GREEN)
-    tf = font(40)
-    label = f"Answer · Question {q.get('index', '')}"
+    tf = font(36)
+    label = f"Answer · Q{q.get('index', '')}  ·  +{marks} marks"
     bb = d.textbbox((0, 0), label, font=tf)
-    d.text(((W - (bb[2] - bb[0])) // 2, 28), label, font=tf, fill=WHITE)
+    d.text(((W - (bb[2] - bb[0])) // 2, 30), label, font=tf, fill=WHITE)
 
     ans = str(q.get("answer") or "").upper()
     y = 160
@@ -185,7 +204,6 @@ def draw_reveal(q: dict) -> Image.Image:
 
 
 def frame_at(job: dict, timeline: list, t: float) -> Image.Image:
-    # find segment
     seg = timeline[-1]
     for s in timeline:
         if s["start"] <= t < s["end"] or (s is timeline[-1] and t >= s["start"]):
@@ -198,7 +216,7 @@ def frame_at(job: dict, timeline: list, t: float) -> Image.Image:
     q = q_by_index(job, qi)
 
     if phase == "intro":
-        return draw_intro()
+        return draw_intro(job)
     if phase == "outro":
         return draw_outro(job)
     if phase == "countdown" and q:
@@ -208,7 +226,7 @@ def frame_at(job: dict, timeline: list, t: float) -> Image.Image:
         return draw_ask(q, remaining=None)
     if phase == "reveal" and q:
         return draw_reveal(q)
-    return draw_intro()
+    return draw_intro(job)
 
 
 def main():
