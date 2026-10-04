@@ -13,11 +13,32 @@ import edge_tts
 
 VOICE = "en-US-ChristopherNeural"
 RATE = "+8%"
+SR = 24000
 
 
 async def synth(text: str, out: Path) -> None:
     communicate = edge_tts.Communicate(text, VOICE, rate=RATE)
     await communicate.save(str(out))
+
+
+def to_wav(src: Path, dst: Path) -> None:
+    subprocess.check_call(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(src),
+            "-ac",
+            "1",
+            "-ar",
+            str(SR),
+            "-c:a",
+            "pcm_s16le",
+            str(dst),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def silence_wav(path: Path, secs: float) -> None:
@@ -28,13 +49,11 @@ def silence_wav(path: Path, secs: float) -> None:
             "-f",
             "lavfi",
             "-i",
-            "anullsrc=r=24000:cl=mono",
+            f"anullsrc=r={SR}:cl=mono",
             "-t",
             str(secs),
-            "-q:a",
-            "9",
-            "-acodec",
-            "libmp3lame",
+            "-c:a",
+            "pcm_s16le",
             str(path),
         ],
         stdout=subprocess.DEVNULL,
@@ -71,17 +90,21 @@ async def main() -> None:
         tmp_path = Path(tmp)
         for i, seg in enumerate(segments):
             phase = seg["phase"]
-            out = tmp_path / f"seg_{i:02d}.mp3"
+            raw = tmp_path / f"raw_{i:02d}.mp3"
+            wav = tmp_path / f"seg_{i:02d}.wav"
+
             if phase == "countdown":
                 secs = float(seg.get("secs") or 5)
-                silence_wav(out, secs)
+                silence_wav(wav, secs)
             else:
                 text = (seg.get("text") or "").strip()
                 if not text:
-                    silence_wav(out, 0.3)
+                    silence_wav(wav, 0.3)
                 else:
-                    await synth(text, out)
-            dur = duration(out)
+                    await synth(text, raw)
+                    to_wav(raw, wav)
+
+            dur = duration(wav)
             timeline.append(
                 {
                     "phase": phase,
@@ -92,13 +115,14 @@ async def main() -> None:
                 }
             )
             t += dur
-            parts.append(out)
+            parts.append(wav)
 
-        # concat
         list_file = tmp_path / "list.txt"
         list_file.write_text(
             "".join(f"file '{p.resolve()}'\n" for p in parts), encoding="utf-8"
         )
+        # concat identical WAVs, then encode final mp3
+        joined = tmp_path / "joined.wav"
         subprocess.check_call(
             [
                 "ffmpeg",
@@ -109,8 +133,21 @@ async def main() -> None:
                 "0",
                 "-i",
                 str(list_file),
+                "-c",
+                "copy",
+                str(joined),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.check_call(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(joined),
                 "-c:a",
-                "aac",
+                "libmp3lame",
                 "-b:a",
                 "192k",
                 "speech.mp3",
