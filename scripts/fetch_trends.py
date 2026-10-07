@@ -13,7 +13,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "trending_topics.json"
 UA = {
-    "User-Agent": "MikeTutorTrends/1.2 (educational; github.com/officialbonesceo)",
+    "User-Agent": "MikeTutorTrends/1.3 (educational; github.com/officialbonesceo)",
     "Accept": "application/json",
 }
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -82,6 +82,10 @@ def clean_title(q: str) -> str | None:
         return None
     if HARD_SKIP.search(q) or re.search(r"https?://|www\.", q, re.I):
         return None
+    if re.search(r"(?i)(welding|weapon|penetrator|interceptor|sintering|kinase|quartic|stir )", q):
+        return None
+    if len(q.split()) > 5:
+        return None
     if not is_school_safe(q):
         return None
     key = re.sub(r"\s+", " ", q.lower()).strip()
@@ -108,11 +112,10 @@ def from_pytrends() -> list[str]:
     try:
         from pytrends.request import TrendReq
 
-        # urllib3 v2 removed method_whitelist — TrendReq may break; fail soft
         try:
-            pytrends = TrendReq(hl="en-US", tz=60, retries=1, backoff_factor=0.5)
-        except TypeError:
             pytrends = TrendReq(hl="en-US", tz=60)
+        except Exception:
+            return found
         seeds = [
             "WAEC physics", "JAMB chemistry", "photosynthesis",
             "quadratic equation", "newton laws", "osmosis",
@@ -171,7 +174,6 @@ def from_duckduckgo() -> list[str]:
 
 def from_wikipedia() -> list[str]:
     found = []
-    # Fewer seeds + longer pause to avoid 429
     for seed in WIKI_SEEDS[:8]:
         try:
             r = requests.get(
@@ -221,12 +223,11 @@ def main() -> None:
     titles.extend(from_pytrends())
     titles.extend(from_duckduckgo())
     titles.extend(from_wikipedia())
-    # Always seed known syllabus so topic step has safe names even if APIs die
     for s in WIKI_SEEDS:
         if is_school_safe(s):
             titles.append(s)
     titles = filter_title_list(dedupe(titles))
-    cleaned = [t for t in titles if len(t.split()) <= 6]
+    cleaned = [t for t in titles if len(t.split()) <= 5]
     titles = cleaned[:40]
 
     payload = {
