@@ -13,34 +13,35 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data" / "trending_topics.json"
 UA = {
-    "User-Agent": "MikeTutorTrends/1.3 (educational; github.com/officialbonesceo)",
+    "User-Agent": "MikeTutorTrends/1.4 (educational; github.com/officialbonesceo)",
     "Accept": "application/json",
 }
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import filter_title_list, is_school_safe  # noqa: E402
 
 SEARCH_SEEDS = [
-    "WAEC 2025 physics scheme of work topics",
-    "JAMB 2025 chemistry syllabus most tested",
-    "NECO SSCE biology topics students fail",
-    "secondary school math scheme of work 2024 2025",
-    "what topics come out every year in WAEC physics",
-    "hardest JAMB biology questions topics",
-    "SS1 SS2 SS3 physics scheme of work electricity",
-    "WAEC chemistry practical topics common",
-    "quadratic equations exam questions students miss",
-    "osmosis diffusion exam difference secondary",
-    "Newton laws of motion WAEC past questions",
-    "photosynthesis exam definition and equation",
-    "electric current series parallel circuits exam",
-    "kinetic energy potential energy WAEC",
+    "WAEC 2025 English language common topics",
+    "JAMB English lexis and structure topics",
+    "NECO SSCE English essay letter writing topics",
+    "secondary school English grammar parts of speech",
+    "WAEC English comprehension summary topics",
+    "figure of speech metaphor simile idiom exam",
+    "WAEC biology cell tissue organ system topics",
+    "JAMB chemistry states of matter acid base",
+    "SS1 SS2 geography map latitude longitude climate",
+    "WAEC physics simple machine lever pulley energy",
+    "food chain ecosystem habitat pollution exam",
+    "fraction ratio average perimeter area volume math",
+    "active passive voice subject predicate English",
+    "water cycle weather climate continent exam",
 ]
 
 WIKI_SEEDS = [
-    "Photosynthesis", "Friction", "Electric current", "Osmosis",
-    "Mitosis", "Quadratic equation", "Newton's laws of motion",
-    "Kinetic energy", "DNA", "Enzyme", "Inertia", "Pressure",
-    "Ohm's law", "Diffusion", "Respiration",
+    "Noun", "Verb", "Adjective", "Metaphor", "Simile",
+    "Photosynthesis", "Cell", "Ecosystem", "Water cycle",
+    "Matter", "Acid", "Simple machine", "Fraction",
+    "Probability", "Algorithm", "Internet",
+    "Friction", "Osmosis", "Enzyme", "Respiration",
 ]
 
 NORMALIZE = {
@@ -54,8 +55,8 @@ NORMALIZE = {
     "meiosis": "Meiosis",
     "friction": "Friction",
     "gravity": "Gravity",
-    "essay writing": "Essay",
-    "essay": "Essay",
+    "essay writing": "Essay writing",
+    "essay": "Essay writing",
     "dna": "DNA",
     "kinetic energy": "Kinetic energy",
     "potential energy": "Potential energy",
@@ -64,14 +65,29 @@ NORMALIZE = {
     "inertia": "Inertia",
     "momentum": "Momentum",
     "pressure": "Pressure",
-    "density": "Density",
     "diffusion": "Diffusion",
     "respiration": "Respiration",
+    "noun": "Noun",
+    "verb": "Verb",
+    "adjective": "Adjective",
+    "adverb": "Adverb",
+    "metaphor": "Metaphor",
+    "simile": "Simile",
+    "idiom": "Idiom",
+    "paragraph": "Paragraph",
+    "synonym": "Synonym",
+    "antonym": "Antonym",
+    "ecosystem": "Ecosystem",
+    "water cycle": "Water cycle",
+    "simple machine": "Simple machine",
+    "fraction": "Fraction",
+    "probability": "Probability",
 }
 
 HARD_SKIP = re.compile(
     r"petroleum|refiner|dangote|mithraism|mitsubishi|porn|login|pdf download|"
-    r"actress|actor|celebrity|singer|netflix|k-pop|idol|osmosis jones|records",
+    r"actress|actor|celebrity|singer|netflix|k-pop|idol|osmosis jones|records|"
+    r"osmonds|royal medal|mitsuishi|penilaian|quartic|nucleation",
     re.I,
 )
 
@@ -117,9 +133,9 @@ def from_pytrends() -> list[str]:
         except Exception:
             return found
         seeds = [
-            "WAEC physics", "JAMB chemistry", "photosynthesis",
-            "quadratic equation", "newton laws", "osmosis",
-            "electric current", "kinetic energy", "mitosis", "ohms law",
+            "WAEC English", "JAMB biology", "photosynthesis",
+            "parts of speech", "metaphor", "ecosystem",
+            "simple machine", "water cycle", "fraction", "essay writing",
         ]
         for seed in seeds:
             try:
@@ -174,7 +190,7 @@ def from_duckduckgo() -> list[str]:
 
 def from_wikipedia() -> list[str]:
     found = []
-    for seed in WIKI_SEEDS[:8]:
+    for seed in WIKI_SEEDS[:10]:
         try:
             r = requests.get(
                 "https://en.wikipedia.org/w/api.php",
@@ -211,6 +227,14 @@ def dedupe(titles: list[str]) -> list[str]:
     for t in titles:
         k = re.sub(r"[^a-z0-9]", "", t.lower())
         if not k or k in seen or HARD_SKIP.search(t):
+            continue
+        skip = False
+        if len(k) >= 8:
+            for s in seen:
+                if len(s) >= 8 and (k.startswith(s[:8]) or s.startswith(k[:8])) and abs(len(k) - len(s)) <= 5:
+                    skip = True
+                    break
+        if skip:
             continue
         seen.add(k)
         out.append(t)
