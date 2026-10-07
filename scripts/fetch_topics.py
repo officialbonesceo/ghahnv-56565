@@ -1,1 +1,1 @@
-PLACEHOLDER_TOPICS
+SEE_ARTIFACT_fetch_topics_new.py

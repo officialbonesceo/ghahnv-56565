@@ -1,1 +1,1 @@
-PLACEHOLDER_RENDER
+SEE_ARTIFACT_render_mezi_ready.py
