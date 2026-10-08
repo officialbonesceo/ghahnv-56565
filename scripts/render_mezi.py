@@ -110,7 +110,7 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
         d.rectangle([0, 0, W, 28], fill=accent)
         d.rectangle([0, H - 28, W, H], fill=accent)
         target_h = int(H * 1.05)
-        scale = target_h / char.height
+        scale = target_h / max(char.height, 1)
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
         img.paste(c, ((W - nw) // 2, H - nh + int(nh * 0.22)), c)
@@ -138,7 +138,7 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
             d.text((int(W * 0.40) + (int(W * 0.60) - tw) // 2, y), line, font=tf, fill=WHITE)
             y += tf.size + 14
         target_h = int(H * 0.82)
-        scale = target_h / char.height
+        scale = target_h / max(char.height, 1)
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
         img.paste(c, (max(4, int(W * 0.20) - nw // 2), H - nh + 60), c)
@@ -157,7 +157,7 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
             d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=WHITE)
             y += tf.size + 18
         target_h = int(H * 0.28)
-        scale = target_h / char.height
+        scale = target_h / max(char.height, 1)
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
         img.paste(c, ((W - nw) // 2, H - nh - 50), c)
@@ -169,7 +169,7 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
         d.rectangle([0, int(H * 0.62), W, H], fill=board)
         d.rectangle([0, int(H * 0.62) - 12, W, int(H * 0.62) + 12], fill=accent)
         target_h = int(H * 0.70)
-        scale = target_h / char.height
+        scale = target_h / max(char.height, 1)
         nw, nh = int(char.width * scale), int(char.height * scale)
         c = char.resize((nw, nh), Image.Resampling.LANCZOS)
         img.paste(c, ((W - nw) // 2, int(H * 0.58) - nh + 40), c)
@@ -193,7 +193,7 @@ def draw_thumb_frame(style: str, topic: str, hook: str, room: dict, char: Image.
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=tf, fill=BLACK)
         y += tf.size + 16
     target_h = int(H * 0.55)
-    scale = target_h / char.height
+    scale = target_h / max(char.height, 1)
     nw, nh = int(char.width * scale), int(char.height * scale)
     c = char.resize((nw, nh), Image.Resampling.LANCZOS)
     img.paste(c, (W - nw - 20, H - nh - 60), c)
@@ -299,17 +299,21 @@ def move_at(moves, t, duration):
 
 
 def body_for(move: str) -> str:
-    return {
+    mapping = {
         "question": "body_question.png", "happy": "body_happy.png",
         "present": "body_present.png", "point": "body_point.png",
         "explain": "body_explain.png", "think": "body_think.png",
-    }.get(move, "body.png")
+    }
+    name = mapping.get(move, "body.png")
+    # fall back to body.png if pose asset missing
+    if not (asset_dir() / name).exists():
+        return "body.png"
+    return name
 
 
 def composite_host(move: str, mouth_amt: float) -> Image.Image:
     body = load_rgba(body_for(move))
     mouth = load_rgba(mouth_name(mouth_amt))
-    # paste mouth roughly on face
     mx, my = int(body.width * 0.38), int(body.height * 0.42)
     out = body.copy()
     out.paste(mouth, (mx, my), mouth)
@@ -357,7 +361,9 @@ def draw_fullscreen_cta() -> Image.Image:
     img = Image.new("RGB", (W, H), (25, 20, 40))
     d = ImageDraw.Draw(img)
     tf = font(52)
-    d.text((W // 2 - 200, H // 2 - 40), "Follow for more!", font=tf, fill=WHITE)
+    msg = "Follow for more!"
+    bb = d.textbbox((0, 0), msg, font=tf)
+    d.text(((W - (bb[2] - bb[0])) // 2, H // 2 - 40), msg, font=tf, fill=WHITE)
     return img
 
 
@@ -369,7 +375,7 @@ def draw_karaoke(frame: Image.Image, words, active_idx: int) -> Image.Image:
     tw = bb[2] - bb[0]
     x0 = (W - tw) // 2
     y = H - 180
-    d.rounded_rectangle([x0 - 20, y - 10, x0 + tw + 20, y + tf.size + 16], 12, fill=(0, 0, 0, 180))
+    d.rounded_rectangle([x0 - 20, y - 10, x0 + tw + 20, y + tf.size + 16], 12, fill=(0, 0, 0))
     d.text((x0, y), text, font=tf, fill=WHITE)
     return frame
 
@@ -379,38 +385,61 @@ def draw_topic_chip(frame: Image.Image, topic: str) -> Image.Image:
     tf = font(28)
     bb = d.textbbox((0, 0), topic, font=tf)
     tw = bb[2] - bb[0]
-    d.rounded_rectangle([30, 40, 50 + tw, 40 + tf.size + 20], 16, fill=(0, 0, 0, 160))
+    d.rounded_rectangle([30, 40, 50 + tw, 40 + tf.size + 20], 16, fill=(0, 0, 0))
     d.text((40, 48), topic, font=tf, fill=WHITE)
     return frame
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--audio", default="audio.wav")
-    p.add_argument("--cues", default="cues.json")
-    p.add_argument("--script", default="script.json")
-    p.add_argument("--topic-image", default="")
-    p.add_argument("--out", default="out.mp4")
+    p.add_argument("--audio", default="speech.mp3")
+    p.add_argument("--cues", default="mouth.json")
+    p.add_argument("--script", default="script_job.json")
+    p.add_argument("--text", default="", help="voiceover script (CI)")
+    p.add_argument("--title", default="", help="topic title (CI)")
+    p.add_argument("--bg-image", default="", dest="bg_image")
+    p.add_argument("--topic-image", default="topic_image.jpg")
+    p.add_argument("--out", default="output.mp4")
     p.add_argument("--bg", default="classroom")
+    p.add_argument("--actions", default="")
     p.add_argument("--preview", action="store_true")
     args = p.parse_args()
 
+    topic = (args.title or "").strip() or "Lesson"
+    text = (args.text or "").strip()
+    definition, hook, dyk = "", "", ""
+
     script_path = Path(args.script)
-    topic, definition, hook, dyk, text = "Lesson", "", "", "", ""
     if script_path.exists():
-        data = json.loads(script_path.read_text(encoding="utf-8"))
-        topic = data.get("topic") or data.get("title") or topic
-        definition = data.get("definition") or data.get("extract") or ""
-        hook = data.get("hook") or ""
-        dyk = data.get("dyk") or data.get("did_you_know") or ""
-        text = data.get("script") or data.get("voiceover") or data.get("text") or ""
+        try:
+            data = json.loads(script_path.read_text(encoding="utf-8"))
+            if not topic or topic == "Lesson":
+                topic = data.get("short_title") or data.get("topic") or data.get("title") or topic
+            if not text:
+                text = data.get("script") or data.get("voiceover") or data.get("text") or ""
+            definition = data.get("definition") or data.get("extract") or ""
+            hook = data.get("hook") or ""
+            dyk = data.get("dyk") or data.get("did_you_know") or ""
+        except Exception as e:
+            print("script_job load", e, file=sys.stderr)
+
+    for alt in ("topic.json", "script.json"):
+        ap = Path(alt)
+        if ap.exists() and not definition:
+            try:
+                data = json.loads(ap.read_text(encoding="utf-8"))
+                definition = data.get("extract") or data.get("definition") or definition
+                if topic == "Lesson":
+                    topic = data.get("title") or data.get("topic") or topic
+            except Exception:
+                pass
 
     room = pick_room(topic)
-    print("ROOM", room["id"], room.get("theme"), file=sys.stderr)
+    print("ROOM", room["id"], room.get("theme"), "topic=", topic, file=sys.stderr)
 
     if args.preview:
-        img = draw_classroom(topic, definition[:120], room)
-        outp = Path(args.out if args.out.endswith(".png") else "preview_classroom.png")
+        img = draw_classroom(topic, (definition or "")[:120], room)
+        outp = Path(args.out if str(args.out).endswith(".png") else "preview_classroom.png")
         img.save(outp)
         print("preview", outp, file=sys.stderr)
         return
@@ -429,8 +458,9 @@ def main():
         except Exception as e:
             print("ffprobe fail", e, file=sys.stderr)
 
-    classroom = draw_classroom(topic, definition[:200] if definition else "", room)
-    topic_img = prepare_topic_image(Path(args.topic_image)) if args.topic_image else None
+    classroom = draw_classroom(topic, (definition or "")[:200], room)
+    tip = Path(args.topic_image) if args.topic_image else None
+    topic_img = prepare_topic_image(tip) if tip and tip.exists() else None
     moves = load_moves()
     img_win = image_window(duration) if topic_img is not None else None
     dyk_win = dyk_window(duration, img_win) if dyk else None
@@ -457,9 +487,8 @@ def main():
                 frame = ken_burns_frame(topic_img, local, seg, "zoom_in")
             else:
                 base = camera_crop(classroom, t, duration).convert("RGBA")
-                # scale host
                 target_h = int(H * 0.72)
-                scale = target_h / host.height
+                scale = target_h / max(host.height, 1)
                 nw, nh = int(host.width * scale), int(host.height * scale)
                 h = host.resize((nw, nh), Image.Resampling.LANCZOS)
                 bx = (W - nw) // 2
@@ -467,7 +496,6 @@ def main():
                 base.paste(h, (bx, by), h)
                 frame = base.convert("RGB")
                 if t < HOOK_END:
-                    # thumbnail open
                     style = pick_thumb_style(topic)
                     frame = draw_thumb_frame(style, topic, hook, room, host)
                 else:
@@ -478,16 +506,15 @@ def main():
 
             frame.save(td / f"f{i:05d}.png")
 
-        # ffmpeg concat
         list_path = td / "list.txt"
         with list_path.open("w") as f:
             for i in range(n_frames):
-                f.write(f"file 'f{i:05d}.png'\nduration {1/FPS}\n")
-            f.write(f"file 'f{n_frames-1:05d}.png'\n")
+                f.write(f"file 'f{i:05d}.png'\nduration {1 / FPS}\n")
+            f.write(f"file 'f{n_frames - 1:05d}.png'\n")
 
         cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-            "-i", str(audio) if audio.exists() else str(td / f"f00000.png"),
+            "-i", str(audio) if audio.exists() else str(td / "f00000.png"),
             "-r", str(FPS), "-pix_fmt", "yuv420p", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart",
         ]
