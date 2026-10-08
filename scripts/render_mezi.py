@@ -305,7 +305,6 @@ def body_for(move: str) -> str:
         "explain": "body_explain.png", "think": "body_think.png",
     }
     name = mapping.get(move, "body.png")
-    # fall back to body.png if pose asset missing
     if not (asset_dir() / name).exists():
         return "body.png"
     return name
@@ -512,17 +511,20 @@ def main():
                 f.write(f"file 'f{i:05d}.png'\nduration {1 / FPS}\n")
             f.write(f"file 'f{n_frames - 1:05d}.png'\n")
 
+        # absolute paths: ffmpeg cwd is temp dir (frames), audio/out live in repo root
+        audio_in = str(audio.resolve()) if audio.exists() else str(td / "f00000.png")
+        out_abs = str(out_mp4.resolve())
         cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-            "-i", str(audio) if audio.exists() else str(td / "f00000.png"),
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
+            "-i", audio_in,
             "-r", str(FPS), "-pix_fmt", "yuv420p", "-c:v", "libx264",
             "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart",
         ]
         if audio.exists():
             cmd += ["-c:a", "aac", "-b:a", "192k", "-shortest"]
-        cmd.append(str(out_mp4))
+        cmd.append(out_abs)
         subprocess.run(cmd, cwd=str(td), check=True)
-        print("OK", out_mp4, out_mp4.stat().st_size if out_mp4.exists() else 0)
+        print("OK", out_mp4, out_mp4.stat().st_size if out_mp4.exists() else 0, file=sys.stderr)
 
 
 if __name__ == "__main__":
