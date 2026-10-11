@@ -98,7 +98,7 @@ def save_seen(seen: set[str], title: str) -> None:
 
 
 def is_seen(seen: set[str], title: str) -> bool:
-    """Strict dedupe: exact key + plurals + long shared stems."""
+    """Strict dedupe: exact key + plurals + stems + containment (essay vs essaywriting)."""
     if is_hard_blocked(title):
         return True
     k = norm_key(title)
@@ -110,11 +110,18 @@ def is_seen(seen: set[str], title: str) -> bool:
         return True
     if (k + "s") in seen:
         return True
-    # compound stem: e.g. electriccurrent vs electriccurr
     for s in seen:
-        if len(s) >= 10 and len(k) >= 10:
-            if s.startswith(k[:10]) or k.startswith(s[:10]):
+        if not s or len(s) < 4:
+            continue
+        # shared long stem (electriccurrent / electriccurr)
+        if len(s) >= 8 and len(k) >= 8:
+            n = min(10, len(s), len(k))
+            if s.startswith(k[:n]) or k.startswith(s[:n]):
                 return True
+        # containment: "essay"/"essaywriting" inside longer trend titles
+        shorter, longer = (s, k) if len(s) <= len(k) else (k, s)
+        if len(shorter) >= 6 and shorter in longer:
+            return True
     return False
 
 
@@ -370,11 +377,16 @@ def main() -> None:
             primary.append(t)
 
     if not primary:
-        kept = sorted(seen)[-30:]
-        seen = set(kept)
+        # Soft rotate: drop oldest half of alpha-sorted keys so pool can refill.
+        # NEVER keep only last-30 alpha (that reopened Essay writing).
+        ordered = sorted(seen)
+        if len(ordered) > 40:
+            drop = set(ordered[: len(ordered) // 2])
+            seen = seen - drop
+            print("pool soft-rotate dropped", len(drop), "keys", file=sys.stderr)
         primary = [t for t in SYLLABUS_POOL if not is_seen(seen, t) and is_school_safe(t)]
         source_tag = "syllabus-reset"
-        print("pool rebuild", source_tag, len(primary), file=sys.stderr)
+        print("pool rebuild", source_tag, len(primary), "seen_left", len(seen), file=sys.stderr)
 
     if not primary:
         print("TOPIC_FAIL: no school topics available after trends+syllabus", file=sys.stderr)
