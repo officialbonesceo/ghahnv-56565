@@ -3,7 +3,8 @@ name: mike-teaser
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 14 * * *"
+    # 2 teasers/day: ~08:15 and ~15:15 WAT (07:15 + 14:15 UTC)
+    - cron: "15 7,14 * * *"
 
 permissions:
   contents: write
