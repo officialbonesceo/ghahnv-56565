@@ -1,1 +1,93 @@
-PLACEHOLDER_WF
+name: mike-teaser
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 2 teasers/day: ~08:15 and ~15:15 WAT (07:15 + 14:15 UTC)
+    - cron: "15 7,14 * * *"
+
+permissions:
+  contents: write
+
+env:
+  VOICE: en-US-AndrewNeural
+  RATE: "+0%"
+
+jobs:
+  teaser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: schedule-diag
+        run: |
+          echo "event=${{ github.event_name }}"
+          date -u
+          echo "VOICE=$VOICE RATE=$RATE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+          pip install --upgrade pip
+          pip install edge-tts Pillow requests
+
+      - name: host-layers
+        run: python scripts/write_mezi_assets.py
+
+      - name: generate
+        run: |
+          python scripts/generate_teaser.py
+          echo "--- teaser_job ---"
+          cat teaser_job.json
+
+      - name: assemble-audio
+        run: |
+          python scripts/assemble_teaser_audio.py
+          echo "--- timeline ---"
+          cat teaser_timeline.json
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3
+
+      - name: render
+        run: |
+          python scripts/render_teaser.py \
+            --job teaser_job.json \
+            --timeline teaser_timeline.json \
+            --audio speech.mp3 \
+            --out output.mp4
+
+      - name: verify
+        run: |
+          ls -lh output.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
+
+      - name: buffer
+        continue-on-error: true
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+          BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
+          VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/upload_buffer.py
+
+      - name: pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: mike-teaser
+          path: |
+            output.mp4
+            script.txt
+            teaser_job.json
+            teaser_timeline.json
+            tiktok_caption.txt
+            tiktok_comment.txt
+            buffer_result.json
+            title_short.txt
+          if-no-files-found: error
+          retention-days: 3
