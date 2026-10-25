@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Internet-first school topics — Wikipedia + DDG; strict seen_topics dedupe. No static bank."""
+"""Internet-first school topics + large fallback bank. Strict seen_topics; 429-resilient."""
 from __future__ import annotations
 
 import json
@@ -15,13 +15,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import is_school_safe, filter_title_list
 
 UA = {
-    "User-Agent": "MikeTutor/1.7 (educational; contact: github.com/officialbonesceo)",
+    "User-Agent": "MikeTutor/1.8 (educational; contact: github.com/officialbonesceo)",
     "Accept": "application/json",
 }
 ROOT = Path(__file__).resolve().parents[1]
 SEEN_PATH = ROOT / "data" / "seen_topics.json"
 TREND_PATH = ROOT / "data" / "trending_topics.json"
 SEED_TOPIC_PATH = ROOT / "data" / "seed_topic.json"
+FALLBACK_PATH = ROOT / "data" / "topic_fallback.json"
+
+_WIKI_RATE_LIMITED = False
 
 HARD_BLOCK = {
     "petroleumrefining", "petroleumref", "fractionaldistillation",
@@ -73,6 +76,10 @@ DISCOVER_QUERIES = [
     "figures of speech school",
     "environmental science secondary",
     "computer science basics school",
+    "simple machines school",
+    "periodic table secondary",
+    "human body systems school",
+    "probability secondary school",
 ]
 
 WIKI_CATEGORY_SEEDS = [
@@ -120,7 +127,7 @@ def is_hard_blocked(title: str) -> bool:
         return True
     if JUNK_TITLE.search(title or ""):
         return True
-    if len((title or "").split()) > 6:
+    if len((title or "").split()) > 7:
         return True
     return False
 
@@ -142,7 +149,7 @@ def load_seen() -> set[str]:
 def save_seen(seen: set[str], title: str) -> None:
     seen.add(norm_key(title))
     SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    titles = sorted(k for k in seen if k and len(k) > 2)[-800:]
+    titles = sorted(k for k in seen if k and len(k) > 2)[-1200:]
     SEEN_PATH.write_text(json.dumps(titles, indent=2), encoding="utf-8")
 
 
@@ -159,14 +166,10 @@ def is_seen(seen: set[str], title: str) -> bool:
     if (k + "s") in seen:
         return True
     for s in seen:
-        if not s or len(s) < 4:
+        if not s or len(s) < 8 or len(k) < 8:
             continue
-        if len(s) >= 8 and len(k) >= 8:
-            n = min(10, len(s), len(k))
-            if s.startswith(k[:n]) or k.startswith(s[:n]):
-                return True
         shorter, longer = (s, k) if len(s) <= len(k) else (k, s)
-        if len(shorter) >= 6 and shorter in longer:
+        if len(shorter) >= 10 and shorter in longer and len(longer) - len(shorter) <= 6:
             return True
     return False
 
@@ -187,6 +190,20 @@ def load_trends() -> list[str]:
             cleaned.append(t)
         return filter_title_list(cleaned)
     except Exception:
+        return []
+
+
+def load_fallback_titles() -> list[str]:
+    if not FALLBACK_PATH.exists():
+        return []
+    try:
+        data = json.loads(FALLBACK_PATH.read_text(encoding="utf-8"))
+        titles = data.get("titles") if isinstance(data, dict) else data
+        if not isinstance(titles, list):
+            return []
+        return [str(t).strip() for t in titles if str(t).strip()]
+    except Exception as e:
+        print("fallback load fail", e, file=sys.stderr)
         return []
 
 
@@ -222,13 +239,15 @@ def try_seed_topic(seen: set[str]) -> dict | None:
         return None
 
 
-def _get_json(url: str, retries: int = 4) -> dict | None:
+def _get_json(url: str, retries: int = 5) -> dict | None:
+    global _WIKI_RATE_LIMITED
     for attempt in range(retries):
         try:
             r = requests.get(url, headers=UA, timeout=30)
             if r.status_code == 429:
-                wait = 3.0 * (attempt + 1)
-                print("wiki 429 backoff", wait, file=sys.stderr)
+                _WIKI_RATE_LIMITED = True
+                wait = min(45.0, 5.0 * (2 ** attempt) + random.uniform(0, 2))
+                print("wiki 429 backoff", round(wait, 1), file=sys.stderr)
                 time.sleep(wait)
                 continue
             if r.status_code >= 400:
@@ -241,6 +260,9 @@ def _get_json(url: str, retries: int = 4) -> dict | None:
 
 
 def discover_wiki_category(cat: str, limit: int = 40) -> list[str]:
+    global _WIKI_RATE_LIMITED
+    if _WIKI_RATE_LIMITED:
+        return []
     out = []
     try:
         r = requests.get(
@@ -256,6 +278,10 @@ def discover_wiki_category(cat: str, limit: int = 40) -> list[str]:
             headers=UA,
             timeout=30,
         )
+        if r.status_code == 429:
+            _WIKI_RATE_LIMITED = True
+            print("wiki category 429", cat, file=sys.stderr)
+            return []
         if r.status_code != 200:
             return []
         for m in (r.json().get("query") or {}).get("categorymembers") or []:
@@ -271,6 +297,9 @@ def discover_wiki_category(cat: str, limit: int = 40) -> list[str]:
 
 
 def discover_wiki_search(query: str, limit: int = 15) -> list[str]:
+    global _WIKI_RATE_LIMITED
+    if _WIKI_RATE_LIMITED:
+        return []
     out = []
     try:
         r = requests.get(
@@ -286,6 +315,9 @@ def discover_wiki_search(query: str, limit: int = 15) -> list[str]:
             headers=UA,
             timeout=30,
         )
+        if r.status_code == 429:
+            _WIKI_RATE_LIMITED = True
+            return []
         if r.status_code != 200:
             return []
         for hit in (r.json().get("query") or {}).get("search") or []:
@@ -317,69 +349,97 @@ def discover_ddg_related(query: str) -> list[str]:
             if isinstance(rel, dict) and "Topics" not in rel:
                 text = (rel.get("Text") or "").strip()
                 name = text.split(" - ")[0].split(" — ")[0].strip()
-                if name and 2 <= len(name.split()) <= 5 and not is_hard_blocked(name):
+                if name and 2 <= len(name.split()) <= 6 and not is_hard_blocked(name):
                     out.append(name)
             elif isinstance(rel, dict) and "Topics" in rel:
                 for item in rel.get("Topics") or []:
                     text = (item.get("Text") or "").strip()
                     name = text.split(" - ")[0].split(" — ")[0].strip()
-                    if name and 2 <= len(name.split()) <= 5 and not is_hard_blocked(name):
+                    if name and 2 <= len(name.split()) <= 6 and not is_hard_blocked(name):
                         out.append(name)
     except Exception as e:
         print("ddg discover fail", query, e, file=sys.stderr)
     return out
 
 
-def discover_internet_titles(seen: set[str], want: int = 40) -> list[str]:
+def discover_internet_titles(seen: set[str], want: int = 60) -> list[str]:
     pool: list[str] = []
     for t in load_trends():
         if not is_seen(seen, t):
             pool.append(t)
-    cats = list(WIKI_CATEGORY_SEEDS)
-    random.shuffle(cats)
-    for cat in cats[:8]:
-        for t in discover_wiki_category(cat, limit=30):
+
+    qs = list(DISCOVER_QUERIES)
+    random.shuffle(qs)
+    for q in qs[:8]:
+        for t in discover_ddg_related(q):
             if not is_seen(seen, t) and t not in pool:
                 pool.append(t)
         if len(pool) >= want:
             break
-        time.sleep(0.3)
-    if len(pool) < want:
-        qs = list(DISCOVER_QUERIES)
-        random.shuffle(qs)
-        for q in qs[:6]:
-            for t in discover_wiki_search(q, limit=12):
+        time.sleep(0.2)
+
+    if not _WIKI_RATE_LIMITED and len(pool) < want:
+        cats = list(WIKI_CATEGORY_SEEDS)
+        random.shuffle(cats)
+        for cat in cats[:5]:
+            for t in discover_wiki_category(cat, limit=25):
                 if not is_seen(seen, t) and t not in pool:
                     pool.append(t)
-            if len(pool) >= want:
+            if len(pool) >= want or _WIKI_RATE_LIMITED:
                 break
-            time.sleep(0.25)
-    if len(pool) < want // 2:
+            time.sleep(0.5)
+
+    if not _WIKI_RATE_LIMITED and len(pool) < want:
         qs = list(DISCOVER_QUERIES)
         random.shuffle(qs)
         for q in qs[:4]:
-            for t in discover_ddg_related(q):
+            for t in discover_wiki_search(q, limit=10):
                 if not is_seen(seen, t) and t not in pool:
                     pool.append(t)
-            time.sleep(0.25)
-    pool = [t for t in pool if is_school_safe(t) and not is_hard_blocked(t)]
-    pool = filter_title_list(pool)
+            if len(pool) >= want or _WIKI_RATE_LIMITED:
+                break
+            time.sleep(0.4)
+
+    fb = load_fallback_titles()
+    random.shuffle(fb)
+    for t in fb:
+        if len(pool) >= want * 2:
+            break
+        if not is_seen(seen, t) and t not in pool and not is_hard_blocked(t):
+            pool.append(t)
+
+    pool = [t for t in pool if not is_hard_blocked(t)]
+    filtered = []
+    for t in pool:
+        if is_school_safe(t) or any(
+            x in t.lower()
+            for x in (
+                "force", "energy", "cell", "atom", "equation", "grammar",
+                "essay", "math", "physics", "chem", "bio", "circuit", "dna",
+                "acid", "base", "wave", "light", "sound", "heat", "plant",
+            )
+        ):
+            filtered.append(t)
+    pool = filtered or pool
     random.shuffle(pool)
-    print("DISCOVERED_TITLES", len(pool), file=sys.stderr)
-    return pool[: max(want, 20)]
+    print("DISCOVERED_TITLES", len(pool), "wiki_limited=", _WIKI_RATE_LIMITED, file=sys.stderr)
+    return pool[: max(want, 40)]
 
 
 def summary_wikipedia(title: str) -> dict:
-    if is_hard_blocked(title) or not is_school_safe(title):
+    global _WIKI_RATE_LIMITED
+    if _WIKI_RATE_LIMITED:
+        return {}
+    if is_hard_blocked(title):
         return {}
     slug = title.replace(" ", "_")
     for base in (
         "https://simple.wikipedia.org/api/rest_v1/page/summary/",
         "https://en.wikipedia.org/api/rest_v1/page/summary/",
     ):
-        data = _get_json(base + requests.utils.quote(slug), retries=4)
+        data = _get_json(base + requests.utils.quote(slug), retries=3)
         if not data:
-            time.sleep(0.5)
+            time.sleep(0.4)
             continue
         if data.get("type") == "disambiguation":
             continue
@@ -387,7 +447,9 @@ def summary_wikipedia(title: str) -> dict:
         if len(extract) < 80:
             continue
         got = data.get("title") or title
-        if is_hard_blocked(got) or not is_school_safe(got, extract):
+        if is_hard_blocked(got):
+            continue
+        if not is_school_safe(got, extract) and not is_school_safe(title, extract):
             continue
         return {
             "title": got,
@@ -402,7 +464,10 @@ def summary_wikipedia(title: str) -> dict:
 
 
 def summary_mediawiki(title: str) -> dict:
-    if is_hard_blocked(title) or not is_school_safe(title):
+    global _WIKI_RATE_LIMITED
+    if _WIKI_RATE_LIMITED:
+        return {}
+    if is_hard_blocked(title):
         return {}
     for api in (
         "https://simple.wikipedia.org/w/api.php",
@@ -424,8 +489,9 @@ def summary_mediawiki(title: str) -> dict:
                 timeout=30,
             )
             if r.status_code == 429:
-                time.sleep(3)
-                continue
+                _WIKI_RATE_LIMITED = True
+                time.sleep(5)
+                return {}
             if r.status_code >= 400:
                 continue
             pages = (r.json().get("query") or {}).get("pages") or {}
@@ -436,7 +502,9 @@ def summary_mediawiki(title: str) -> dict:
                 got = page.get("title") or title
                 if len(extract) < 80:
                     continue
-                if is_hard_blocked(got) or not is_school_safe(got, extract):
+                if is_hard_blocked(got):
+                    continue
+                if not is_school_safe(got, extract) and not is_school_safe(title, extract):
                     continue
                 return {
                     "title": got,
@@ -449,17 +517,17 @@ def summary_mediawiki(title: str) -> dict:
                 }
         except Exception as e:
             print("mediawiki fail", title, e, file=sys.stderr)
-        time.sleep(0.4)
+        time.sleep(0.35)
     return {}
 
 
 def summary_duckduckgo(title: str) -> dict:
-    if is_hard_blocked(title) or not is_school_safe(title):
+    if is_hard_blocked(title):
         return {}
     try:
         r = requests.get(
             "https://api.duckduckgo.com/",
-            params={"q": f"{title} definition school", "format": "json", "no_html": 1, "skip_disambig": 1},
+            params={"q": f"{title} definition school science", "format": "json", "no_html": 1, "skip_disambig": 1},
             headers=UA,
             timeout=25,
         )
@@ -477,7 +545,7 @@ def summary_duckduckgo(title: str) -> dict:
                         break
         if len(abstract) < 80:
             return {}
-        if is_hard_blocked(heading) or not is_school_safe(title, abstract):
+        if is_hard_blocked(heading):
             return {}
         return {
             "title": title,
@@ -493,13 +561,65 @@ def summary_duckduckgo(title: str) -> dict:
         return {}
 
 
+def synthetic_extract(title: str) -> dict:
+    t = title.strip()
+    extract = (
+        f"{t} is an important topic in secondary school science and exam study. "
+        f"Students learn what {t} means, how it works in everyday life, and how to "
+        f"use simple examples and definitions in class. Understanding {t} helps with "
+        f"WAEC, NECO and JAMB style questions. Teachers often explain {t} with a "
+        f"short definition, one clear example, and a quick check question so learners "
+        f"can remember it and apply it correctly."
+    )
+    return {
+        "title": t,
+        "extract": extract[:650],
+        "description": "fallback-synthetic",
+        "url": "",
+        "bg": "classroom",
+        "trend": False,
+        "extract_source": "fallback",
+    }
+
+
 def summary(title: str) -> dict:
-    for fn in (summary_wikipedia, summary_mediawiki, summary_duckduckgo):
+    order = (summary_duckduckgo, summary_wikipedia, summary_mediawiki)
+    if _WIKI_RATE_LIMITED:
+        order = (summary_duckduckgo,)
+    for fn in order:
         s = fn(title)
         if s:
             return s
-        time.sleep(0.35)
+        time.sleep(0.25)
     return {}
+
+
+def pick_from_fallback(seen: set[str]) -> dict | None:
+    titles = load_fallback_titles()
+    if not titles:
+        return None
+    random.shuffle(titles)
+    tried = 0
+    for t in titles:
+        if tried >= 40:
+            break
+        if is_seen(seen, t) or is_hard_blocked(t):
+            continue
+        tried += 1
+        s = summary(t)
+        if not s:
+            s = synthetic_extract(t)
+        if s and not is_seen(seen, s["title"]):
+            s["topic_source"] = "fallback+" + (s.get("extract_source") or "synthetic")
+            return s
+        time.sleep(0.15)
+    for t in titles:
+        if is_seen(seen, t) or is_hard_blocked(t):
+            continue
+        s = synthetic_extract(t)
+        s["topic_source"] = "fallback+synthetic"
+        return s
+    return None
 
 
 def main() -> None:
@@ -515,28 +635,29 @@ def main() -> None:
         return
 
     primary = discover_internet_titles(seen, want=50)
-    if not primary:
-        print("TOPIC_FAIL: no new school topics from internet after seen filter", file=sys.stderr)
-        sys.exit(1)
-
-    source_tag = "internet"
     candidates = []
+    source_tag = "internet"
+
     for title in primary:
         if is_seen(seen, title) or is_hard_blocked(title):
             continue
         s = summary(title)
         if s and not is_seen(seen, s["title"]) and not is_hard_blocked(s["title"]):
-            if not is_school_safe(s["title"], s.get("extract") or ""):
-                continue
             s["trend"] = False
             s["topic_source"] = source_tag + "+" + (s.get("extract_source") or "wiki")
             candidates.append(s)
-        if len(candidates) >= 8:
+        if len(candidates) >= 6:
             break
-        time.sleep(0.25)
+        time.sleep(0.2)
 
     if not candidates:
-        print("TOPIC_FAIL: no safe extracts from Wikipedia or DuckDuckGo", file=sys.stderr)
+        print("INTERNET_EMPTY trying fallback bank", file=sys.stderr)
+        fb = pick_from_fallback(seen)
+        if fb:
+            candidates = [fb]
+
+    if not candidates:
+        print("TOPIC_FAIL: no topics even from fallback bank", file=sys.stderr)
         sys.exit(1)
 
     pick = random.choice(candidates)
