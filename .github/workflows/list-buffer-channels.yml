@@ -2,6 +2,10 @@ name: list-buffer-channels
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "scripts/list_buffer_channels.py"
+      - ".github/workflows/list-buffer-channels.yml"
 
 jobs:
   list:
