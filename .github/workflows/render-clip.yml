@@ -85,9 +85,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ env.OPENROUTER_MODEL }}
         run: |
-          # Fail the whole job if AI fails — no template/synthetic script
           python scripts/generate_script.py --topic topic.json --model "$MODEL_DIR/$PHI_FILE" --try-llm --out script_job.json
           python -c "import json; d=json.load(open('script_job.json')); e=d.get('engine',''); assert e and not e.startswith('template'), e; print(e, d.get('short_title'), len(d.get('script','').split()), 'words'); print(d.get('script','')[:240]); print('DYK', d.get('did_you_know')); print('DEF', d.get('definition'))"
+          test -s script.txt || python -c "import json; Path=__import__('pathlib').Path; s=json.load(open('script_job.json')).get('script',''); Path('script.txt').write_text(s.strip()+chr(10)); assert s.strip(), 'empty script'"
+          wc -w script.txt
 
       - name: topic-image
         continue-on-error: true
@@ -97,6 +98,9 @@ jobs:
 
       - name: tts
         run: |
+          if [ ! -s script.txt ]; then
+            python -c "import json; from pathlib import Path; s=json.load(open('script_job.json')).get('script',''); Path('script.txt').write_text(s.strip()+chr(10)); assert s.strip(), 'empty script'"
+          fi
           python scripts/render_clip.py --text "$(cat script.txt)" --voice "$VOICE" --rate="$RATE" --audio-out speech.mp3
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
           ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3
@@ -125,7 +129,6 @@ jobs:
       - name: consume-seed-after-success
         continue-on-error: true
         run: |
-          # After a successful video, permanently disable any seed so it cannot stick
           git config user.name "mike-bot"
           git config user.email "bot@users.noreply.github.com"
           mkdir -p data
