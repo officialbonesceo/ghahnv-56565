@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 import requests
 
@@ -79,13 +80,33 @@ def main() -> None:
 
     channels = (data2.get("data") or {}).get("channels") or []
     print("\n=== SUMMARY ===")
+    summary = []
     for c in channels:
+        row = {
+            "service": c.get("service"),
+            "name": c.get("name"),
+            "displayName": c.get("displayName"),
+            "id": c.get("id"),
+            "isQueuePaused": c.get("isQueuePaused"),
+        }
+        summary.append(row)
         print(
-            f"- service={c.get('service')} | name={c.get('name')} | "
-            f"display={c.get('displayName')} | id={c.get('id')} | paused={c.get('isQueuePaused')}"
+            f"- service={row['service']} | name={row['name']} | "
+            f"display={row['displayName']} | id={row['id']} | paused={row['isQueuePaused']}"
         )
     if not channels:
         print("(no channels returned)")
+
+    out = {
+        "organizationId": org_id,
+        "organizations": orgs,
+        "channels": summary,
+        "raw_account": data,
+        "raw_channels": data2,
+    }
+    Path("data").mkdir(parents=True, exist_ok=True)
+    Path("data/buffer_channels.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print("Wrote data/buffer_channels.json", file=sys.stderr)
 
 
 if __name__ == "__main__":
