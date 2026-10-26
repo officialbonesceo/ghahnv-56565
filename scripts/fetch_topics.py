@@ -14,17 +14,18 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import is_school_safe, filter_title_list
 
-UA = {"User-Agent": "MikeTutor/1.8 (educational; contact: github.com/officialbonesceo)", "Accept": "application/json"}
+UA = {"User-Agent": "MikeTutor/1.9 (educational; contact: github.com/officialbonesceo)", "Accept": "application/json"}
 ROOT = Path(__file__).resolve().parents[1]
 SEEN_PATH = ROOT / "data" / "seen_topics.json"
 TREND_PATH = ROOT / "data" / "trending_topics.json"
 SEED_TOPIC_PATH = ROOT / "data" / "seed_topic.json"
 FALLBACK_PATH = ROOT / "data" / "topic_fallback.json"
+CORES_PATH = ROOT / "data" / "topic_cores.json"
 _WIKI_RATE_LIMITED = False
 
 HARD_BLOCK = {"petroleumrefining", "petroleumref", "fractionaldistillation", "fractionaldistil", "dangoterefinery", "oilrefinery", "oilrefining", "mithraism", "osmosisjones", "mitsubishi", "kotonemitsuishi", "mississippiriver", "royalmedal", "theosmonds", "penilaianmen", "penilaianmenengahrendah", "nucleation", "quarticequation", "quarticequat"}
 TREND_SPAM = re.compile(r"(?i)(essay\s*writing\s*service|writing\s*service|cheap\s*college|trustworthy\s*essay|safe\s*essay|ai\s*essay|what\s+is\s+(a\s+|the\s+)?photosynthesis|what\s+is\s+(a\s+|the\s+)?water\s*cycle|what\s+is\s+fraction|as\s+a?\s*fraction|in\s+fraction|magic\s+school\s+bus|water\s+cycle\s+diagram|water\s+cycle\s+(management|intensification)|photosynthesis\s+(system|research)|cell\s+signaling|fraction\s+in\s+disguise|college\s+essay)")
-JUNK_TITLE = re.compile(r"(?i)(welding|sintering|weapon|penetrator|interceptor|recovery system|inducer protein|kinase|quartic|stir |assisted |density$|system$|research$|loss$|service$|recommendation|biography|discography|filmography|album|single \(song\))")
+JUNK_TITLE = re.compile(r"(?i)(welding|sintering|weapon|penetrator|interceptor|recovery system|inducer protein|kinase|quartic|stir |assisted |density$|system$|research$|loss$|service$|recommendation|biography|discography|filmography|album|single \(song\)|embodied design)")
 
 DISCOVER_QUERIES = ["physics secondary school", "chemistry secondary school", "biology secondary school", "mathematics secondary school", "English grammar secondary school", "WAEC physics topic", "WAEC chemistry topic", "WAEC biology topic", "NECO science topic", "forces and motion school", "heat transfer school", "electricity circuit school", "cell biology school", "plant physiology school", "algebra secondary", "geometry secondary school", "essay structure school", "figures of speech school", "environmental science secondary", "computer science basics school", "simple machines school", "periodic table secondary", "human body systems school", "probability secondary school"]
 WIKI_CATEGORY_SEEDS = ["Category:Introductory_physics", "Category:Concepts_in_physics", "Category:Classical_mechanics", "Category:Thermodynamics", "Category:Electricity", "Category:Optics", "Category:Biology", "Category:Cell_biology", "Category:Botany", "Category:Ecology", "Category:Chemistry", "Category:Chemical_reactions", "Category:Mathematics_education", "Category:Elementary_geometry", "Category:Algebra", "Category:English_grammar", "Category:Figures_of_speech", "Category:Earth_sciences", "Category:Atmospheric_sciences", "Category:Computer_science"]
@@ -85,18 +86,57 @@ def load_trends() -> list[str]:
         return []
 
 def _generate_fallback_titles() -> list[str]:
-    cores = [
-        "Force","Motion","Speed","Velocity","Acceleration","Inertia","Momentum","Friction","Gravity","Mass","Weight","Density","Pressure","Work","Power","Energy","Kinetic energy","Potential energy","Heat","Temperature","Conduction","Convection","Radiation","Electric current","Voltage","Resistance","Ohm's law","Series circuit","Parallel circuit","Magnetism","Light","Reflection","Refraction","Sound","Waves","Lever","Pulley","Buoyancy","Atom","Molecule","Element","Compound","Periodic table","Ionic bond","Covalent bond","Acid","Base","Salt","Neutralization","Solution","Oxygen","Hydrogen","Rusting","Electrolysis","Catalyst","Mole concept","Cell","Cell membrane","Nucleus","Diffusion","Osmosis","Photosynthesis","Respiration","Enzyme","Heart","Lungs","Brain","Blood","Vaccine","DNA","Mitosis","Meiosis","Food chain","Ecosystem","Genetics","Fraction","Percentage","Ratio","Algebra","Linear equation","Quadratic equation","Geometry","Triangle","Circle","Area","Volume","Pythagoras theorem","Trigonometry","Probability","Statistics","Noun","Verb","Adjective","Tenses","Active voice","Passive voice","Simile","Metaphor","Essay writing","Comprehension","Letter writing","Water cycle","Climate","Rock cycle","Computer","Algorithm","Internet","Binary system",
+    """Expand cores from data/topic_cores.json into tens of thousands of school titles."""
+    cores: list[str] = []
+    try:
+        if CORES_PATH.exists():
+            data = json.loads(CORES_PATH.read_text(encoding="utf-8"))
+            raw = data.get("cores") if isinstance(data, dict) else data
+            if isinstance(raw, list):
+                cores = [str(x).strip() for x in raw if str(x).strip()]
+    except Exception as e:
+        print("cores load", e, file=sys.stderr)
+    if len(cores) < 50:
+        cores = [
+            "Force", "Motion", "Velocity", "Acceleration", "Friction", "Gravity", "Energy",
+            "Kinetic energy", "Potential energy", "Heat", "Conduction", "Convection", "Radiation",
+            "Electric current", "Ohm's law", "Series circuit", "Parallel circuit", "Light",
+            "Reflection", "Refraction", "Sound", "Atom", "Molecule", "Acid", "Base", "Salt",
+            "Cell", "Osmosis", "Diffusion", "Photosynthesis", "Respiration", "Enzyme", "DNA",
+            "Mitosis", "Meiosis", "Fraction", "Algebra", "Geometry", "Probability", "Essay writing",
+            "Active voice", "Passive voice", "Water cycle", "Computer", "Algorithm",
+        ]
+    angles = [
+        "{t}", "Types of {t}", "Basics of {t}", "Introduction to {t}", "{t} explained",
+        "{t} definition", "{t} examples", "{t} in everyday life", "{t} for WAEC", "{t} for JAMB",
+        "{t} for NECO", "{t} for secondary school", "How {t} works", "Importance of {t}",
+        "Applications of {t}", "Properties of {t}", "{t} formula", "{t} process", "{t} experiment",
+        "SS1 {t}", "SS2 {t}", "SS3 {t}", "JSS {t}", "Common mistakes in {t}", "Exam tips on {t}",
+        "Revision on {t}", "Quick revision: {t}", "Key points on {t}", "Exam focus: {t}",
+        "Factors affecting {t}", "Uses of {t}", "SS1 notes on {t}", "SS2 notes on {t}", "SS3 notes on {t}",
     ]
-    titles = set(cores)
-    for t in list(cores):
-        for tmpl in ("Types of {t}", "Basics of {t}", "Introduction to {t}", "{t} in everyday life", "{t} for secondary school", "{t} for WAEC", "{t} for JAMB", "How {t} works", "Importance of {t}", "Applications of {t}", "Properties of {t}", "{t} formula", "{t} process", "{t} experiment", "SS1 {t}", "SS2 {t}", "SS3 {t}", "Physics {t}", "Chemistry {t}", "Biology {t}", "Mathematics {t}"):
+    titles: set[str] = set()
+    for t in cores:
+        for tmpl in angles:
             title = tmpl.format(t=t)
+            if 2 <= len(title.split()) <= 8 and len(title) <= 70:
+                titles.add(title)
+        for sub in ("Physics", "Chemistry", "Biology", "Mathematics", "English"):
+            title = f"{sub} {t}"
             if 2 <= len(title.split()) <= 7:
                 titles.add(title)
-    for a, b in (("Kinetic energy","Potential energy"),("Conduction","Convection"),("Series circuit","Parallel circuit"),("Mitosis","Meiosis"),("Osmosis","Diffusion"),("Acid","Base"),("Speed","Velocity"),("Mass","Weight"),("Reflection","Refraction")):
-        titles.add(f"{a} and {b}")
-        titles.add(f"Difference between {a} and {b}")
+    pairs = [
+        ("Kinetic energy", "Potential energy"), ("Conduction", "Convection"),
+        ("Series circuit", "Parallel circuit"), ("Mitosis", "Meiosis"),
+        ("Osmosis", "Diffusion"), ("Acid", "Base"), ("Speed", "Velocity"),
+        ("Mass", "Weight"), ("Reflection", "Refraction"),
+        ("Aerobic respiration", "Anaerobic respiration"),
+        ("Ionic bond", "Covalent bond"), ("Active voice", "Passive voice"),
+    ]
+    for a, b in pairs:
+        for title in (f"{a} and {b}", f"Difference between {a} and {b}", f"{a} vs {b}"):
+            if len(title.split()) <= 8:
+                titles.add(title)
     return sorted(titles, key=str.lower)
 
 def load_fallback_titles() -> list[str]:
@@ -321,8 +361,10 @@ def main() -> None:
         print("TOPIC_SOURCE seed", seeded.get("title"), file=sys.stderr)
         print(json.dumps(seeded, indent=2))
         return
-    primary = discover_internet_titles(seen, want=50)
     candidates = []
+    # Warm the fallback generator early so FALLBACK_TITLES is logged
+    _ = load_fallback_titles()
+    primary = discover_internet_titles(seen, want=50)
     for title in primary:
         if is_seen(seen, title) or is_hard_blocked(title): continue
         s = summary(title)
@@ -337,13 +379,14 @@ def main() -> None:
         fb = pick_from_fallback(seen)
         if fb: candidates = [fb]
     if not candidates:
-        print("TOPIC_FAIL: no topics even from fallback bank", file=sys.stderr)
+        print("TOPIC_FAIL: no topics available", file=sys.stderr)
         sys.exit(1)
-    pick = random.choice(candidates)
-    save_seen(seen, pick["title"])
-    out.write_text(json.dumps(pick, indent=2), encoding="utf-8")
-    print("TOPIC_SOURCE", pick.get("topic_source"), pick.get("title"), file=sys.stderr)
-    print(json.dumps(pick, indent=2))
+    random.shuffle(candidates)
+    chosen = candidates[0]
+    save_seen(seen, chosen["title"])
+    out.write_text(json.dumps(chosen, indent=2), encoding="utf-8")
+    print("TOPIC_SOURCE", chosen.get("topic_source"), chosen.get("title"), file=sys.stderr)
+    print(json.dumps(chosen, indent=2))
 
 if __name__ == "__main__":
     main()
