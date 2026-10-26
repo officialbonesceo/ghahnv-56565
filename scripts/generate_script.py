@@ -41,7 +41,7 @@ HOOK_TEMPLATES = [
     "This is the {topic} mistake that costs easy marks.",
     "If {topic} still confuses you, fix it in under a minute.",
     "Teachers love trapping you on {topic}. Here is the clean version.",
-    "Write this definition of {topic} and keep the marks.",
+    "Learn {topic} once — and stop losing easy exam marks.",
 ]
 
 PROMPT_LEAK_RE = re.compile(
@@ -57,7 +57,7 @@ PROMPT_LEAK_RE = re.compile(
     r"topic:\s*\w+\s*facts:|didyouknow must|phenomenon-first|structure:\s*\d\)|"
     r"plain words,? one clear sentence students can write|formal exam-ready sentence under|"
     r"facts from reliable source|no religion,? no politics|"
-    r"write the definition of|then give one labelled example|labelled example|"
+    r"write the definition of|write this definition of|then give one labelled example|labelled example|"
     r"one clear sentence students|for the board|under \d+ words"
     r")"
 )
@@ -65,7 +65,7 @@ PROMPT_LEAK_RE = re.compile(
 INSTRUCTION_FIELD_RE = re.compile(
     r"(?is)(plain words,? one clear|students can write|under \d+ words|"
     r"exam-ready sentence|for the board|structure:|thinking process|voiceover for|"
-    r"write the definition|labelled example|then give one|didyouknow must|"
+    r"write the definition|write this definition|labelled example|then give one|didyouknow must|"
     r"return only|spoken paragraphs)"
 )
 
@@ -74,6 +74,20 @@ def display_title(title: str) -> str:
     t = title or "Science"
     t = re.sub(r"\s*\([^)]*\)\s*", " ", t).strip()
     t = re.sub(r"^\d{4}(-\d{2})?\s*", "", t).strip() or title
+    t = re.sub(r"(?i)^(how\s+)?", "", t).strip()
+    t = re.sub(
+        r"(?i)^(basics?|introduction|types?|importance|applications?|properties|laws?)\s+(of\s+)?",
+        "",
+        t,
+    ).strip()
+    t = re.sub(r"(?i)^(ss[123]|jss)\s+", "", t).strip()
+    t = re.sub(r"(?i)^(physics|chemistry|biology|mathematics)\s+", "", t).strip()
+    t = re.sub(
+        r"(?i)\s+(for\s+(waec|jamb|secondary\s+school)|in\s+everyday\s+life|formula|process|experiment|calculation|works)$",
+        "",
+        t,
+    ).strip()
+    t = t or title
     return t[:40]
 
 
@@ -437,66 +451,72 @@ def run_openrouter(topic: dict):
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "max_tokens": 450,
-                "temperature": 0.32,
+                "temperature": 0.7,
+                "max_tokens": 700,
             },
             timeout=90,
         )
-        if r.status_code != 200:
-            print("openrouter status", r.status_code, r.text[:300], file=sys.stderr)
+        if r.status_code >= 400:
+            print("openrouter HTTP", r.status_code, r.text[:300], file=sys.stderr)
             return None
-        choice = r.json().get("choices") or []
-        if not choice:
+        data = r.json()
+        content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if not content:
             return None
-        full = ((choice[0].get("message") or {}).get("content") or "").strip()
-        if not full:
-            return None
-        moves_raw = definition = dyk = ""
-        m = re.search(r"MOVES:\s*(.+)$", full, re.I | re.M)
-        if m:
-            moves_raw, full = m.group(1).strip(), full[: m.start()].strip()
-        m = re.search(r"DEFINITION:\s*(.+)$", full, re.I | re.M)
-        if m:
-            definition, full = m.group(1).strip(), full[: m.start()].strip()
-        m = re.search(r"DIDYOUKNOW:\s*(.+)$", full, re.I | re.M)
-        if m:
-            dyk, full = m.group(1).strip(), full[: m.start()].strip()
-        return pack(topic, full, f"openrouter:{model}", moves_raw, definition, dyk, phenom)
+        definition = dyk = moves_raw = ""
+        spoken = content
+        for label, dest in (("DEFINITION:", "definition"), ("DIDYOUKNOW:", "dyk"), ("MOVES:", "moves")):
+            if label in content.upper().replace(" ", ""):
+                pass
+        m_def = re.search(r"(?im)^DEFINITION:\s*(.+)$", content)
+        m_dyk = re.search(r"(?im)^DIDYOUKNOW:\s*(.+)$", content)
+        m_mov = re.search(r"(?im)^MOVES:\s*(.+)$", content)
+        if m_def:
+            definition = m_def.group(1).strip()
+        if m_dyk:
+            dyk = m_dyk.group(1).strip()
+        if m_mov:
+            moves_raw = m_mov.group(1).strip()
+        spoken = re.split(r"(?im)^(?:DEFINITION|DIDYOUKNOW|MOVES):", content)[0].strip()
+        return pack(topic, spoken, f"openrouter:{model}", moves_raw, definition, dyk, phenom)
     except Exception as e:
         print("openrouter error", e, file=sys.stderr)
         return None
 
 
-def run_gguf(model: Path, topic: dict, engine_name: str):
-    if not model.exists() or model.stat().st_size < 10_000_000:
+def run_gguf(model_path: Path, topic: dict, engine: str):
+    if not model_path.exists():
+        print("gguf missing", model_path, file=sys.stderr)
         return None
-    helper = Path(__file__).resolve().parent / "_llm_once.py"
-    if not helper.exists():
-        return None
-    inp, outp = Path("/tmp/llm_in.json"), Path("/tmp/llm_out.json")
-    short = display_title(topic.get("title") or "")
+    short = display_title(topic.get("title") or "science")
+    extract = (topic.get("extract") or "")[:400]
     phenom = wants_phenomenon(short)
-    inp.write_text(json.dumps({
-        "model": str(model),
-        "title": short,
-        "extract": (topic.get("extract") or "")[:400],
-        "phenomenon": phenom,
-    }), encoding="utf-8")
-    if outp.exists():
-        outp.unlink()
+    prompt = (
+        f"Write a spoken secondary-school lesson on {short}. "
+        f"Facts: {extract}\n"
+        "80-120 words. Real-life example. No lists. End with follow for more.\n"
+        "DEFINITION: one exam sentence\nDIDYOUKNOW: Wait — tip\nMOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8\n"
+    )
     try:
-        r = subprocess.run(
-            [sys.executable, str(helper), str(inp), str(outp)],
-            timeout=360, capture_output=True, text=True,
-        )
-        if r.returncode != 0 or not outp.exists():
+        from llama_cpp import Llama
+        llm = Llama(model_path=str(model_path), n_ctx=2048, verbose=False)
+        out = llm(prompt, max_tokens=500, temperature=0.7, stop=["User:", "System:"])
+        content = (out.get("choices") or [{}])[0].get("text") or ""
+        content = content.strip()
+        if not content:
             return None
-        data = json.loads(outp.read_text(encoding="utf-8"))
-        return pack(
-            topic, data.get("body") or "",
-            engine_name, data.get("moves") or "",
-            data.get("definition") or "", data.get("dyk") or "", phenom,
-        )
+        definition = dyk = moves_raw = ""
+        m_def = re.search(r"(?im)^DEFINITION:\s*(.+)$", content)
+        m_dyk = re.search(r"(?im)^DIDYOUKNOW:\s*(.+)$", content)
+        m_mov = re.search(r"(?im)^MOVES:\s*(.+)$", content)
+        if m_def:
+            definition = m_def.group(1).strip()
+        if m_dyk:
+            dyk = m_dyk.group(1).strip()
+        if m_mov:
+            moves_raw = m_mov.group(1).strip()
+        spoken = re.split(r"(?im)^(?:DEFINITION|DIDYOUKNOW|MOVES):", content)[0].strip()
+        return pack(topic, spoken, engine, moves_raw, definition, dyk, phenom)
     except Exception as e:
         print("gguf error", e, file=sys.stderr)
         return None
@@ -523,9 +543,17 @@ def main():
         sys.exit(1)
 
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
+    script = (result.get("script") or "").strip()
+    Path("script.txt").write_text(script + ("\n" if script else ""), encoding="utf-8")
+    Path("title_short.txt").write_text(
+        (result.get("short_title") or result.get("title") or "Lesson") + "\n", encoding="utf-8"
+    )
+    Path("moves.json").write_text(json.dumps(result.get("moves") or [], indent=2), encoding="utf-8")
+    Path("hook.txt").write_text((script.split(".")[0] + ".") if script else "Lesson.\n", encoding="utf-8")
     print("ENGINE", result.get("engine"), file=sys.stderr)
     print("PHENOMENON", result.get("phenomenon_first"), file=sys.stderr)
     print("DYK", result.get("did_you_know"), file=sys.stderr)
+    print("WROTE script.txt", len(script.split()), "words", file=sys.stderr)
     print(json.dumps(result, indent=2))
 
 
