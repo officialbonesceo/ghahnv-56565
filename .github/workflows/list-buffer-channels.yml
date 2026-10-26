@@ -7,6 +7,9 @@ on:
       - "scripts/list_buffer_channels.py"
       - ".github/workflows/list-buffer-channels.yml"
 
+permissions:
+  contents: write
+
 jobs:
   list:
     runs-on: ubuntu-latest
@@ -26,3 +29,11 @@ jobs:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
         run: python scripts/list_buffer_channels.py
+
+      - name: commit-inventory
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/buffer_channels.json || true
+          git diff --cached --quiet || git commit -m "chore: buffer channel inventory"
+          git push || true
