@@ -1,0 +1,73 @@
+{
+  "organizationId": "69601d547746933b5a615580",
+  "organizations": [
+    {
+      "id": "69601d547746933b5a615580",
+      "name": "My organization"
+    }
+  ],
+  "channels": [
+    {
+      "service": "facebook",
+      "name": "Voxam Fact",
+      "displayName": "Voxam Fact",
+      "id": "6aa31cd2cd8b9c702c468b52",
+      "isQueuePaused": false
+    },
+    {
+      "service": "instagram",
+      "name": "bones_ceo",
+      "displayName": "bones_ceo",
+      "id": "6aa31c1dcd8b9c702c467a38",
+      "isQueuePaused": false
+    },
+    {
+      "service": "tiktok",
+      "name": "godswillchiemezie",
+      "displayName": "godswillchiemezie",
+      "id": "6a9b6f3f065799be468f596b",
+      "isQueuePaused": false
+    }
+  ],
+  "raw_account": {
+    "data": {
+      "account": {
+        "id": "69601d547746933b5a61557e",
+        "email": "isaacgodswill234@gmail.com",
+        "organizations": [
+          {
+            "id": "69601d547746933b5a615580",
+            "name": "My organization"
+          }
+        ]
+      }
+    }
+  },
+  "raw_channels": {
+    "data": {
+      "channels": [
+        {
+          "id": "6aa31cd2cd8b9c702c468b52",
+          "name": "Voxam Fact",
+          "displayName": "Voxam Fact",
+          "service": "facebook",
+          "isQueuePaused": false
+        },
+        {
+          "id": "6aa31c1dcd8b9c702c467a38",
+          "name": "bones_ceo",
+          "displayName": "bones_ceo",
+          "service": "instagram",
+          "isQueuePaused": false
+        },
+        {
+          "id": "6a9b6f3f065799be468f596b",
+          "name": "godswillchiemezie",
+          "displayName": "godswillchiemezie",
+          "service": "tiktok",
+          "isQueuePaused": false
+        }
+      ]
+    }
+  }
+}
