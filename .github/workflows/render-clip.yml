@@ -44,6 +44,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install edge-tts Pillow requests pytrends
+          pip install google-api-python-client google-auth google-auth-oauthlib
           pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu || pip install llama-cpp-python || true
 
       - name: host-layers
@@ -150,6 +151,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/upload_buffer.py
 
+      - name: youtube
+        continue-on-error: true
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_PRIVACY: ${{ secrets.YOUTUBE_PRIVACY }}
+        run: |
+          python scripts/upload_youtube.py
+          cat youtube_result.json || true
+
       - name: pack
         uses: actions/upload-artifact@v4
         with:
@@ -167,6 +180,7 @@ jobs:
             tiktok_comment.txt
             mouth.json
             buffer_result.json
+            youtube_result.json
             title_short.txt
             hook.txt
             thumb_style.txt
