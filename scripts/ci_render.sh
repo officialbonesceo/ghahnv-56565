@@ -38,4 +38,8 @@ else
     --out output.mp4 \
     --actions "${ACTIONS}"
 fi
+
+# Burn readable on-screen captions (voiceover text)
+python scripts/burn_captions.py || true
+
 ls -lh output.mp4
