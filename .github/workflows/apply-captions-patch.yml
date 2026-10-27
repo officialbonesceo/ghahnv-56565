@@ -1,0 +1,112 @@
+name: apply-captions-patch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply-captions-patch.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch-render-captions
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/render_mezi.py')
+          t = p.read_text()
+          if 'def caption_chunks' not in t:
+              helper = '''
+def caption_chunks(text: str, max_words: int = 7) -> list[str]:
+    words = [w for w in (text or "").replace("\\n", " ").split() if w.strip()]
+    if not words:
+        return []
+    chunks, cur = [], []
+    for w in words:
+        cur.append(w)
+        end = w.endswith((".", "!", "?", ",")) or len(cur) >= max_words
+        if end and len(cur) >= 3:
+            chunks.append(" ".join(cur))
+            cur = []
+    if cur:
+        if chunks and len(cur) <= 2:
+            chunks[-1] = (chunks[-1] + " " + " ".join(cur)).strip()
+        else:
+            chunks.append(" ".join(cur))
+    return chunks
+
+def draw_caption_bar(frame: Image.Image, phrase: str) -> Image.Image:
+    if not phrase or not phrase.strip():
+        return frame
+    img = frame.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+    tf = font(42)
+    lines = wrap_text(d, phrase.strip(), tf, W - 120)[:3]
+    if not lines:
+        return frame
+    line_h = tf.size + 10
+    box_h = 28 + line_h * len(lines) + 20
+    top = H - box_h - 160
+    d.rounded_rectangle([40, top, W - 40, top + box_h], radius=18, fill=(0, 0, 0, 175))
+    y = top + 18
+    for line in lines:
+        bb = d.textbbox((0, 0), line, font=tf)
+        x = (W - (bb[2] - bb[0])) // 2
+        for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            d.text((x + ox, y + oy), line, font=tf, fill=(0, 0, 0, 220))
+        d.text((x, y), line, font=tf, fill=(255, 255, 255, 255))
+        y += line_h
+    return Image.alpha_composite(img, overlay).convert("RGB")
+
+'''
+              t = t.replace('def pick_room(topic: str) -> dict:\n', helper + 'def pick_room(topic: str) -> dict:\n')
+          if 'caption_list = caption_chunks' not in t:
+              t = t.replace(
+                  '    moves = load_moves()\n    img_win = image_window(duration) if topic_img is not None else None\n',
+                  '    moves = load_moves()\n    caption_list = caption_chunks(text, max_words=7)\n    print("CAPTIONS", len(caption_list), "chunks", file=sys.stderr)\n    img_win = image_window(duration) if topic_img is not None else None\n',
+              )
+          if 'draw_caption_bar(frame' not in t:
+              old = '''            if dyk_win and dyk_win[0] <= t < dyk_win[1]:
+                frame = draw_fullscreen_dyk(dyk)
+            elif cta_win and t >= cta_win[0]:
+                frame = draw_fullscreen_cta()
+'''
+              new = '''            show_caption = True
+            if dyk_win and dyk_win[0] <= t < dyk_win[1]:
+                frame = draw_fullscreen_dyk(dyk)
+                show_caption = False
+            elif cta_win and t >= cta_win[0]:
+                frame = draw_fullscreen_cta()
+                show_caption = False
+'''
+              t = t.replace(old, new)
+              t = t.replace(
+                  '                frame = base.convert("RGB")\n\n            frame.save(td / f"f{i:05d}.png")\n',
+                  '                frame = base.convert("RGB")\n\n            if show_caption and caption_list:\n                cta_start = cta_win[0] if cta_win else duration\n                usable = max(1.0, cta_start - 0.15)\n                idx = min(len(caption_list) - 1, int((t / usable) * len(caption_list)))\n                if t < usable:\n                    frame = draw_caption_bar(frame, caption_list[idx])\n\n            frame.save(td / f"f{i:05d}.png")\n',
+              )
+          p.write_text(t)
+          print('render captions', 'draw_caption_bar' in t, 'caption_list' in t)
+          PY
+      - name: patch-buffer-global-tags
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/upload_buffer.py')
+          t = p.read_text()
+          t = t.replace('#learntok #sciencefacts #fyp #WAEC #JAMB #NECO #stem #edutok #studytok', '#learntok #sciencefacts #fyp #stem #edutok #studytok #education #learning #students #examprep')
+          t = t.replace('#reels #science #education #WAEC #JAMB #NECO #studytok #nigeria #learnontiktok #examprep #secondaryschool #stem', '#reels #science #education #stem #studytok #learnontiktok #examprep #students #learning #school #edutok')
+          t = t.replace('#Science #Education #WAEC #JAMB #NECO #Learn #STEM #StudyTips #ExamPrep', '#Science #Education #Learn #STEM #StudyTips #ExamPrep #Students #Learning #School')
+          t = t.replace('#learntok #sciencefacts #fyp #WAEC #JAMB #stem', '#learntok #sciencefacts #fyp #stem #edutok #studytok #education #learning #students')
+          p.write_text(t)
+          print('buffer tags ok')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/render_mezi.py scripts/upload_buffer.py
+          git diff --cached --quiet || git commit -m "feat: on-screen captions + global education hashtags"
+          git push || true
