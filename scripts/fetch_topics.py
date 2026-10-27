@@ -13,6 +13,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from content_safety import is_school_safe, filter_title_list
+from script_quality import is_broad_topic_title
 
 UA = {"User-Agent": "MikeTutor/1.9 (educational; contact: github.com/officialbonesceo)", "Accept": "application/json"}
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,8 @@ def norm_key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", t.lower())
 
 def is_hard_blocked(title: str) -> bool:
+    if is_broad_topic_title(title or ""):
+        return True
     k = norm_key(title)
     if k in HARD_BLOCK: return True
     for b in HARD_BLOCK:
@@ -134,7 +137,7 @@ def _generate_fallback_titles() -> list[str]:
             "Circulatory system", "Nervous system", "pH scale", "Rate of reaction",
         ]
     angles = [
-        "{t}", "Types of {t}", "Basics of {t}", "Introduction to {t}", "{t} explained",
+        "{t}", "Types of {t}", "{t} explained",
         "{t} definition", "{t} examples", "{t} in everyday life", "{t} for WAEC", "{t} for JAMB",
         "{t} for NECO", "{t} for secondary school", "How {t} works", "Importance of {t}",
         "Applications of {t}", "Properties of {t}", "{t} formula", "{t} process", "{t} experiment",

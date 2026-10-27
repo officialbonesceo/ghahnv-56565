@@ -12,6 +12,8 @@ from pathlib import Path
 
 import requests
 
+from script_quality import is_weak_script
+
 from tts_speech_fix import speakable_numbers, is_boring_step_dump, strip_step_intro
 
 VALID_MOVES = {
@@ -291,6 +293,10 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk="", phenomenon=Fa
     if re.search(r"(?i)meet .+ in everyday", cleaned):
         print("VAGUE_EXAMPLE reject", file=sys.stderr)
         return None
+    weak = is_weak_script(cleaned, short)
+    if weak:
+        print("WEAK_SCRIPT reject", weak, file=sys.stderr)
+        return None
 
     definition = (definition or "").strip()
     if not definition or INSTRUCTION_FIELD_RE.search(definition) or len(definition.split()) < 5:
@@ -333,6 +339,7 @@ def run_openrouter(topic: dict):
         "Stay strictly on the school topic. Never celebrity or biography. "
         "Open with a concrete everyday scene or exam trap from the facts — never a generic template line. "
         "Never open with Steps to answering. Never dump long numbered checklists. At most two ordered points as Number one, Number two. "
+        "Must include one concrete everyday example and a clear plain-language definition. Never pad with only exam-name drops or Save/Share without teaching. "
         "Return ONLY the spoken paragraphs — never list rules inside the voiceover."
     )
     multi = is_multipart(short, extract)
