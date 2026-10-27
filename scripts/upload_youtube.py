@@ -46,12 +46,12 @@ def load_description(title: str) -> str:
                 parts.extend([f"Did you know: {dyk[:200]}", ""])
         except Exception:
             pass
-    parts.append("Daily lessons for WAEC / JAMB / secondary school.")
-    parts.append("Subscribe for more exam-ready science with Mike.")
+    parts.append("Daily lessons for students worldwide — exam-ready and clear.")
+    parts.append("Subscribe for more science with Mike.")
     parts.append("")
     parts.append(
-        "#Shorts #Science #Education #WAEC #JAMB #NECO #Learn #STEM "
-        "#StudyTips #SecondarySchool #ExamPrep #Physics #Chemistry #Biology"
+        "#Shorts #Science #Education #Learning #STEM #StudyTips #ExamPrep "
+        "#Physics #Chemistry #Biology #Math #School #Students #Edutok #LearnOnYouTube"
     )
     return "\n".join(parts)[:4800]
 
@@ -104,7 +104,7 @@ def main() -> None:
             "title": title[:100],
             "description": description,
             "categoryId": "27",
-            "tags": ["Shorts", "science", "education", "WAEC", "JAMB", "STEM", "Mike", "NECO"],
+            "tags": ["Shorts", "science", "education", "STEM", "learning", "study", "students", "exam", "Mike"],
         },
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False, "madeForKids": False},
     }
