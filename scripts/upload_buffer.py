@@ -162,6 +162,8 @@ def captions_for(title: str, hook: str) -> dict[str, str]:
     """Platform-specific post text. Facebook always starts with a real title (no Untitled)."""
     t = title.strip() or "Science lesson"
     h = hook.strip()
+    if h and __import__("re").search(r"(?i)steps? to answer|number one,", h):
+        h = ""
 
     tiktok = (
         Path("tiktok_caption.txt").read_text(encoding="utf-8").strip()
@@ -173,7 +175,7 @@ def captions_for(title: str, hook: str) -> dict[str, str]:
             f"{t} explained in under a minute\n\n"
             f"{h + chr(10) + chr(10) if h else ''}"
             f"Follow for daily WAEC / JAMB lessons\n\n"
-            f"#learntok #sciencefacts #fyp #WAEC #JAMB #stem"
+            f"#learntok #sciencefacts #fyp #WAEC #JAMB #NECO #stem #edutok #studytok"
         )
 
     ig_body = h or f"{t} — clear exam-ready explanation."
@@ -181,7 +183,7 @@ def captions_for(title: str, hook: str) -> dict[str, str]:
         f"{ig_body}\n\n"
         f"Save this for revision.\n"
         f"Follow @bones_ceo for daily student lessons.\n\n"
-        f"#reels #learnontiktok #science #WAEC #JAMB #studytok #nigeria"
+        f"#reels #science #education #WAEC #JAMB #NECO #studytok #nigeria #learnontiktok #examprep #secondaryschool #stem"
     )
 
     # Facebook Page: first line = title so Feed never shows "Untitled"
@@ -191,7 +193,7 @@ def captions_for(title: str, hook: str) -> dict[str, str]:
         f"{fb_lead}\n\n"
         f"Watch the short video, then save it for revision.\n"
         f"Daily lessons for secondary school & exam prep.\n\n"
-        f"#Science #Education #WAEC #JAMB #Learn"
+        f"#Science #Education #WAEC #JAMB #NECO #Learn #STEM #StudyTips #ExamPrep"
     )
 
     return {"tiktok": tiktok, "instagram": instagram, "facebook": facebook}

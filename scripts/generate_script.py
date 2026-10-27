@@ -12,6 +12,8 @@ from pathlib import Path
 
 import requests
 
+from tts_speech_fix import speakable_numbers, is_boring_step_dump, strip_step_intro
+
 VALID_MOVES = {
     "talk", "welcome", "point", "sit", "present", "question", "happy",
     "explain", "shrug", "count", "think", "lean",
@@ -142,6 +144,10 @@ def clean_spoken(text: str) -> str:
         return ""
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\s*", "", t, flags=re.I)
+    t = speakable_numbers(t)
+    if is_boring_step_dump(t):
+        print("STEP_DUMP reject", file=__import__("sys").stderr)
+        return ""
     words = t.split()
     if len(words) < 50:
         return ""
@@ -214,7 +220,7 @@ def parse_moves(raw: str, topic: str) -> list:
 
 def force_hook(script: str, topic: str, phenomenon: bool, extract: str = "") -> str:
     """Keep AI scene hooks; repair weak openings using extract-based scenes."""
-    s = script.strip()
+    s = strip_step_intro(script.strip())
     storyish = re.match(
         r"^(you |when you |pour |imagine |think of |a cold |cold water|your phone|on a bus|"
         r"the bottle|have you|notice how|watch what|ever notice|throw |walk |put |shout |"
@@ -223,7 +229,7 @@ def force_hook(script: str, topic: str, phenomenon: bool, extract: str = "") -> 
     )
     if storyish:
         return re.sub(r"\s+", " ", s)
-    soft = re.match(r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is|learn )", s, re.I)
+    soft = re.match(r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is|learn |steps? to|here are|follow these|the steps)", s, re.I)
     first = s.split(".")[0] if "." in s else s
     weak = soft or len(first.split()) > 20 or not re.search(
         r"\b(exam|mark|test|student|wrong|confus|trick|pour|bottle|phone|bus|cold|"
@@ -326,6 +332,7 @@ def run_openrouter(topic: dict):
         "Sound like a sharp tutor, not a textbook. Short sentences. No filler. "
         "Stay strictly on the school topic. Never celebrity or biography. "
         "Open with a concrete everyday scene or exam trap from the facts — never a generic template line. "
+        "Never open with Steps to answering. Never dump long numbered checklists. At most two ordered points as Number one, Number two. "
         "Return ONLY the spoken paragraphs — never list rules inside the voiceover."
     )
     multi = is_multipart(short, extract)
@@ -361,7 +368,9 @@ def run_openrouter(topic: dict):
         )
     user = (
         f"Topic: {short}\nFacts from reliable source:\n{extract}\n\n{structure}"
-        "Rules: no religion, no politics, no self-intro, no prompt language in the speech.\n\n"
+        "Rules: no religion, no politics, no self-intro, no prompt language in the speech. "
+        "NEVER write 1. 2. 3. lists — TTS says one-dot. Say Number one, Number two, max two points. "
+        "NEVER open with Steps to answering. Open with a scene or exam trap.\n\n"
         "After the spoken script, on separate lines ONLY:\n"
         "DEFINITION: formal exam-ready sentence under 16 words for the board\n"
         "DIDYOUKNOW: one exam tip fact NOT the same as the definition, under 18 words, start with Wait —\n"
