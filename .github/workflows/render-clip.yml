@@ -31,6 +31,7 @@ jobs:
         run: |
           echo "event=${{ github.event_name }}"
           date -u
+          if [ -f data/youtube_only.tick ]; then echo "MODE=youtube_only"; fi
 
       - uses: actions/setup-python@v5
         with:
@@ -129,6 +130,7 @@ jobs:
         run: |
           ls -lh output.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
+          ls -lh captions.srt 2>/dev/null || echo "no captions.srt"
 
       - name: consume-seed-after-success
         continue-on-error: true
@@ -149,7 +151,12 @@ jobs:
           BUFFER_ORG_ID: ${{ secrets.BUFFER_ORG_ID }}
           VIDEO_PUBLIC_URL: ${{ secrets.VIDEO_PUBLIC_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/upload_buffer.py
+        run: |
+          if [ -f data/youtube_only.tick ]; then
+            echo "SKIP buffer (youtube_only.tick present)"
+            exit 0
+          fi
+          python scripts/upload_buffer.py
 
       - name: youtube
         continue-on-error: true
@@ -181,6 +188,7 @@ jobs:
             mouth.json
             buffer_result.json
             youtube_result.json
+            captions.srt
             title_short.txt
             hook.txt
             thumb_style.txt
