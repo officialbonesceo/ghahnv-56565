@@ -1,0 +1,78 @@
+name: apply-tts-patch
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply-tts-patch.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch-generate-script
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/generate_script.py')
+          t = p.read_text()
+          if 'tts_speech_fix' not in t:
+              t = t.replace('import requests\n', 'import requests\n\nfrom tts_speech_fix import speakable_numbers, is_boring_step_dump, strip_step_intro\n')
+          needle = '''    t = re.sub(r"\\s+", " ", t).strip()\n    t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\\s*", "", t, flags=re.I)\n    words = t.split()\n'''
+          repl = '''    t = re.sub(r"\\s+", " ", t).strip()\n    t = re.sub(r"^(hey[, ]+)?(i am|i'm) mike[.!]?\\s*", "", t, flags=re.I)\n    t = speakable_numbers(t)\n    if is_boring_step_dump(t):\n        print("STEP_DUMP reject", file=__import__("sys").stderr)\n        return ""\n    words = t.split()\n'''
+          if needle in t and 'speakable_numbers(t)' not in t:
+              t = t.replace(needle, repl)
+          if 'strip_step_intro(script' not in t:
+              t = t.replace('    s = script.strip()\n    storyish = re.match(\n', '    s = strip_step_intro(script.strip())\n    storyish = re.match(\n', 1)
+          t = t.replace(
+              'r"^(hey|hi|hello|welcome|i am mike|i\'m mike|today we|let\'s talk|here is|learn )"',
+              'r"^(hey|hi|hello|welcome|i am mike|i\'m mike|today we|let\'s talk|here is|learn |steps? to|here are|follow these|the steps)"',
+          )
+          if 'Never open with Steps to answering' not in t:
+              t = t.replace(
+                  '"Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
+                  '"Never open with Steps to answering. Never dump long numbered checklists. At most two ordered points as Number one, Number two. "\n        "Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
+              )
+          if 'NEVER write 1. 2. 3.' not in t:
+              t = t.replace(
+                  '"Rules: no religion, no politics, no self-intro, no prompt language in the speech.\\n\\n"',
+                  '"Rules: no religion, no politics, no self-intro, no prompt language in the speech. "\n        "NEVER write 1. 2. 3. lists — TTS says one-dot. Say Number one, Number two, max two points. "\n        "NEVER open with Steps to answering. Open with a scene or exam trap.\\n\\n"',
+              )
+          p.write_text(t)
+          print('patched', 'speakable_numbers(t)' in t, 'STEP_DUMP' in t)
+          PY
+      - name: patch-buffer-hashtags
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/upload_buffer.py')
+          t = p.read_text()
+          t2 = t
+          t2 = t2.replace(
+              '#learntok #sciencefacts #fyp #WAEC #JAMB #stem',
+              '#learntok #sciencefacts #fyp #WAEC #JAMB #NECO #stem #edutok #studytok',
+          )
+          t2 = t2.replace(
+              '#reels #learnontiktok #science #WAEC #JAMB #studytok #nigeria',
+              '#reels #science #education #WAEC #JAMB #NECO #studytok #nigeria #learnontiktok #examprep #secondaryschool #stem',
+          )
+          t2 = t2.replace(
+              '#Science #Education #WAEC #JAMB #Learn',
+              '#Science #Education #WAEC #JAMB #NECO #Learn #STEM #StudyTips #ExamPrep',
+          )
+          if 'steps? to answer|number one,' not in t2:
+              t2 = t2.replace(
+                  '    h = hook.strip()\n\n    tiktok = (',
+                  '    h = hook.strip()\n    if h and __import__("re").search(r"(?i)steps? to answer|number one,", h):\n        h = ""\n\n    tiktok = (',
+              )
+          p.write_text(t2)
+          print('buffer done')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/generate_script.py scripts/upload_buffer.py
+          git diff --cached --quiet || git commit -m "fix: TTS no one-dot lists, ban step dumps, richer platform hashtags"
+          git push || true
