@@ -60,7 +60,6 @@ def main() -> None:
     except Exception as e:
         print("ffprobe fail", e, file=sys.stderr)
         return
-    # Leave last ~2.6s for CTA card without competing text
     usable = max(3.0, duration - 2.6)
     slot = usable / len(parts)
     lines = []
@@ -75,22 +74,33 @@ def main() -> None:
     srt.write_text("\n".join(lines), encoding="utf-8")
     print("CAPTIONS", len(parts), "slots over", round(usable, 2), "s", file=sys.stderr)
     out = Path("output_captioned.mp4")
-    # force_style: large white text, black box, bottom center
-    vf = (
-        f"subtitles={srt.name}:force_style="
-        "'FontName=DejaVu Sans,FontSize=22,PrimaryColour=&H00FFFFFF,"
-        "OutlineColour=&H00000000,BorderStyle=3,Outline=1,Shadow=0,"
-        "Alignment=2,MarginV=180,Bold=1'"
-    )
-    cmd = [
-        "ffmpeg", "-y", "-i", str(video),
-        "-vf", vf,
-        "-c:a", "copy", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        str(out),
+    # Outline-only captions (no solid black box that looks like a black background)
+    styles = [
+        (
+            "FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,"
+            "Alignment=2,MarginV=140,Bold=1"
+        ),
+        (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
+            "Alignment=2,MarginV=120,Bold=1"
+        ),
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
-        print("ffmpeg captions fail", r.stderr[-600:], file=sys.stderr)
+    r = None
+    for style in styles:
+        vf = f"subtitles={srt.name}:force_style='{style}'"
+        cmd = [
+            "ffmpeg", "-y", "-i", str(video),
+            "-vf", vf,
+            "-c:a", "copy", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(out),
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0 and out.exists() and out.stat().st_size > 1000:
+            break
+    if r is None or r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
+        print("ffmpeg captions fail", (r.stderr[-600:] if r else "no run"), file=sys.stderr)
         return
     out.replace(video)
     print("CAPTIONS_OK", video.stat().st_size, file=sys.stderr)
