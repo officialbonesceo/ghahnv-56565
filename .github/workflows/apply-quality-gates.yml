@@ -16,147 +16,48 @@ jobs:
           python3 << 'PY'
           from pathlib import Path
 
-          # --- fetch_topics: ban Introduction to / Basics of ---
           ft = Path('scripts/fetch_topics.py')
           t = ft.read_text()
-          t = t.replace('"{t}", "Types of {t}", "Basics of {t}", "Introduction to {t}", "{t} explained",',
-                        '"{t}", "Types of {t}", "{t} explained", "{t} examples",')
+          if 'from script_quality import is_broad_topic_title' not in t:
+              t = t.replace(
+                  'from content_safety import is_school_safe, filter_title_list\n',
+                  'from content_safety import is_school_safe, filter_title_list\nfrom script_quality import is_broad_topic_title\n',
+              )
+          if 'is_broad_topic_title(title' not in t:
+              t = t.replace(
+                  'def is_hard_blocked(title: str) -> bool:\n',
+                  'def is_hard_blocked(title: str) -> bool:\n    if is_broad_topic_title(title or ""):\n        return True\n',
+              )
           t = t.replace('"Basics of {t}", "Introduction to {t}", ', '')
           t = t.replace('"Introduction to {t}", ', '')
           t = t.replace('"Basics of {t}", ', '')
-          if 'is_broad_topic_title' not in t:
-              t = t.replace(
-                  'from content_safety import is_school_safe, filter_title_list\n',
-                  'from content_safety import is_school_safe, filter_title_list\n'
-                  'from script_quality import is_broad_topic_title\n',
-              )
-              t = t.replace(
-                  'def is_hard_blocked(title: str) -> bool:\n',
-                  'def is_hard_blocked(title: str) -> bool:\n'
-                  '    if is_broad_topic_title(title or ""):\n'
-                  '        return True\n',
-              )
+          t = t.replace(', "Introduction to {t}"', '')
           ft.write_text(t)
-          print('fetch_topics patched')
+          print('FT', 'broad' in t, 'Introduction to' in t)
 
-          # --- generate_script: import + quality gate in pack ---
           gs = Path('scripts/generate_script.py')
           g = gs.read_text()
-          if 'script_quality' not in g:
-              g = g.replace(
-                  'import requests\n',
-                  'import requests\n\nfrom script_quality import is_weak_script\n',
-              )
+          if 'from script_quality import is_weak_script' not in g:
+              g = g.replace('import requests\n', 'import requests\n\nfrom script_quality import is_weak_script\n')
           if 'is_weak_script(cleaned' not in g:
-              g = g.replace(
-                  '    if re.search(r"(?i)meet .+ in everyday", cleaned):\n'
-                  '        print("VAGUE_EXAMPLE reject", file=sys.stderr)\n'
-                  '        return None\n',
-                  '    if re.search(r"(?i)meet .+ in everyday", cleaned):\n'
-                  '        print("VAGUE_EXAMPLE reject", file=sys.stderr)\n'
-                  '        return None\n'
-                  '    weak = is_weak_script(cleaned, short)\n'
-                  '    if weak:\n'
-                  '        print("WEAK_SCRIPT reject", weak, file=sys.stderr)\n'
-                  '        return None\n',
-              )
-          # stronger system rules
+              marker = '        print("VAGUE_EXAMPLE reject", file=sys.stderr)\n        return None\n'
+              insert = marker + '    weak = is_weak_script(cleaned, short)\n    if weak:\n        print("WEAK_SCRIPT reject", weak, file=sys.stderr)\n        return None\n'
+              if marker in g:
+                  g = g.replace(marker, insert, 1)
           if 'Must include one concrete everyday example' not in g:
               g = g.replace(
-                  '"Never open with Steps to answering. Never dump long numbered checklists. At most two ordered points as Number one, Number two. "\n',
-                  '"Never open with Steps to answering. Never dump long numbered checklists. At most two ordered points as Number one, Number two. "\n'
-                  '        "Must include one concrete everyday example and a clear plain-language definition. Never pad with only exam-name drops (WAEC/JAMB) or Save/Share without teaching. "\n',
+                  '"Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
+                  '"Must include one concrete everyday example and a clear plain-language definition. Never pad with only exam-name drops or Save/Share without teaching. "\n        "Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
               )
           gs.write_text(g)
-          print('generate_script patched', 'is_weak_script' in g)
-
-          # --- burn_captions: outline style, not solid black box ---
-          bc = Path('scripts/burn_captions.py')
-          b = bc.read_text()
-          b = b.replace(
-              "'FontName=DejaVu Sans,FontSize=22,PrimaryColour=&H00FFFFFF,"\n"
-              "OutlineColour=&H00000000,BorderStyle=3,Outline=1,Shadow=0,"\n"
-              "Alignment=2,MarginV=180,Bold=1'",
-              "'FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,"\n"
-              "OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=4,Outline=2,Shadow=0,"\n"
-              "Alignment=2,MarginV=140,Bold=1'",
-          )
-          # If ffmpeg fails BorderStyle=4, also try simpler outline-only fallback in code
-          if 'BorderStyle=1' not in b:
-              old_cmd = '''    cmd = [
-        "ffmpeg", "-y", "-i", str(video),
-        "-vf", vf,
-        "-c:a", "copy", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        str(out),
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
-        print("ffmpeg captions fail", r.stderr[-600:], file=sys.stderr)
-        return
-'''
-              new_cmd = '''    styles = [
-        (
-            "FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,"
-            "Alignment=2,MarginV=140,Bold=1"
-        ),
-        (
-            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,"
-            "Alignment=2,MarginV=120,Bold=1"
-        ),
-    ]
-    r = None
-    for style in styles:
-        vf = f"subtitles={srt.name}:force_style='{style}'"
-        cmd = [
-            "ffmpeg", "-y", "-i", str(video),
-            "-vf", vf,
-            "-c:a", "copy", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            str(out),
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode == 0 and out.exists() and out.stat().st_size > 1000:
-            break
-    if r is None or r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
-        print("ffmpeg captions fail", (r.stderr[-600:] if r else "no run"), file=sys.stderr)
-        return
-'''
-              if old_cmd in b:
-                  b = b.replace(old_cmd, new_cmd)
-          bc.write_text(b)
-          print('burn_captions patched')
-
-          # --- youtube title: cleaner short title ---
-          uy = Path('scripts/upload_youtube.py')
-          u = uy.read_text()
-          if 'title.title()' not in u and 'def clean_yt_title' not in u:
-              u = u.replace(
-                  'def load_title() -> str:\n',
-                  'def clean_yt_title(t: str) -> str:\n'
-                  '    t = (t or "").strip()\n'
-                  '    t = re.sub(r"(?i)^(intro(duction)?|basics?)\\s+(to|of)\\s+", "", t).strip()\n'
-                  '    t = re.sub(r"\\s+", " ", t).strip(" -|#")\n'
-                  '    if t and t[0].islower():\n'
-                  '        t = t[0].upper() + t[1:]\n'
-                  '    return t or "Daily science lesson"\n\n'
-                  'def load_title() -> str:\n',
-              )
-              u = u.replace(
-                  '                return t[:95]\n',
-                  '                return clean_yt_title(t)[:95]\n',
-              )
-              u = u.replace(
-                  '    return "Daily science lesson"\n',
-                  '    return clean_yt_title("Daily science lesson")\n',
-              )
-          uy.write_text(u)
-          print('youtube title cleaned')
+          print('GS', 'is_weak_script(cleaned' in g)
           PY
       - name: commit
         run: |
           git config user.name "mike-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add scripts/fetch_topics.py scripts/generate_script.py scripts/burn_captions.py scripts/upload_youtube.py
-          git diff --cached --quiet || git commit -m "fix: block broad topics, reject weak scripts, clearer captions and YT titles"
+          git add scripts/fetch_topics.py scripts/generate_script.py
+          git status
+          git diff --cached --stat
+          git diff --cached --quiet || git commit -m "fix: block Introduction-to topics; reject weak gibberish scripts"
           git push || true
