@@ -14,18 +14,26 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
 
+def clean_yt_title(t: str) -> str:
+    t = (t or "").strip()
+    t = re.sub(r"(?i)^(intro(duction)?|basics?)\s+(to|of)\s+", "", t).strip()
+    t = re.sub(r"\s+", " ", t).strip(" -|#")
+    if t and t[0].islower():
+        t = t[0].upper() + t[1:]
+    return t or "Daily science lesson"
+
 def load_title() -> str:
     for p in ("title_short.txt", "hook.txt"):
         if Path(p).exists():
             t = Path(p).read_text(encoding="utf-8").strip().splitlines()[0].strip()
             if t:
-                return t[:95]
+                return clean_yt_title(t)[:95]
     if Path("script_job.json").exists():
         try:
             d = json.loads(Path("script_job.json").read_text(encoding="utf-8"))
             t = (d.get("short_title") or d.get("title") or "").strip()
             if t:
-                return t[:95]
+                return clean_yt_title(t)[:95]
         except Exception:
             pass
     return "Daily science lesson"
