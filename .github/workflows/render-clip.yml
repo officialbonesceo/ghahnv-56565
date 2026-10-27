@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "15 10,18 * * *"
+  push:
+    paths:
+      - "data/force_run.tick"
 
 permissions:
   contents: write
