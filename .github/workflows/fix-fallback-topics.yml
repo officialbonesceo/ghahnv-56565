@@ -1,0 +1,67 @@
+name: fix-fallback-topics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-fallback-topics.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/fetch_topics.py')
+          t = p.read_text()
+          # remove subject prefix loop
+          lines = t.splitlines(True)
+          out = []
+          skip = 0
+          for i, line in enumerate(lines):
+              if skip:
+                  skip -= 1
+                  continue
+              if 'for sub in ("Physics", "Chemistry", "Biology", "Mathematics", "English"):' in line:
+                  # skip this and next 3 indented lines
+                  skip = 3
+                  print('skipping subject loop at', i)
+                  continue
+              out.append(line)
+          t = ''.join(out)
+          if 'birkhoff' not in t:
+              t = t.replace(
+                  'HARD_BLOCK = {',
+                  'HARD_BLOCK = {"birkhoffsaxioms", "birkhoff", "hilbertsaxioms", "peanosaxioms", "topology", "differentialgeometry", "complexanalysis", "linearalgebra", "grouptheory", ',
+              )
+          if 'CROSS_SUBJECT' not in t:
+              block = (
+                  '\nCROSS_SUBJECT = re.compile(\n'
+                  '    r"(?i)^(?:physics|chemistry|biology|mathematics|english)\\s+"\n'
+                  '    r"(?:formal\\s+letter|letter\\s+writing|essay|comprehension|noun|verb|adjective|tenses|"\n'
+                  '    r"active\\s+voice|passive\\s+voice|simile|metaphor|paragraph|grammar)"\n'
+                  ')\n'
+              )
+              t = t.replace('JUNK_TITLE = re.compile', block + 'JUNK_TITLE = re.compile', 1)
+              t = t.replace(
+                  'if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or ""): return True\n',
+                  'if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or "") or CROSS_SUBJECT.search(title or ""): return True\n',
+                  1,
+              )
+          p.write_text(t)
+          assert 'for sub in ("Physics"' not in t
+          assert 'CROSS_SUBJECT' in t
+          print('OK')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/fetch_topics.py
+          git status
+          git diff --cached --stat
+          git commit -m "fix: stop Chemistry Formal letter fallback titles" || true
+          git push || true
