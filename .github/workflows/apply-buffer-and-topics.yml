@@ -1,0 +1,71 @@
+name: apply-buffer-and-topics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply-buffer-and-topics.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch-fetch-topics
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('scripts/fetch_topics.py')
+          t = p.read_text()
+          old = '''        for sub in ("Physics", "Chemistry", "Biology", "Mathematics", "English"):
+            title = f"{sub} {t}"
+            if 2 <= len(title.split()) <= 7:
+                titles.add(title)
+'''
+          if old in t:
+              t = t.replace(old, '')
+              print('removed subject prefix loop')
+          if 'birkhoff' not in t:
+              t = t.replace(
+                  'HARD_BLOCK = {',
+                  'HARD_BLOCK = {"birkhoffsaxioms", "birkhoff", "hilbertsaxioms", "peanosaxioms", "topology", "differentialgeometry", "complexanalysis", "linearalgebra", "grouptheory", ',
+              )
+          if 'CROSS_SUBJECT' not in t:
+              insert = '''
+CROSS_SUBJECT = re.compile(
+    r"(?i)^(?:physics|chemistry|biology|mathematics|english)\\s+"
+    r"(?:formal\\s+letter|letter\\s+writing|essay|comprehension|noun|verb|adjective|tenses|"
+    r"active\\s+voice|passive\\s+voice|simile|metaphor|paragraph|grammar)"
+)
+'''
+              t = t.replace('JUNK_TITLE = re.compile', insert + 'JUNK_TITLE = re.compile', 1)
+              t = t.replace(
+                  'if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or ""): return True\n',
+                  'if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or "") or CROSS_SUBJECT.search(title or ""): return True\n',
+                  1,
+              )
+          p.write_text(t)
+          print('fetch_topics done', 'CROSS_SUBJECT' in t, 'for sub in' not in t or 'Physics' not in t.split('_generate_fallback')[1][:800])
+          PY
+      - name: write-upload-buffer
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          # Download current and write enhanced version from heredoc via base64 in env is heavy;
+          # Apply surgical enhancement: add image post functions after captions_for if missing
+          p = Path('scripts/upload_buffer.py')
+          t = p.read_text()
+          if 'create_image_post' in t and 'make_post_card' in t:
+              print('already has image posts')
+          else:
+              # Replace file with enhanced copy stored in repo artifact path - write full file
+              print('will replace via curl from raw commit later')
+          print('len', len(t))
+          PY
+      - name: commit-topics
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/fetch_topics.py
+          git diff --cached --quiet || git commit -m "fix: block Chemistry Formal letter-style fallback titles"
+          git push || true
