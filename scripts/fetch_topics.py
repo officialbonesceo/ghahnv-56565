@@ -24,8 +24,14 @@ FALLBACK_PATH = ROOT / "data" / "topic_fallback.json"
 CORES_PATH = ROOT / "data" / "topic_cores.json"
 _WIKI_RATE_LIMITED = False
 
-HARD_BLOCK = {"petroleumrefining", "petroleumref", "fractionaldistillation", "fractionaldistil", "dangoterefinery", "oilrefinery", "oilrefining", "mithraism", "osmosisjones", "mitsubishi", "kotonemitsuishi", "mississippiriver", "royalmedal", "theosmonds", "penilaianmen", "penilaianmenengahrendah", "nucleation", "quarticequation", "quarticequat"}
+HARD_BLOCK = {"birkhoffsaxioms", "birkhoff", "hilbertsaxioms", "peanosaxioms", "topology", "differentialgeometry", "complexanalysis", "linearalgebra", "grouptheory", "petroleumrefining", "petroleumref", "fractionaldistillation", "fractionaldistil", "dangoterefinery", "oilrefinery", "oilrefining", "mithraism", "osmosisjones", "mitsubishi", "kotonemitsuishi", "mississippiriver", "royalmedal", "theosmonds", "penilaianmen", "penilaianmenengahrendah", "nucleation", "quarticequation", "quarticequat"}
 TREND_SPAM = re.compile(r"(?i)(essay\s*writing\s*service|writing\s*service|cheap\s*college|trustworthy\s*essay|safe\s*essay|ai\s*essay|what\s+is\s+(a\s+|the\s+)?photosynthesis|what\s+is\s+(a\s+|the\s+)?water\s*cycle|what\s+is\s+fraction|as\s+a?\s*fraction|in\s+fraction|magic\s+school\s+bus|water\s+cycle\s+diagram|water\s+cycle\s+(management|intensification)|photosynthesis\s+(system|research)|cell\s+signaling|fraction\s+in\s+disguise|college\s+essay)")
+
+CROSS_SUBJECT = re.compile(
+    r"(?i)^(?:physics|chemistry|biology|mathematics|english)\s+"
+    r"(?:formal\s+letter|letter\s+writing|essay|comprehension|noun|verb|adjective|tenses|"
+    r"active\s+voice|passive\s+voice|simile|metaphor|paragraph|grammar)"
+)
 JUNK_TITLE = re.compile(r"(?i)(welding|sintering|weapon|penetrator|interceptor|recovery system|inducer protein|kinase|quartic|stir |assisted |density$|system$|research$|loss$|service$|recommendation|biography|discography|filmography|album|single \(song\)|embodied design)")
 
 DISCOVER_QUERIES = ["physics secondary school", "chemistry secondary school", "biology secondary school", "mathematics secondary school", "English grammar secondary school", "WAEC physics topic", "WAEC chemistry topic", "WAEC biology topic", "NECO science topic", "forces and motion school", "heat transfer school", "electricity circuit school", "cell biology school", "plant physiology school", "algebra secondary", "geometry secondary school", "essay structure school", "figures of speech school", "environmental science secondary", "computer science basics school", "simple machines school", "periodic table secondary", "human body systems school", "probability secondary school"]
@@ -44,7 +50,7 @@ def is_hard_blocked(title: str) -> bool:
         if len(b) >= 8 and (b in k or k in b): return True
     if "petroleum" in k or "refiner" in k or "dangote" in k: return True
     if "jones" in k and "osmosis" in k: return True
-    if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or ""): return True
+    if TREND_SPAM.search(title or "") or JUNK_TITLE.search(title or "") or CROSS_SUBJECT.search(title or ""): return True
     if len((title or "").split()) > 7: return True
     return False
 
@@ -149,10 +155,6 @@ def _generate_fallback_titles() -> list[str]:
         for tmpl in angles:
             title = tmpl.format(t=t)
             if 2 <= len(title.split()) <= 8 and len(title) <= 70:
-                titles.add(title)
-        for sub in ("Physics", "Chemistry", "Biology", "Mathematics", "English"):
-            title = f"{sub} {t}"
-            if 2 <= len(title.split()) <= 7:
                 titles.add(title)
     pairs = [
         ("Kinetic energy", "Potential energy"), ("Conduction", "Convection"),
