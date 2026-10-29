@@ -9,8 +9,13 @@ GIBBERISH = re.compile(
     r"teachers?\s+asks?|topic\s+to\s+\w+|introduce\s+to\s+\w+|"
     r"wire[, ]+jam|jam\s+and\s+nickel|for\s+wire|"
     r"is\s+important\s+for\s+waec\s+jamb|"
-    r"share,\s*save\s+and\s+pull|save\s+and\s+pull"
+    r"share,\s*save\s+and\s+pull|save\s+and\s+pull|"
+    r"they:\s*|you:\s*|i:\s*hello,?\s*class"
     r")"
+)
+
+DIALOGUE_DUMP = re.compile(
+    r"(?is)(THEY:\s*|YOU:\s*|I:\s*|Student:\s*|Teacher:\s*){2,}"
 )
 
 EXAMPLE_MARK = re.compile(
@@ -39,23 +44,20 @@ def is_weak_script(script: str, topic: str = "") -> str | None:
         return "empty"
     if GIBBERISH.search(s):
         return "gibberish"
+    if DIALOGUE_DUMP.search(s):
+        return "dialogue_dump"
     body = body_without_cta(s)
     words = body.split()
     if len(words) < 60:
         return f"too_short_body:{len(words)}"
     if not EXAMPLE_MARK.search(body):
         return "no_example_or_explanation"
-    # Title barely appears and no science verbs → shallow
-    t = re.sub(r"[^a-z0-9]+", " ", (topic or "").lower()).strip()
-    head = " ".join(words[:25]).lower()
-    if re.search(r"(?i)^(today'?s topic|the topic is|our topic|teachers?)\b", head):
+    head = " ".join(words[:30]).lower()
+    if re.search(r"(?i)^(today'?s topic|the topic is|our topic|teachers?|hello,? class)\b", head):
         return "textbook_open"
-    if len(words) < 75 and not re.search(
-        r"(?i)\b(energy|force|cell|heat|light|wave|atom|mass|charge|current|pressure)\b",
-        body,
-    ):
-        # soft check only for very short scripts
-        pass
+    # leaked role labels anywhere
+    if re.search(r"(?i)\b(they|you|student|teacher)\s*:\s*\w+", body):
+        return "role_labels"
     return None
 
 
@@ -69,7 +71,6 @@ def is_broad_topic_title(title: str) -> bool:
         return True
     if re.match(r"(?i)^(introduction|intro)\s+to\b", t):
         return True
-    # Single very generic word alone
     if re.fullmatch(r"(?i)(radiation|energy|force|matter|science|biology|physics|chemistry)", t):
         return True
     return False
