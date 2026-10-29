@@ -1,0 +1,92 @@
+name: fix-oxidation-quality
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-oxidation-quality.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch-files
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+
+          # --- fetch_topics: never pure synthetic ---
+          p = Path('scripts/fetch_topics.py')
+          t = p.read_text()
+          if 'real extract only' not in t:
+              t = t.replace(
+                  's = summary(t) or synthetic_extract(t)',
+                  's = summary(t)  # real extract only — refuse synthetic fluff',
+              )
+              # remove force-synthetic second loop
+              old = '''    for t in titles:\n        if is_seen(seen, t) or is_hard_blocked(t): continue\n        s = synthetic_extract(t)\n        s["topic_source"] = "fallback+synthetic"\n        return s\n    return None'''
+              if old in t:
+                  t = t.replace(old, '    return None')
+                  print('removed synthetic force loop')
+              else:
+                  # alternate indent
+                  import re
+                  t2, n = re.subn(
+                      r'\n    for t in titles:\n        if is_seen\(seen, t\) or is_hard_blocked\(t\): continue\n        s = synthetic_extract\(t\)\n        s\["topic_source"\] = "fallback\+synthetic"\n        return s\n    return None',
+                      '\n    return None',
+                      t,
+                      count=1,
+                  )
+                  t = t2
+                  print('regex synthetic remove', n)
+          p.write_text(t)
+          print('fetch_topics synthetic_force', 'fallback+synthetic' in t)
+
+          # --- generate_script: import + gates ---
+          g = Path('scripts/generate_script.py')
+          gt = g.read_text()
+          if 'is_synthetic_extract' not in gt:
+              gt = gt.replace(
+                  'from script_quality import is_weak_script',
+                  'from script_quality import is_weak_script, is_synthetic_extract',
+              )
+          if 'SYNTHETIC_EXTRACT reject' not in gt:
+              old = '    extract = (topic.get("extract") or "")[:450]'
+              new = '''    extract = (topic.get("extract") or "")[:450]\n    if is_synthetic_extract(extract, topic.get("extract_source") or topic.get("topic_source") or ""):\n        print("SYNTHETIC_EXTRACT reject — refusing empty-fact topic", file=sys.stderr)\n        return None'''
+              if old in gt:
+                  gt = gt.replace(old, new, 1)
+                  print('gen path synthetic gate')
+          if 'SYNTHETIC_EXTRACT in pack' not in gt:
+              old2 = '    weak = is_weak_script(cleaned, short)'
+              if old2 in gt:
+                  gt = gt.replace(
+                      old2,
+                      '    if is_synthetic_extract(extract, topic.get("extract_source") or ""):\n        print("SYNTHETIC_EXTRACT in pack — reject", file=sys.stderr)\n        return None\n    weak = is_weak_script(cleaned, short)',
+                      1,
+                  )
+                  print('pack synthetic gate')
+          g.write_text(gt)
+
+          # --- Facebook metadata in upload_buffer ---
+          u = Path('scripts/upload_buffer.py')
+          ut = u.read_text()
+          if 'facebook' in ut and 'type: reel' not in ut:
+              # patch metadata_graphql
+              if 'def metadata_graphql' in ut:
+                  ut = ut.replace(
+                      'if service == "instagram" and kind == "video":\n        return "metadata: { instagram: { type: reel, shouldShareToFeed: true } }"\n    if service == "instagram" and kind == "image":\n        return "metadata: { instagram: { type: post, shouldShareToFeed: true } }"\n    return ""',
+                      'if service == "instagram" and kind == "video":\n        return "metadata: { instagram: { type: reel, shouldShareToFeed: true } }"\n    if service == "instagram" and kind == "image":\n        return "metadata: { instagram: { type: post, shouldShareToFeed: true } }"\n    if service == "facebook" and kind == "video":\n        return "metadata: { facebook: { type: reel } }"\n    if service == "facebook" and kind == "image":\n        return "metadata: { facebook: { type: post } }"\n    return ""',
+                  )
+                  print('facebook metadata')
+          u.write_text(ut)
+          print('done')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/fetch_topics.py scripts/generate_script.py scripts/upload_buffer.py
+          git status
+          git commit -m "fix: refuse synthetic topics; Facebook reel/post type; script gates" || true
+          git push || true
