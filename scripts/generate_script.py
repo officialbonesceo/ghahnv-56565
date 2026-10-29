@@ -12,7 +12,7 @@ from pathlib import Path
 
 import requests
 
-from script_quality import is_weak_script
+from script_quality import is_weak_script, is_synthetic_extract
 
 from tts_speech_fix import speakable_numbers, is_boring_step_dump, strip_step_intro
 
@@ -293,6 +293,9 @@ def pack(topic, text, engine, moves_raw="", definition="", dyk="", phenomenon=Fa
     if re.search(r"(?i)meet .+ in everyday", cleaned):
         print("VAGUE_EXAMPLE reject", file=sys.stderr)
         return None
+    if is_synthetic_extract(extract, topic.get("extract_source") or ""):
+        print("SYNTHETIC_EXTRACT in pack — reject", file=sys.stderr)
+        return None
     weak = is_weak_script(cleaned, short)
     if weak:
         print("WEAK_SCRIPT reject", weak, file=sys.stderr)
@@ -330,6 +333,9 @@ def run_openrouter(topic: dict):
         return None
     short = display_title(topic.get("title") or "science")
     extract = (topic.get("extract") or "")[:450]
+    if is_synthetic_extract(extract, topic.get("extract_source") or topic.get("topic_source") or ""):
+        print("SYNTHETIC_EXTRACT reject — refusing empty-fact topic", file=sys.stderr)
+        return None
     model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     phenom = wants_phenomenon(short)
     print("PHENOMENON_FIRST", phenom, short, file=sys.stderr)

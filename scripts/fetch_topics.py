@@ -369,16 +369,11 @@ def pick_from_fallback(seen: set[str]) -> dict | None:
         if tried >= 40: break
         if is_seen(seen, t) or is_hard_blocked(t): continue
         tried += 1
-        s = summary(t) or synthetic_extract(t)
+        s = summary(t)  # real extract only — refuse synthetic fluff
         if s and not is_seen(seen, s["title"]):
             s["topic_source"] = "fallback+" + (s.get("extract_source") or "synthetic")
             return s
         time.sleep(0.1)
-    for t in titles:
-        if is_seen(seen, t) or is_hard_blocked(t): continue
-        s = synthetic_extract(t)
-        s["topic_source"] = "fallback+synthetic"
-        return s
     return None
 
 def main() -> None:
