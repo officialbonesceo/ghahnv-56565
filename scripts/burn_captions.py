@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Burn short bottom captions onto output.mp4 — readable on YT/TikTok, never cover Mike's face."""
+"""Burn short bottom captions onto output.mp4 — high contrast for YouTube + TikTok."""
 from __future__ import annotations
 
 import re
@@ -52,7 +52,9 @@ def ts(sec: float) -> str:
 def write_ass(parts: list[str], duration: float, path: Path) -> None:
     usable = max(3.0, duration - 2.8)
     slot = usable / max(len(parts), 1)
-    # Fontsize 52 on 1920 PlayRes ≈ readable on phone YT Shorts; MarginV keeps off face/board
+    # Yellow text + thick black outline = visible on dark YT Shorts chrome
+    # ASS colour = &HAABBGGRR → yellow &H0000FFFF, black outline &H00000000
+    # MarginV 160 lifts text above YouTube bottom UI bar
     header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -62,7 +64,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,DejaVu Sans,52,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,48,48,96,1
+Style: Cap,DejaVu Sans,58,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,160,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -134,7 +136,7 @@ def main() -> None:
             end = start + 0.35
         srt_lines.append(f"{i+1}\n{srt_ts(start)} --> {srt_ts(end)}\n{phrase}\n")
     Path("captions.srt").write_text("\n".join(srt_lines), encoding="utf-8")
-    print("CAPTIONS", len(parts), "bottom lines over", round(usable, 2), "s", file=sys.stderr)
+    print("CAPTIONS", len(parts), "yellow bottom lines over", round(usable, 2), "s", file=sys.stderr)
 
     out = Path("output_captioned.mp4")
     cmd = [
@@ -148,9 +150,9 @@ def main() -> None:
     if r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
         print("ffmpeg ass fail, trying subtitles fallback", (r.stderr or "")[-500:], file=sys.stderr)
         style = (
-            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,"
-            "Alignment=2,MarginV=70,MarginL=50,MarginR=50,Bold=1"
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H0000FFFF,"
+            "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,"
+            "Alignment=2,MarginV=90,MarginL=40,MarginR=40,Bold=1"
         )
         vf = f"subtitles={Path('captions.srt').name}:force_style='{style}'"
         cmd2 = [
