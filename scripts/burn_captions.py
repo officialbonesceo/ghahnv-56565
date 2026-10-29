@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Burn short bottom captions onto output.mp4 — never cover Mike's face."""
+"""Burn short bottom captions onto output.mp4 — readable on YT/TikTok, never cover Mike's face."""
 from __future__ import annotations
 
 import re
@@ -9,7 +9,6 @@ from pathlib import Path
 
 
 def chunks(text: str, max_words: int = 4) -> list[str]:
-    """Short phrases only — 3–4 words so text stays on one line at the bottom."""
     words = [w for w in (text or "").replace("\n", " ").split() if w.strip()]
     if not words:
         return []
@@ -26,7 +25,6 @@ def chunks(text: str, max_words: int = 4) -> list[str]:
             out[-1] = (out[-1] + " " + " ".join(cur)).strip()
         else:
             out.append(" ".join(cur))
-    # hard cap length so a single line never floods the screen
     cleaned = []
     for p in out:
         ws = p.split()
@@ -52,10 +50,9 @@ def ts(sec: float) -> str:
 
 
 def write_ass(parts: list[str], duration: float, path: Path) -> None:
-    """ASS with fixed 1080x1920 playres — captions locked to lower safe zone."""
-    usable = max(3.0, duration - 2.8)  # leave end-card clear
+    usable = max(3.0, duration - 2.8)
     slot = usable / max(len(parts), 1)
-    # Style: small white text, thin outline, bottom-center, high MarginV keeps it off face
+    # Fontsize 52 on 1920 PlayRes ≈ readable on phone YT Shorts; MarginV keeps off face/board
     header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -65,7 +62,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,DejaVu Sans,42,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,40,40,72,1
+Style: Cap,DejaVu Sans,52,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,48,48,96,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -77,7 +74,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if end <= start:
             end = start + 0.35
         safe = phrase.replace("\n", " ").replace("{", "(").replace("}", ")")
-        # single line only
         events.append(
             f"Dialogue: 0,{ts(start)},{ts(end)},Cap,,0,0,0,,{safe}\n"
         )
@@ -91,7 +87,6 @@ def main() -> None:
         print("skip captions: missing output.mp4 or script.txt", file=sys.stderr)
         return
     text = script.read_text(encoding="utf-8").strip()
-    # drop pure CTA tail from captions so Save/Share does not dominate the screen
     text = re.sub(
         r"(?is)\s*(Tap the bookmark.*|Share it with a classmate.*|Follow for daily.*)$",
         "",
@@ -116,7 +111,6 @@ def main() -> None:
 
     ass = Path("captions.ass")
     write_ass(parts, duration, ass)
-    # also keep SRT for artifact / debugging
     srt_lines = []
     usable = max(3.0, duration - 2.8)
     slot = usable / len(parts)
@@ -140,10 +134,9 @@ def main() -> None:
             end = start + 0.35
         srt_lines.append(f"{i+1}\n{srt_ts(start)} --> {srt_ts(end)}\n{phrase}\n")
     Path("captions.srt").write_text("\n".join(srt_lines), encoding="utf-8")
-    print("CAPTIONS", len(parts), "short bottom lines over", round(usable, 2), "s", file=sys.stderr)
+    print("CAPTIONS", len(parts), "bottom lines over", round(usable, 2), "s", file=sys.stderr)
 
     out = Path("output_captioned.mp4")
-    # ASS filter respects PlayRes → Fontsize 42 on 1920 height ≈ modest bottom captions
     cmd = [
         "ffmpeg", "-y", "-i", str(video),
         "-vf", f"ass={ass.name}",
@@ -155,9 +148,9 @@ def main() -> None:
     if r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
         print("ffmpeg ass fail, trying subtitles fallback", (r.stderr or "")[-500:], file=sys.stderr)
         style = (
-            "FontName=DejaVu Sans,FontSize=14,PrimaryColour=&H00FFFFFF,"
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
             "OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,"
-            "Alignment=2,MarginV=60,MarginL=50,MarginR=50,Bold=1"
+            "Alignment=2,MarginV=70,MarginL=50,MarginR=50,Bold=1"
         )
         vf = f"subtitles={Path('captions.srt').name}:force_style='{style}'"
         cmd2 = [
