@@ -1,0 +1,40 @@
+name: restore-ub
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/restore-ub.yml"
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore and patch
+        run: |
+          git show 85627f590eae50a50089fe7bfbc834b45085b9c4:scripts/upload_buffer.py > scripts/upload_buffer.py
+          python3 -c "
+          from pathlib import Path
+          p = Path('scripts/upload_buffer.py')
+          t = p.read_text()
+          needle = 'return \"\"\n\n\ndef resolve_channels'
+          insert = '''if service == \"facebook\" and kind == \"video\":\n        return \"metadata: { facebook: { type: reel } }\"\n    if service == \"facebook\" and kind == \"image\":\n        return \"metadata: { facebook: { type: post } }\"\n    return \"\"\n\n\ndef resolve_channels'''
+          if 'facebook: { type: reel' not in t:
+              if needle not in t:
+                  raise SystemExit('needle missing')
+              t = t.replace(needle, insert, 1)
+              p.write_text(t)
+          print('size', p.stat().st_size)
+          assert 'def main' in p.read_text()
+          assert 'facebook: { type: reel' in p.read_text()
+          "
+      - name: commit
+        run: |
+          git config user.name mike-bot
+          git config user.email bot@users.noreply.github.com
+          git add scripts/upload_buffer.py
+          git commit -m "restore full upload_buffer + Facebook type reel/post" || true
+          git push || true
