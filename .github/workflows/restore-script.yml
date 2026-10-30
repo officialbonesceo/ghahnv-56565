@@ -1,0 +1,67 @@
+name: restore-script
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore
+        run: |
+          git show 893d338bf2db4b87ced29b2e548e3d03bd66ff7a:scripts/generate_script.py > scripts/generate_script.py
+          python3 -c "from pathlib import Path; t=Path('scripts/generate_script.py').read_text(); assert len(t)>10000, len(t); print('ok', len(t))"
+          python3 << 'PY'
+          from pathlib import Path
+          gt = Path('scripts/generate_script.py').read_text()
+          old_h = '''EMERGENCY_HOOKS = [
+    "Most students lose marks on {topic} — here is the clean version.",
+    "Exam trap on {topic}? Fix it in under a minute.",
+]'''
+          new_h = '''EMERGENCY_HOOKS = [
+    "Pause — can you explain {topic} in one line before I do?",
+    "Most students mix this up: here is {topic} the clean way.",
+    "Quick challenge on {topic} — stick with me for thirty seconds.",
+]'''
+          if old_h in gt:
+              gt = gt.replace(old_h, new_h)
+          old_r = 'NEVER open with Steps to answering. Open with a scene or exam trap.'
+          new_r = ('NEVER open with Steps to answering. Open with a scene or a challenge question. '
+                   'Include one Quick check: ask a sharp question, say Think about it, then answer and fix a common mistake. '
+                   'Sound like a sharp live tutor, not a boring lecture.')
+          if old_r in gt:
+              gt = gt.replace(old_r, new_r)
+          Path('scripts/generate_script.py').write_text(gt)
+          print('patched', len(gt))
+          PY
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          p = Path('scripts/fetch_topics.py')
+          t = p.read_text()
+          if 'from fact_bank import' not in t:
+              t = t.replace('from script_quality import is_broad_topic_title',
+                            'from script_quality import is_broad_topic_title\nfrom fact_bank import fact_bank_extract, clean_query_title')
+          if 'algebraicsignalprocessing' not in t:
+              t = t.replace('HARD_BLOCK = {', 'HARD_BLOCK = {"algebraicsignalprocessing", "signalprocessing", "fouriertransform", "laplacetransform", "quantumfield", ')
+          if 'def summary' in t and 'fact_bank_extract(title)' not in t:
+              pat = r'def summary\(title: str\) -> dict:\n(?:    .*\n)+?(?=\ndef )'
+              repl = '''def summary(title: str) -> dict:\n    q = clean_query_title(title)\n    fb = fact_bank_extract(title) or fact_bank_extract(q)\n    order = (summary_wikipedia, summary_duckduckgo) if not _WIKI_RATE_LIMITED else (summary_duckduckgo,)\n    for candidate in (q, title):\n        for fn in order:\n            s = fn(candidate)\n            if s:\n                return s\n            time.sleep(0.15)\n    if fb:\n        return fb\n    return {}\n\n'''
+              t, n = re.subn(pat, repl, t, count=1)
+              print('summary', n)
+          if 'fallback+fact-bank' not in t:
+              t = t.replace('tried = 0\n    for t in titles:',
+                            'tried = 0\n    for t in list(titles)[:300]:\n        if is_seen(seen, t) or is_hard_blocked(t): continue\n        fb = fact_bank_extract(t)\n        if fb and not is_seen(seen, fb["title"]):\n            fb["topic_source"] = "fallback+fact-bank"\n            return fb\n    for t in titles:', 1)
+          p.write_text(t)
+          print('fetch ok')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/generate_script.py scripts/fetch_topics.py
+          git commit -m "restore generate_script + fact-bank + engaging Q&A" || true
+          git push || true
