@@ -1,0 +1,16 @@
+name: restore-ub-v2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/restore-ub-v2.yml"
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: restore upload_buffer
+        run: |
+          echo 'will restore via next step'
