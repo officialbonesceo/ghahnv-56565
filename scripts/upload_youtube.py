@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Upload output.mp4 to YouTube as a Short using OAuth refresh token."""
+"""Upload output.mp4 to YouTube as a Short using OAuth refresh token.
+Works for both full clips (script_job.json) and teasers (teaser_job.json).
+"""
 from __future__ import annotations
 import json, os, re, sys
 from pathlib import Path
@@ -28,14 +30,15 @@ def load_title() -> str:
             t = Path(p).read_text(encoding="utf-8").strip().splitlines()[0].strip()
             if t:
                 return clean_yt_title(t)[:95]
-    if Path("script_job.json").exists():
-        try:
-            d = json.loads(Path("script_job.json").read_text(encoding="utf-8"))
-            t = (d.get("short_title") or d.get("title") or "").strip()
-            if t:
-                return clean_yt_title(t)[:95]
-        except Exception:
-            pass
+    for job_name in ("script_job.json", "teaser_job.json"):
+        if Path(job_name).exists():
+            try:
+                d = json.loads(Path(job_name).read_text(encoding="utf-8"))
+                t = (d.get("short_title") or d.get("title") or "").strip()
+                if t:
+                    return clean_yt_title(t)[:95]
+            except Exception:
+                pass
     return "Daily science lesson"
 
 def load_description(title: str) -> str:
@@ -46,6 +49,21 @@ def load_description(title: str) -> str:
         snippet = " ".join(first[:2]).strip()[:280]
         if snippet:
             parts.extend([snippet, ""])
+    if Path("teaser_job.json").exists():
+        try:
+            d = json.loads(Path("teaser_job.json").read_text(encoding="utf-8"))
+            qs = d.get("questions") or []
+            if qs:
+                parts.append("Try these before the answers:")
+                for q in qs[:3]:
+                    parts.append(f"Q{q.get('index', '')}: {(q.get('question') or '')[:120]}")
+                parts.append("")
+                parts.append("Answers:")
+                for q in qs[:3]:
+                    parts.append(f"Q{q.get('index', '')}: {q.get('answer', '')} — {(q.get('reason') or '')[:100]}")
+                parts.append("")
+        except Exception:
+            pass
     if Path("script_job.json").exists():
         try:
             d = json.loads(Path("script_job.json").read_text(encoding="utf-8"))
@@ -55,11 +73,11 @@ def load_description(title: str) -> str:
         except Exception:
             pass
     parts.append("Daily lessons for students worldwide — exam-ready and clear.")
-    parts.append("Subscribe for more science with Mike.")
+    parts.append("Subscribe for more with Mike.")
     parts.append("")
     parts.append(
         "#Shorts #Science #Education #Learning #STEM #StudyTips #ExamPrep "
-        "#Physics #Chemistry #Biology #Math #School #Students #Edutok #LearnOnYouTube"
+        "#Quiz #Students #School #Edutok #LearnOnYouTube"
     )
     return "\n".join(parts)[:4800]
 
@@ -112,7 +130,7 @@ def main() -> None:
             "title": title[:100],
             "description": description,
             "categoryId": "27",
-            "tags": ["Shorts", "science", "education", "STEM", "learning", "study", "students", "exam", "Mike"],
+            "tags": ["Shorts", "science", "education", "STEM", "learning", "study", "students", "exam", "quiz", "Mike"],
         },
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False, "madeForKids": False},
     }
