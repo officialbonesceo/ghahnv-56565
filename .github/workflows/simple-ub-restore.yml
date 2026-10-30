@@ -1,0 +1,62 @@
+name: simple-ub-restore
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/simple-ub-restore.yml"]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore and patch
+        run: |
+          set -e
+          git show 8f140b0a181c91114fbf4d1e4a94edea5b7ca503:scripts/upload_buffer.py > scripts/upload_buffer.py
+          python3 -c "
+from pathlib import Path
+import sys
+p = Path('scripts/upload_buffer.py')
+t = p.read_text()
+print('loaded', len(t))
+needle = 'img_path = Path(\"topic_image.jpg\") if Path(\"topic_image.jpg\").exists() and Path(\"topic_image.jpg\").stat().st_size > 500 else make_post_card(title, dyk)'
+repl = '''img_path = None
+    for _name in (\"quiz_card.jpg\", \"post_card.jpg\", \"topic_image.jpg\"):
+        _p = Path(_name)
+        if _p.exists() and _p.stat().st_size > 500:
+            img_path = _p
+            print(\"IMAGE_PICK\", _name, file=sys.stderr)
+            break
+    if img_path is None:
+        img_path = make_post_card(title, dyk)'''
+if needle in t:
+    t = t.replace(needle, repl, 1)
+    print('image pick ok')
+else:
+    print('needle missing')
+    raise SystemExit(1)
+needle2 = 'def image_captions(title: str, hook: str, dyk: str) -> dict[str, str]:\n    t = title.strip() or \"Science lesson\"'
+repl2 = '''def image_captions(title: str, hook: str, dyk: str) -> dict[str, str]:
+    if Path(\"image_caption.txt\").exists():
+        raw = Path(\"image_caption.txt\").read_text(encoding=\"utf-8\").strip()
+        if len(raw) > 40:
+            print(\"USING image_caption.txt\", file=sys.stderr)
+            return {\"instagram\": raw, \"facebook\": raw}
+    t = title.strip() or \"Science lesson\"'''
+if needle2 in t:
+    t = t.replace(needle2, repl2, 1)
+    print('captions ok')
+else:
+    print('captions needle missing')
+p.write_text(t)
+assert 'quiz_card.jpg' in t
+print('done', len(t))
+"
+          git config user.name devmeziem
+          git config user.email devmeziem@gmail.com
+          git add scripts/upload_buffer.py
+          git commit -m "fix: prefer quiz_card.jpg + image_caption.txt on teaser FB/IG posts"
+          git push
