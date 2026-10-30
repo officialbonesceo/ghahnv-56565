@@ -1,0 +1,30 @@
+name: restore-rt-b64
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/restore-rt-b64.yml"]
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: write file
+        run: |
+          python3 << 'ENDPY'
+          import base64, pathlib
+          # content loaded from companion data file committed next
+          data = pathlib.Path("data/_rt_b64.txt")
+          if not data.exists():
+              raise SystemExit("missing data/_rt_b64.txt")
+          b64 = data.read_text().strip()
+          pathlib.Path("scripts/render_teaser.py").write_bytes(base64.b64decode(b64))
+          print("wrote", pathlib.Path("scripts/render_teaser.py").stat().st_size)
+          assert pathlib.Path("scripts/render_teaser.py").stat().st_size > 10000
+          ENDPY
+          git config user.name "devmeziem"
+          git config user.email "devmeziem@gmail.com"
+          git add scripts/render_teaser.py
+          git commit -m "fix: restore render_teaser with wrapped choices (no cut-off text)" || true
+          git push
