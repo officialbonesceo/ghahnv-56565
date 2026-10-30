@@ -1,0 +1,89 @@
+name: restore-and-patch-ub
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/restore-and-patch-ub.yml"
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore good upload_buffer then patch
+        run: |
+          # restore last known good version
+          git show 8f140b0a181c91114fbf4d1e4a94edea5b7ca503:scripts/upload_buffer.py > scripts/upload_buffer.py
+          wc -c scripts/upload_buffer.py
+          python3 << 'PY'
+          from pathlib import Path
+          import re, sys
+          p = Path("scripts/upload_buffer.py")
+          t = p.read_text(encoding="utf-8")
+          print("loaded", len(t))
+          # 1) prefer quiz_card
+          old = '    image_url = ""\n    img_path = Path("topic_image.jpg") if Path("topic_image.jpg").exists() and Path("topic_image.jpg").stat().st_size > 500 else make_post_card(title, dyk)\n    if img_path and img_path.exists():'
+          new = '''    image_url = ""
+    img_path = None
+    for _name in ("quiz_card.jpg", "post_card.jpg", "topic_image.jpg"):
+        _p = Path(_name)
+        if _p.exists() and _p.stat().st_size > 500:
+            img_path = _p
+            print("IMAGE_PICK", _name, file=sys.stderr)
+            break
+    if img_path is None:
+        img_path = make_post_card(title, dyk)
+    if img_path and img_path.exists():'''
+          if old in t:
+              t = t.replace(old, new, 1)
+              print("patched image pick")
+          else:
+              print("WARN: image pick block not found")
+              idx = t.find("img_path")
+              print(repr(t[idx:idx+200]) if idx>=0 else "no img_path")
+          # 2) image_caption.txt
+          old2 = 'def image_captions(title: str, hook: str, dyk: str) -> dict[str, str]:\n    t = title.strip() or "Science lesson"'
+          new2 = '''def image_captions(title: str, hook: str, dyk: str) -> dict[str, str]:
+    if Path("image_caption.txt").exists():
+        raw = Path("image_caption.txt").read_text(encoding="utf-8").strip()
+        if len(raw) > 40:
+            print("USING image_caption.txt for IG/FB image posts", file=sys.stderr)
+            return {"instagram": raw, "facebook": raw}
+    t = title.strip() or "Science lesson"'''
+          if old2 in t:
+              t = t.replace(old2, new2, 1)
+              print("patched image_captions")
+          else:
+              print("WARN: image_captions not found exact")
+          # 3) teaser title
+          if 'Path("teaser_job.json")' not in t:
+              old3 = '    return "Today\'s science lesson"\n\n\ndef load_hook_line'
+              new3 = '''    if Path("teaser_job.json").exists():
+        try:
+            d = json.loads(Path("teaser_job.json").read_text(encoding="utf-8"))
+            t = (d.get("short_title") or d.get("title") or "").strip()
+            if t:
+                return t[:80]
+        except Exception:
+            pass
+    return "Today's science lesson"
+
+
+def load_hook_line'''
+              if old3 in t:
+                  t = t.replace(old3, new3, 1)
+                  print("patched load_title")
+          p.write_text(t, encoding="utf-8")
+          print("final size", len(t))
+          assert "quiz_card.jpg" in t
+          assert "image_caption.txt" in t
+          print("SANITY OK")
+          PY
+          git config user.name "devmeziem"
+          git config user.email "devmeziem@gmail.com"
+          git add scripts/upload_buffer.py
+          git commit -m "fix: restore upload_buffer + prefer quiz_card.jpg + image_caption.txt for teaser posts"
+          git push
