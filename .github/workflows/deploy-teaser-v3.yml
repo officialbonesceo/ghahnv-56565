@@ -1,0 +1,31 @@
+name: deploy-teaser-v3
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/deploy-teaser-v3.yml"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: write generate_teaser.py
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import urllib.request
+          # Pull the improved file from a gist-like raw is not available; embed minimal critical upgrade in-place
+          p = Path("scripts/generate_teaser.py")
+          t = p.read_text(encoding="utf-8")
+          # Ensure intro segment is already gone in current; force harder bank note
+          print("current size", len(t))
+          # Rewrite file from local artifact uploaded via heredoc is limited; use multi-step
+          PY
+          # Download from commit is useless; write via base64 split
+          python3 -c "
+          import base64, pathlib
+          # placeholder — replaced by next step
+          print('prep')
+          "
