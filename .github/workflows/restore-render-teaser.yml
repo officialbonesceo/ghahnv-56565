@@ -1,0 +1,157 @@
+name: restore-render-teaser
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/restore-render-teaser.yml"
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: write fixed render_teaser
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          # Restore from last known good + apply wrap fix via inline minimal version
+          # Prefer downloading the version we already have in the runner cache from a raw paste
+          code = open("scripts/render_teaser.py").read() if Path("scripts/render_teaser.py").exists() else ""
+          if "PLACEHOLDER" in code or len(code) < 500:
+              # pull from git history the previous good blob then we still need wrap fix
+              import subprocess
+              try:
+                  blob = subprocess.check_output(["git", "show", "87b743e997b3b82fba1370b87bfacbd74b6c1b73:scripts/render_teaser.py"], text=True)
+                  Path("scripts/render_teaser.py").write_text(blob)
+                  print("restored from history", len(blob))
+              except Exception as e:
+                  print("history fail", e)
+                  raise SystemExit(1)
+          else:
+              print("already ok size", len(code))
+          PY
+      - name: apply wrap patch
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/render_teaser.py")
+          t = p.read_text(encoding="utf-8")
+          if "draw_choice_button" in t:
+              print("already has wrap helper")
+              raise SystemExit(0)
+          # Insert helper after wrap()
+          helper = '''
+
+def draw_choice_button(d, left, top, right, height, text, fill, outline, width, font_size=32):
+    """Draw a choice button with wrapped left-aligned text so nothing is cut off."""
+    d.rounded_rectangle([left, top, right, top + height], 22, fill=fill, outline=outline, width=width)
+    pad = 20
+    max_w = right - left - 2 * pad
+    size = font_size
+    lines = []
+    while size >= 24:
+        cf = font(size)
+        lines = wrap(d, text, cf, max_w)[:2]
+        if lines and d.textbbox((0, 0), lines[0], font=cf)[2] <= max_w:
+            break
+        size -= 2
+    cf = font(size)
+    total_h = len(lines) * (size + 6)
+    ty = top + max(8, (height - total_h) // 2)
+    for line in lines:
+        d.text((left + pad, ty), line, font=cf, fill=WHITE)
+        ty += size + 6
+
+'''
+          marker = "def lerp(a, b, t):"
+          if marker not in t:
+              print("marker missing")
+              raise SystemExit(1)
+          t = t.replace(marker, helper + marker, 1)
+          # Replace single-line choice drawing in draw_ask
+          old_ask = '''        cf = font(36)\n        bb = d.textbbox((0, 0), ch, font=cf)\n        d.text(\n            ((left + right - (bb[2] - bb[0])) // 2, top + 28),\n            ch,\n            font=cf,\n            fill=WHITE,\n        )'''
+          new_ask = '''        draw_choice_button(\n            d, left, top, right, 96, ch,\n            fill=CARD_HI if appear > 0.5 else CARD,\n            outline=(70, 90, 130),\n            width=3,\n            font_size=32,\n        )'''
+          # Simpler: replace the rounded_rectangle + text block for choices
+          import re
+          # For draw_ask choices loop - replace text drawing
+          t2 = t
+          # widen card slightly
+          t2 = t2.replace("card_x0, card_x1 = 380, W - 48", "card_x0, card_x1 = 320, W - 36", 2)
+          # Replace centered single-line choice text with wrapped button helper calls
+          # Pattern in draw_ask
+          pat = r"d\.rounded_rectangle\(\s*\[left, top, right, top \+ 96\],\s*22,\s*fill=CARD_HI if appear > 0\.5 else CARD,\s*outline=\(70, 90, 130\),\s*width=3,\s*\)\s*cf = font\(36\)\s*bb = d\.textbbox\(\(0, 0\), ch, font=cf\)\s*d\.text\(\s*\(\(left \+ right - \(bb\[2\] - bb\[0\]\)\) // 2, top \+ 28\),\s*ch,\s*font=cf,\s*fill=WHITE,\s*\)"
+          repl = "draw_choice_button(d, left, top, right, 96, ch, fill=CARD_HI if appear > 0.5 else CARD, outline=(70, 90, 130), width=3, font_size=32)"
+          t3, n = re.subn(pat, repl, t2, count=1, flags=re.S)
+          print("ask replacements", n)
+          if n == 0:
+              # try looser
+              t3 = t2
+              old = """        d.rounded_rectangle(
+            [left, top, right, top + 96],
+            22,
+            fill=CARD_HI if appear > 0.5 else CARD,
+            outline=(70, 90, 130),
+            width=3,
+        )
+        cf = font(36)
+        bb = d.textbbox((0, 0), ch, font=cf)
+        d.text(
+            ((left + right - (bb[2] - bb[0])) // 2, top + 28),
+            ch,
+            font=cf,
+            fill=WHITE,
+        )"""
+              new = """        draw_choice_button(
+            d, left, top, right, 96, ch,
+            fill=CARD_HI if appear > 0.5 else CARD,
+            outline=(70, 90, 130),
+            width=3,
+            font_size=32,
+        )"""
+              if old in t3:
+                  t3 = t3.replace(old, new, 1)
+                  print("ask replaced via exact")
+              else:
+                  print("ask block not found exact")
+                  # show nearby
+                  idx = t3.find("top + 96")
+                  print(repr(t3[idx-80:idx+200]) if idx>=0 else "no top+96")
+          # reveal choices - similar
+          old_r = """        d.rounded_rectangle(
+            [card_x0 + 28, top, card_x1 - 28, top + 96],
+            22,
+            fill=fill,
+            outline=outline,
+            width=width,
+        )
+        cf = font(36)
+        bb = d.textbbox((0, 0), ch, font=cf)
+        d.text(
+            ((card_x0 + card_x1 - (bb[2] - bb[0])) // 2, top + 28),
+            ch,
+            font=cf,
+            fill=WHITE,
+        )"""
+          new_r = """        draw_choice_button(
+            d, card_x0 + 20, top, card_x1 - 20, 96, ch,
+            fill=fill, outline=outline, width=width, font_size=30,
+        )"""
+          if old_r in t3:
+              t3 = t3.replace(old_r, new_r, 1)
+              print("reveal replaced")
+          else:
+              print("reveal block not found")
+          p.write_text(t3, encoding="utf-8")
+          print("final size", p.stat().st_size)
+          assert "draw_choice_button" in t3
+          PY
+      - name: commit
+        run: |
+          git config user.name "devmeziem"
+          git config user.email "devmeziem@gmail.com"
+          git add scripts/render_teaser.py
+          git status
+          git diff --stat
+          git commit -m "fix: wrap long choice text in teaser video (no more cut-off options)" || echo "no change"
+          git push
