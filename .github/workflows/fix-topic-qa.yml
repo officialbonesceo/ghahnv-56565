@@ -1,0 +1,167 @@
+name: fix-topic-qa
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-topic-qa.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+
+          # ---- fetch_topics.py ----
+          p = Path('scripts/fetch_topics.py')
+          t = p.read_text()
+
+          # Expand HARD_BLOCK for advanced junk
+          if 'algebraicsignal' not in t:
+              t = t.replace(
+                  'HARD_BLOCK = {',
+                  'HARD_BLOCK = {"algebraicsignalprocessing", "signalprocessing", "fouriertransform", "laplacetransform", "quantumfield", "stringtheory", "nanotechnologyresearch", ',
+              )
+              print('hard block advanced')
+
+          # Insert clean_query + fact_bank helpers before synthetic_extract
+          helper = '''
+def clean_query_title(title: str) -> str:
+    """Strip exam tags so wiki/ddg can match a real page."""
+    t = (title or "").strip()
+    t = re.sub(r"(?i)\s+(for\s+(waec|jamb|neco|secondary\s+school)|in\s+everyday\s+life|explained|examples?|formula|process|experiment|definition|importance of|types of|uses of|how\s+|common mistakes in|exam tips on|key points on|revision on|factors affecting|applications of|properties of|ss[123]|jss)\b.*$", "", t)
+    t = re.sub(r"(?i)^(how\s+|types? of\s+|importance of\s+|uses of\s+|factors affecting\s+|applications of\s+|properties of\s+|common mistakes in\s+|exam tips on\s+|ss[123]\s+|jss\s+)", "", t)
+    t = t.strip(" -:") or title
+    return t[:60]
+
+def fact_bank_extract(title: str) -> dict:
+    """Real offline school facts — not synthetic fluff."""
+    path = ROOT / "data" / "topic_facts.json"
+    if not path.exists():
+        return {}
+    try:
+        bank = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(bank, dict):
+        return {}
+    key = clean_query_title(title)
+    # direct + case-insensitive match
+    for k, v in bank.items():
+        if k.lower() == key.lower() or k.lower() == title.strip().lower():
+            text = str(v).strip()
+            if len(text) >= 80:
+                return {"title": k, "extract": text[:650], "description": "fact-bank", "url": "", "bg": "classroom", "trend": False, "extract_source": "fact-bank"}
+    # partial: title contains bank key or reverse
+    kl = key.lower()
+    for k, v in bank.items():
+        kk = k.lower()
+        if kk in kl or kl in kk:
+            text = str(v).strip()
+            if len(text) >= 80:
+                return {"title": k, "extract": text[:650], "description": "fact-bank", "url": "", "bg": "classroom", "trend": False, "extract_source": "fact-bank"}
+    return {}
+
+'''
+          if 'def fact_bank_extract' not in t:
+              t = t.replace('def synthetic_extract(title: str) -> dict:', helper + 'def synthetic_extract(title: str) -> dict:')
+              print('inserted fact bank helpers')
+
+          # Improve summary() to try cleaned title + fact bank
+          old_sum = '''def summary(title: str) -> dict:
+    order = (summary_duckduckgo, summary_wikipedia) if not _WIKI_RATE_LIMITED else (summary_duckduckgo,)
+    for fn in order:
+        s = fn(title)
+        if s: return s
+        time.sleep(0.2)
+    return {}'''
+          new_sum = '''def summary(title: str) -> dict:
+    q = clean_query_title(title)
+    # Prefer real offline facts when internet is broken
+    fb = fact_bank_extract(title) or fact_bank_extract(q)
+    order = (summary_wikipedia, summary_duckduckgo) if not _WIKI_RATE_LIMITED else (summary_duckduckgo,)
+    for candidate in (q, title):
+        for fn in order:
+            s = fn(candidate)
+            if s:
+                return s
+            time.sleep(0.15)
+    if fb:
+        return fb
+    return {}'''
+          if old_sum in t:
+              t = t.replace(old_sum, new_sum)
+              print('summary improved')
+          elif 'def summary(title' in t and 'fact_bank_extract' not in t.split('def summary')[1][:500]:
+              print('summary block shape different, manual patch')
+
+          # pick_from_fallback: try fact bank first
+          if 'fact_bank_extract(t)' not in t:
+              t = t.replace(
+                  'tried = 0\n    for t in titles:',
+                  'tried = 0\n    # Prefer offline fact-bank titles first (reliable when DDG/wiki down)\n    for t in list(titles)[:200]:\n        if is_seen(seen, t) or is_hard_blocked(t): continue\n        fb = fact_bank_extract(t)\n        if fb and not is_seen(seen, fb["title"]):\n            fb["topic_source"] = "fallback+fact-bank"\n            return fb\n    for t in titles:',
+                  1,
+              )
+              print('pick fact bank first')
+
+          p.write_text(t)
+
+          # ---- generate_script.py: engaging Q&A structure ----
+          g = Path('scripts/generate_script.py')
+          gt = g.read_text()
+
+          old_else = '''        structure = (
+            "Write 85-115 words.\nSTRUCTURE:\n"
+            "1) INTRO: concrete SCENE or exam trap for THIS topic only. Never generic.\n"
+            "2) DEFINITION in plain words.\n"
+            "3) EXAMPLE if a real school/home/lab scene fits.\n"
+            "4) EXAM tip.\n"
+            "5) OUTRO: tap bookmark to save, share with a classmate, follow for daily lessons.\n"
+        )'''
+          new_else = '''        structure = (
+            "Write 90-120 words. Make it feel like a live class challenge, not a textbook.\nSTRUCTURE:\n"
+            "1) HOOK: concrete scene OR a quick student challenge (e.g. Before I explain, guess — does X do Y?). Never generic Exam trap line.\n"
+            "2) TEACH: plain definition in one short sentence.\n"
+            "3) EXAMPLE: everyday home/school/lab scene that proves the point.\n"
+            "4) QUICK CHECK: one mini Q&A — ask a sharp question, pause with Think about it, then give the answer and why wrong answers fail.\n"
+            "5) OUTRO: tap bookmark to save, share with a classmate, follow for daily lessons.\n"
+        )'''
+          if old_else in gt:
+              gt = gt.replace(old_else, new_else)
+              print('qa structure')
+          else:
+              print('structure block not exact')
+
+          # stronger anti-boring rules
+          if 'Think about it' not in gt:
+              gt = gt.replace(
+                  'NEVER open with Steps to answering. Open with a scene or exam trap.\n\n',
+                  'NEVER open with Steps to answering. Open with a scene or a challenge question.\n'
+                  'Include one Quick check moment: ask, pause (say Think about it), answer, and correct a common mistake.\n'
+                  'Sound like a sharp tutor in class — energetic, not a boring lecture.\n\n',
+              )
+              print('qa rules')
+
+          # Replace boring emergency hooks
+          if 'Exam trap on {topic}' in gt:
+              gt = gt.replace(
+                  'EMERGENCY_HOOKS = [\n    "Most students lose marks on {topic} — here is the clean version.",\n    "Exam trap on {topic}? Fix it in under a minute.",\n]',
+                  'EMERGENCY_HOOKS = [\n    "Pause — can you explain {topic} in one line before I do?",\n    "Most students mix this up: here is {topic} the clean way.",\n    "Quick challenge on {topic} — stick with me for thirty seconds.",\n]',
+              )
+              print('hooks')
+
+          g.write_text(gt)
+          print('OK')
+          PY
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/fetch_topics.py scripts/generate_script.py data/topic_facts.json
+          git status
+          git commit -m "fix: fact-bank when wiki/DDG down; engaging Q&A script structure" || true
+          git push || true
