@@ -1,0 +1,99 @@
+name: harden-topics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/harden-topics.yml"
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text(encoding="utf-8")
+          if "from fact_bank import" not in t:
+              t = t.replace(
+                  "from script_quality import is_broad_topic_title",
+                  "from script_quality import is_broad_topic_title\nfrom fact_bank import fact_bank_extract",
+              )
+          if "adpribosylation" not in t:
+              t = t.replace(
+                  '"functionalanalysis"}',
+                  '"functionalanalysis", "adpribosylation", "ribosylation", "posttranslational", "apoptosis", "cellsignaling", "quantummechanics", "fouriertransform", "laplacetransform", "epigenetics", "transcriptomics"}',
+              )
+          if '"ribosyl" in k' not in t:
+              t = t.replace(
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True',
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True\n    if "ribosyl" in k or "posttranslational" in k: return True\n    if "quantum" in k or "fourier" in k or "laplace" in k: return True',
+              )
+          t = t.replace("want=80", "want=40")
+          t = t.replace("want=60", "want=40")
+          old = '''def pick_from_fallback(seen: set[str]) -> dict | None:
+    fb = load_fallback_titles()
+    random.shuffle(fb)
+    for title in fb[:200]:
+        if is_seen(seen, title) or is_hard_blocked(title): continue
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                s["topic_source"] = "fallback+" + s.get("extract_source", "")
+                return s
+        time.sleep(0.15)
+    return None
+'''
+          new = '''def pick_from_fallback(seen: set[str]) -> dict | None:
+    fb = load_fallback_titles()
+    random.shuffle(fb)
+    for title in fb[:400]:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        hit = fact_bank_extract(title)
+        if hit and len(hit.get("extract") or "") >= 80 and is_school_safe(hit.get("title") or title, hit["extract"]):
+            if is_hard_blocked(hit.get("title") or ""):
+                continue
+            hit["title"] = title
+            hit["topic_source"] = "fallback+fact-bank"
+            return hit
+    live = 0
+    for title in fb[:40]:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        if live >= 6:
+            break
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            if live >= 6:
+                break
+            live += 1
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                if is_hard_blocked(s["title"]):
+                    continue
+                s["topic_source"] = "fallback+" + s.get("extract_source", "")
+                return s
+            time.sleep(0.1)
+    return None
+'''
+          if old in t:
+              t = t.replace(old, new)
+              print("fallback upgraded")
+          else:
+              print("fallback pattern miss")
+          p.write_text(t, encoding="utf-8")
+          body = p.read_text()
+          assert "adpribosylation" in body
+          assert "from fact_bank import" in body
+          print("ok", p.stat().st_size)
+          PY
+      - name: commit
+        run: |
+          git config user.name mike-bot
+          git config user.email bot@users.noreply.github.com
+          git add scripts/fetch_topics.py
+          git commit -m "topics: HARD_BLOCK advanced + fact-bank-first fallback + live cap" || true
+          git push || true
