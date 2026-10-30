@@ -1,0 +1,127 @@
+name: fix-topic-qa2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-topic-qa2.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch-fetch
+        run: |
+          python3 << 'END'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text()
+
+          if "algebraicsignalprocessing" not in t:
+              t = t.replace(
+                  "HARD_BLOCK = {",
+                  'HARD_BLOCK = {"algebraicsignalprocessing", "signalprocessing", "fouriertransform", "laplacetransform", "quantumfield", ',
+              )
+
+          helper = r'''
+def clean_query_title(title: str) -> str:
+    t = (title or "").strip()
+    t = re.sub(r"(?i)\s+(for\s+(waec|jamb|neco|secondary\s+school)|in\s+everyday\s+life|explained|examples?|formula|process|experiment)$", "", t)
+    t = re.sub(r"(?i)^(how\s+|types? of\s+|importance of\s+|uses of\s+|factors affecting\s+|applications of\s+|ss[123]\s+|jss\s+)", "", t)
+    return (t.strip(" -:") or title)[:60]
+
+def fact_bank_extract(title: str) -> dict:
+    path = ROOT / "data" / "topic_facts.json"
+    if not path.exists():
+        return {}
+    try:
+        bank = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(bank, dict):
+        return {}
+    key = clean_query_title(title)
+    for k, v in bank.items():
+        if k.lower() == key.lower() or k.lower() == (title or "").strip().lower():
+            text = str(v).strip()
+            if len(text) >= 80:
+                return {"title": k, "extract": text[:650], "description": "fact-bank", "url": "", "bg": "classroom", "trend": False, "extract_source": "fact-bank"}
+    kl = key.lower()
+    for k, v in bank.items():
+        kk = k.lower()
+        if len(kk) >= 4 and (kk in kl or kl in kk):
+            text = str(v).strip()
+            if len(text) >= 80:
+                return {"title": k, "extract": text[:650], "description": "fact-bank", "url": "", "bg": "classroom", "trend": False, "extract_source": "fact-bank"}
+    return {}
+
+'''
+          if "def fact_bank_extract" not in t:
+              t = t.replace("def synthetic_extract(title: str) -> dict:", helper + "def synthetic_extract(title: str) -> dict:")
+
+          # Replace summary function body via markers
+          if "fact_bank_extract(title)" not in t.split("def summary")[1][:800] if "def summary" in t else True:
+              import re as _re
+              t2, n = _re.subn(
+                  r"def summary\(title: str\) -> dict:\n(?:    .*\n)+?(?=\ndef )",
+                  '''def summary(title: str) -> dict:\n    q = clean_query_title(title)\n    fb = fact_bank_extract(title) or fact_bank_extract(q)\n    order = (summary_wikipedia, summary_duckduckgo) if not _WIKI_RATE_LIMITED else (summary_duckduckgo,)\n    for candidate in (q, title):\n        for fn in order:\n            s = fn(candidate)\n            if s:\n                return s\n            time.sleep(0.15)\n    if fb:\n        return fb\n    return {}\n\n''',
+                  t,
+                  count=1,
+              )
+              print("summary replace", n)
+              t = t2
+
+          if "fallback+fact-bank" not in t:
+              t = t.replace(
+                  "tried = 0\n    for t in titles:",
+                  "tried = 0\n    for t in list(titles)[:300]:\n        if is_seen(seen, t) or is_hard_blocked(t): continue\n        fb = fact_bank_extract(t)\n        if fb and not is_seen(seen, fb[\"title\"]):\n            fb[\"topic_source\"] = \"fallback+fact-bank\"\n            return fb\n    for t in titles:",
+                  1,
+              )
+
+          p.write_text(t)
+          print("fetch ok", "fact_bank_extract" in t)
+          END
+      - name: patch-script
+        run: |
+          python3 << 'END'
+          from pathlib import Path
+          g = Path("scripts/generate_script.py")
+          gt = g.read_text()
+
+          gt = gt.replace(
+              'EMERGENCY_HOOKS = [\n    "Most students lose marks on {topic} — here is the clean version.",\n    "Exam trap on {topic}? Fix it in under a minute.",\n]',
+              'EMERGENCY_HOOKS = [\n    "Pause — can you explain {topic} in one line before I do?",\n    "Most students mix this up: here is {topic} the clean way.",\n    "Quick challenge on {topic} — stick with me for thirty seconds.",\n]',
+          )
+
+          old = (
+              '        structure = (\n'
+              '            "Write 85-115 words.\\nSTRUCTURE:\\n"\n'
+              '            "1) INTRO: concrete SCENE or exam trap for THIS topic only. Never generic.\\n"\n'
+              '            "2) DEFINITION in plain words.\\n"\n'
+              '            "3) EXAMPLE if a real school/home/lab scene fits.\\n"\n'
+              '            "4) EXAM tip.\\n"\n'
+              '            "5) OUTRO: tap bookmark to save, share with a classmate, follow for daily lessons.\\n"\n'
+              '        )'
+          )
+          # simpler: insert QA instruction into rules line
+          if "Think about it" not in gt:
+              gt = gt.replace(
+                  "NEVER open with Steps to answering. Open with a scene or exam trap.",
+                  "NEVER open with Steps to answering. Open with a scene or a challenge question. "
+                  "Include one Quick check: ask a sharp question, say Think about it, then answer and fix a common mistake. "
+                  "Sound like a sharp live tutor, not a boring lecture.",
+              )
+              print("qa rules added")
+
+          g.write_text(gt)
+          print("script ok")
+          END
+      - name: commit
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/fetch_topics.py scripts/generate_script.py
+          git diff --cached --stat
+          git commit -m "fix: fact-bank topic recovery + engaging Q&A teaching style" || true
+          git push || true
