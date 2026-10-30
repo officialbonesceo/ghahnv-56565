@@ -1,0 +1,107 @@
+name: fix-render-wrap
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/fix-render-wrap.yml"]
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore and patch
+        run: |
+          set -e
+          git show 87b743e997b3b82fba1370b87bfacbd74b6c1b73:scripts/render_teaser.py > scripts/render_teaser.py
+          python3 -c "
+          from pathlib import Path
+          t = Path('scripts/render_teaser.py').read_text()
+          print('restored', len(t))
+          helper = '''
+
+def draw_choice_button(d, left, top, right, height, text, fill, outline, width, font_size=32):
+    d.rounded_rectangle([left, top, right, top + height], 22, fill=fill, outline=outline, width=width)
+    pad = 18
+    max_w = right - left - 2 * pad
+    size = font_size
+    lines = []
+    while size >= 22:
+        cf = font(size)
+        lines = wrap(d, text, cf, max_w)[:2]
+        if lines and d.textbbox((0, 0), lines[0], font=cf)[2] <= max_w:
+            break
+        size -= 2
+    cf = font(size)
+    total_h = len(lines) * (size + 6)
+    ty = top + max(6, (height - total_h) // 2)
+    for line in lines:
+        d.text((left + pad, ty), line, font=cf, fill=WHITE)
+        ty += size + 6
+
+'''
+          if 'draw_choice_button' not in t:
+              t = t.replace('def lerp(a, b, t):', helper + 'def lerp(a, b, t):', 1)
+          t = t.replace('card_x0, card_x1 = 380, W - 48', 'card_x0, card_x1 = 320, W - 36')
+          old = '''        d.rounded_rectangle(
+            [left, top, right, top + 96],
+            22,
+            fill=CARD_HI if appear > 0.5 else CARD,
+            outline=(70, 90, 130),
+            width=3,
+        )
+        cf = font(36)
+        bb = d.textbbox((0, 0), ch, font=cf)
+        d.text(
+            ((left + right - (bb[2] - bb[0])) // 2, top + 28),
+            ch,
+            font=cf,
+            fill=WHITE,
+        )'''
+          new = '''        draw_choice_button(
+            d, left, top, right, 96, ch,
+            fill=CARD_HI if appear > 0.5 else CARD,
+            outline=(70, 90, 130),
+            width=3,
+            font_size=32,
+        )'''
+          if old in t:
+              t = t.replace(old, new, 1)
+              print('patched ask')
+          else:
+              print('ask block missing')
+          old2 = '''        d.rounded_rectangle(
+            [card_x0 + 28, top, card_x1 - 28, top + 96],
+            22,
+            fill=fill,
+            outline=outline,
+            width=width,
+        )
+        cf = font(36)
+        bb = d.textbbox((0, 0), ch, font=cf)
+        d.text(
+            ((card_x0 + card_x1 - (bb[2] - bb[0])) // 2, top + 28),
+            ch,
+            font=cf,
+            fill=WHITE,
+        )'''
+          new2 = '''        draw_choice_button(
+            d, card_x0 + 20, top, card_x1 - 20, 96, ch,
+            fill=fill, outline=outline, width=width, font_size=30,
+        )'''
+          if old2 in t:
+              t = t.replace(old2, new2, 1)
+              print('patched reveal')
+          else:
+              print('reveal block missing')
+          Path('scripts/render_teaser.py').write_text(t)
+          print('final', Path('scripts/render_teaser.py').stat().st_size)
+          assert 'draw_choice_button' in t
+          "
+          git config user.name devmeziem
+          git config user.email devmeziem@gmail.com
+          git add scripts/render_teaser.py
+          git commit -m "fix: wrap long choice text so teaser options are never cut off" || true
+          git push
