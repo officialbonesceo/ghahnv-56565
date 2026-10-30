@@ -53,12 +53,36 @@ jobs:
 
       - name: trends
         continue-on-error: true
+        timeout-minutes: 3
         run: |
           python scripts/fetch_trends.py || true
           cat data/trending_topics.json || true
 
       - name: topic
+        timeout-minutes: 8
         run: |
+          # Fail-fast: short DDG timeouts + skip after first DDG death
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text(encoding="utf-8")
+          t2 = t.replace('api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)',
+                         'api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=6)')
+          t2 = t2.replace('definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)',
+                          'definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=6)')
+          if "_DDG_DEAD" not in t2:
+              t2 = t2.replace("_WIKI_RATE_LIMITED = False", "_WIKI_RATE_LIMITED = False\n_DDG_DEAD = False", 1)
+              t2 = t2.replace("def discover_ddg_related(query: str) -> list[str]:\n    out = []",
+                             "def discover_ddg_related(query: str) -> list[str]:\n    global _DDG_DEAD\n    if _DDG_DEAD:\n        return []\n    out = []", 1)
+              t2 = t2.replace("def summary_duckduckgo(title: str) -> dict:\n    if is_hard_blocked(title): return {}",
+                             "def summary_duckduckgo(title: str) -> dict:\n    global _DDG_DEAD\n    if _DDG_DEAD or is_hard_blocked(title): return {}", 1)
+              t2 = t2.replace('print("ddg discover fail", query, e, file=sys.stderr)',
+                             'print("ddg discover fail", query, e, file=sys.stderr)\n        if "timeout" in str(e).lower() or "timed out" in str(e).lower():\n            _DDG_DEAD = True\n            print("DDG_DEAD", file=sys.stderr)', 1)
+              t2 = t2.replace('print("ddg summary fail", title, e, file=sys.stderr)',
+                             'print("ddg summary fail", title, e, file=sys.stderr)\n        if "timeout" in str(e).lower() or "timed out" in str(e).lower():\n            _DDG_DEAD = True\n            print("DDG_DEAD", file=sys.stderr)', 1)
+          p.write_text(t2, encoding="utf-8")
+          print("topic runtime patch applied")
+          PY
           python scripts/fetch_topics.py topic.json
           echo "--- topic.json ---"
           cat topic.json
