@@ -1,0 +1,85 @@
+name: patch-ddg-failfast
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/patch-ddg-failfast.yml"]
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch fetch_topics
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text(encoding="utf-8")
+          if "_DDG_DEAD" in t:
+              print("already patched")
+              raise SystemExit(0)
+          # Add global flag after _WIKI_RATE_LIMITED
+          t = t.replace(
+              "_WIKI_RATE_LIMITED = False",
+              "_WIKI_RATE_LIMITED = False\n_DDG_DEAD = False  # set True after repeated DDG timeouts",
+              1,
+          )
+          # Patch discover_ddg_related
+          old_disc = '''def discover_ddg_related(query: str) -> list[str]:
+    out = []
+    try:
+        r = requests.get("https://api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)'''
+          new_disc = '''def discover_ddg_related(query: str) -> list[str]:
+    global _DDG_DEAD
+    if _DDG_DEAD:
+        return []
+    out = []
+    try:
+        r = requests.get("https://api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=8)'''
+          if old_disc in t:
+              t = t.replace(old_disc, new_disc, 1)
+              print("patched discover_ddg_related")
+          else:
+              print("WARN discover block not exact")
+          # In discover exception handler, mark dead on timeout
+          old_ex = 'print("ddg discover fail", query, e, file=sys.stderr)'
+          new_ex = '''print("ddg discover fail", query, e, file=sys.stderr)
+        if "timed out" in str(e).lower() or "timeout" in str(e).lower() or "connecttimeout" in str(e).lower():
+            _DDG_DEAD = True
+            print("DDG_DEAD — skipping further duckduckgo calls", file=sys.stderr)'''
+          if old_ex in t:
+              t = t.replace(old_ex, new_ex, 1)
+              print("patched discover exception")
+          # Patch summary_duckduckgo
+          old_sum = '''def summary_duckduckgo(title: str) -> dict:
+    if is_hard_blocked(title): return {}
+    try:
+        r = requests.get("https://api.duckduckgo.com/", params={"q": f"{title} definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)'''
+          new_sum = '''def summary_duckduckgo(title: str) -> dict:
+    global _DDG_DEAD
+    if _DDG_DEAD or is_hard_blocked(title): return {}
+    try:
+        r = requests.get("https://api.duckduckgo.com/", params={"q": f"{title} definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=8)'''
+          if old_sum in t:
+              t = t.replace(old_sum, new_sum, 1)
+              print("patched summary_duckduckgo")
+          else:
+              print("WARN summary block not exact")
+          old_sum_ex = 'print("ddg summary fail", title, e, file=sys.stderr)'
+          new_sum_ex = '''print("ddg summary fail", title, e, file=sys.stderr)
+        if "timed out" in str(e).lower() or "timeout" in str(e).lower() or "connecttimeout" in str(e).lower():
+            _DDG_DEAD = True
+            print("DDG_DEAD — skipping further duckduckgo calls", file=sys.stderr)'''
+          if old_sum_ex in t:
+              t = t.replace(old_sum_ex, new_sum_ex, 1)
+              print("patched summary exception")
+          p.write_text(t, encoding="utf-8")
+          print("final size", p.stat().st_size)
+          assert "_DDG_DEAD" in t
+          PY
+          git config user.name "devmeziem"
+          git config user.email "devmeziem@gmail.com"
+          git add scripts/fetch_topics.py
+          git commit -m "fix: fail-fast on DuckDuckGo timeouts (no more hour-long topic hangs)" || echo nochange
+          git push || true
