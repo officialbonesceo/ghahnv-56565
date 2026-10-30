@@ -1,6 +1,9 @@
 name: fix-ub-ft
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-ub-ft.yml'
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -13,7 +16,6 @@ jobs:
       - name: restore upload_buffer from known good + FB patch
         run: |
           set -e
-          # Restore from commit before truncation
           git show 85627f590eae50a50089fe7bfbc834b45085b9c4:scripts/upload_buffer.py > scripts/upload_buffer.py
           python3 << 'PY'
           from pathlib import Path
@@ -38,42 +40,35 @@ jobs:
     return ""
 '''
           if old not in t:
-              raise SystemExit("metadata block missing in restored file")
+              raise SystemExit("metadata block missing")
           p.write_text(t.replace(old, new), encoding="utf-8")
-          print("upload_buffer restored+patched", p.stat().st_size)
+          print("upload_buffer", p.stat().st_size)
+          assert "def main" in p.read_text()
           PY
-      - name: patch fetch_topics HARD_BLOCK + fact-bank-first
+      - name: patch fetch_topics
         run: |
           set -e
           python3 << 'PY'
           from pathlib import Path
           p = Path("scripts/fetch_topics.py")
           t = p.read_text(encoding="utf-8")
-          # expand HARD_BLOCK line
-          import re
-          # inject fact_bank import
           if "from fact_bank import" not in t:
               t = t.replace(
                   "from script_quality import is_broad_topic_title",
                   "from script_quality import is_broad_topic_title\nfrom fact_bank import fact_bank_extract",
               )
-          # add advanced blocks to HARD_BLOCK set string
-          extra = ', "adpribosylation", "ribosylation", "posttranslational", "apoptosis", "cellsignaling", "quantummechanics", "fouriertransform", "laplacetransform", "epigenetics", "transcriptomics"'
           if "adpribosylation" not in t:
-              t = t.replace('"functionalanalysis"}', '"functionalanalysis"' + extra + '}')
-          # pattern blocks
-          if 'ribosyl' not in t:
+              t = t.replace('"functionalanalysis"}', '"functionalanalysis", "adpribosylation", "ribosylation", "posttranslational", "apoptosis", "cellsignaling", "quantummechanics", "fouriertransform", "laplacetransform", "epigenetics", "transcriptomics"}')
+          if "ribosyl" not in t:
               t = t.replace(
                   'if "petroleum" in k or "refiner" in k or "dangote" in k: return True',
                   'if "petroleum" in k or "refiner" in k or "dangote" in k: return True\n    if "ribosyl" in k or "posttranslational" in k or "transcriptom" in k: return True\n    if "quantum" in k or "fourier" in k or "laplace" in k: return True',
               )
-          # Replace pick_from_fallback + main with faster offline-first version
           marker = "def pick_from_fallback"
           idx = t.find(marker)
           if idx < 0:
-              raise SystemExit("pick_from_fallback not found")
+              raise SystemExit("pick_from_fallback missing")
           new_tail = '''def pick_from_fallback(seen: set[str]) -> dict | None:
-    """Prefer offline fact-bank. Cap live wiki/DDG tries so we never hang."""
     fb = load_fallback_titles()
     random.shuffle(fb)
     for title in fb[:400]:
@@ -166,9 +161,8 @@ def main():
 if __name__ == "__main__":
     main()
 '''
-          t = t[:idx] + new_tail
-          p.write_text(t, encoding="utf-8")
-          print("fetch_topics patched", p.stat().st_size)
+          p.write_text(t[:idx] + new_tail, encoding="utf-8")
+          print("fetch_topics", p.stat().st_size)
           PY
       - name: commit push
         run: |
@@ -176,6 +170,5 @@ if __name__ == "__main__":
           git config user.email "bot@users.noreply.github.com"
           git add scripts/upload_buffer.py scripts/fetch_topics.py
           git status
-          git diff --cached --stat
           git commit -m "fix: full Buffer FB type + fact-bank-first topics + HARD_BLOCK" || echo nochange
           git push
