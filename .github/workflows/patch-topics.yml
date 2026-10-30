@@ -1,0 +1,99 @@
+name: patch-topics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/patch-topics.yml"
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: patch fetch_topics
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text(encoding="utf-8")
+          if "from fact_bank import" not in t:
+              t = t.replace(
+                  "from script_quality import is_broad_topic_title",
+                  "from script_quality import is_broad_topic_title\nfrom fact_bank import fact_bank_extract",
+              )
+          if "adpribosylation" not in t:
+              t = t.replace(
+                  '"functionalanalysis"}',
+                  '"functionalanalysis", "adpribosylation", "ribosylation", "posttranslational", "apoptosis", "cellsignaling", "quantummechanics", "fouriertransform", "laplacetransform", "epigenetics", "transcriptomics"}',
+              )
+          if '"ribosyl" in k' not in t:
+              t = t.replace(
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True',
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True\n    if "ribosyl" in k or "posttranslational" in k or "transcriptom" in k: return True\n    if "quantum" in k or "fourier" in k or "laplace" in k: return True',
+              )
+          # Cap live tries in main loop: after candidates discovery, prefer fact_bank
+          if "MAX_LIVE" not in t and "fact_bank_extract(title)" not in t:
+              old = """    candidates = discover_internet_titles(seen, want=80)\n    chosen = None\n    for title in candidates:\n        if is_seen(seen, title): continue\n        for getter in (summary_wikipedia, summary_duckduckgo):\n            s = getter(title)\n            if s and len(s.get(\"extract\") or \"\") >= 80 and is_school_safe(s[\"title\"], s[\"extract\"]):\n                s[\"topic_source\"] = \"internet+\" + s.get(\"extract_source\", \"\")\n                chosen = s\n                break\n        if chosen: break\n        time.sleep(0.2)\n"""
+              # try without escaped quotes for actual file content
+              old2 = '''    candidates = discover_internet_titles(seen, want=80)
+    chosen = None
+    for title in candidates:
+        if is_seen(seen, title): continue
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                s["topic_source"] = "internet+" + s.get("extract_source", "")
+                chosen = s
+                break
+        if chosen: break
+        time.sleep(0.2)
+'''
+              new2 = '''    candidates = discover_internet_titles(seen, want=60)
+    chosen = None
+    live_tries = 0
+    MAX_LIVE = 10
+    for title in candidates:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        fb_hit = fact_bank_extract(title)
+        if fb_hit and len(fb_hit.get("extract") or "") >= 80:
+            if is_school_safe(fb_hit.get("title") or title, fb_hit["extract"]) and not is_hard_blocked(fb_hit.get("title") or title):
+                fb_hit["title"] = title
+                fb_hit["topic_source"] = "internet+fact-bank"
+                chosen = fb_hit
+                break
+        if live_tries >= MAX_LIVE:
+            continue
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            if live_tries >= MAX_LIVE:
+                break
+            live_tries += 1
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                if is_hard_blocked(s["title"]):
+                    continue
+                s["topic_source"] = "internet+" + s.get("extract_source", "")
+                chosen = s
+                break
+        if chosen:
+            break
+        time.sleep(0.15)
+'''
+              if old2 in t:
+                  t = t.replace(old2, new2)
+                  print("main loop capped")
+              else:
+                  print("main loop pattern not exact — HARD_BLOCK still applied")
+          p.write_text(t, encoding="utf-8")
+          print("wrote", p.stat().st_size)
+          assert "adpribosylation" in p.read_text()
+          assert "from fact_bank import" in p.read_text()
+          PY
+      - name: commit
+        run: |
+          git config user.name mike-bot
+          git config user.email bot@users.noreply.github.com
+          git add scripts/fetch_topics.py
+          git commit -m "topics: HARD_BLOCK advanced + fact_bank import + live cap" || true
+          git push || true
