@@ -1,0 +1,181 @@
+name: fix-ub-ft
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: restore upload_buffer from known good + FB patch
+        run: |
+          set -e
+          # Restore from commit before truncation
+          git show 85627f590eae50a50089fe7bfbc834b45085b9c4:scripts/upload_buffer.py > scripts/upload_buffer.py
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/upload_buffer.py")
+          t = p.read_text(encoding="utf-8")
+          old = '''def metadata_graphql(service: str, kind: str = "video") -> str:
+    if service == "instagram" and kind == "video":
+        return "metadata: { instagram: { type: reel, shouldShareToFeed: true } }"
+    if service == "instagram" and kind == "image":
+        return "metadata: { instagram: { type: post, shouldShareToFeed: true } }"
+    return ""
+'''
+          new = '''def metadata_graphql(service: str, kind: str = "video") -> str:
+    if service == "instagram" and kind == "video":
+        return "metadata: { instagram: { type: reel, shouldShareToFeed: true } }"
+    if service == "instagram" and kind == "image":
+        return "metadata: { instagram: { type: post, shouldShareToFeed: true } }"
+    if service == "facebook" and kind == "video":
+        return "metadata: { facebook: { type: reel } }"
+    if service == "facebook" and kind == "image":
+        return "metadata: { facebook: { type: post } }"
+    return ""
+'''
+          if old not in t:
+              raise SystemExit("metadata block missing in restored file")
+          p.write_text(t.replace(old, new), encoding="utf-8")
+          print("upload_buffer restored+patched", p.stat().st_size)
+          PY
+      - name: patch fetch_topics HARD_BLOCK + fact-bank-first
+        run: |
+          set -e
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("scripts/fetch_topics.py")
+          t = p.read_text(encoding="utf-8")
+          # expand HARD_BLOCK line
+          import re
+          # inject fact_bank import
+          if "from fact_bank import" not in t:
+              t = t.replace(
+                  "from script_quality import is_broad_topic_title",
+                  "from script_quality import is_broad_topic_title\nfrom fact_bank import fact_bank_extract",
+              )
+          # add advanced blocks to HARD_BLOCK set string
+          extra = ', "adpribosylation", "ribosylation", "posttranslational", "apoptosis", "cellsignaling", "quantummechanics", "fouriertransform", "laplacetransform", "epigenetics", "transcriptomics"'
+          if "adpribosylation" not in t:
+              t = t.replace('"functionalanalysis"}', '"functionalanalysis"' + extra + '}')
+          # pattern blocks
+          if 'ribosyl' not in t:
+              t = t.replace(
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True',
+                  'if "petroleum" in k or "refiner" in k or "dangote" in k: return True\n    if "ribosyl" in k or "posttranslational" in k or "transcriptom" in k: return True\n    if "quantum" in k or "fourier" in k or "laplace" in k: return True',
+              )
+          # Replace pick_from_fallback + main with faster offline-first version
+          marker = "def pick_from_fallback"
+          idx = t.find(marker)
+          if idx < 0:
+              raise SystemExit("pick_from_fallback not found")
+          new_tail = '''def pick_from_fallback(seen: set[str]) -> dict | None:
+    """Prefer offline fact-bank. Cap live wiki/DDG tries so we never hang."""
+    fb = load_fallback_titles()
+    random.shuffle(fb)
+    for title in fb[:400]:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        fb_hit = fact_bank_extract(title)
+        if fb_hit and len(fb_hit.get("extract") or "") >= 80:
+            if is_school_safe(fb_hit.get("title") or title, fb_hit["extract"]):
+                if is_hard_blocked(fb_hit.get("title") or ""):
+                    continue
+                fb_hit["title"] = title
+                fb_hit["topic_source"] = "fallback+fact-bank"
+                return fb_hit
+    live_tries = 0
+    for title in fb[:60]:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        if live_tries >= 8:
+            break
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            if live_tries >= 8:
+                break
+            live_tries += 1
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                if is_hard_blocked(s["title"]):
+                    continue
+                s["topic_source"] = "fallback+" + s.get("extract_source", "")
+                return s
+            time.sleep(0.1)
+    for title in fb[:600]:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        fb_hit = fact_bank_extract(title)
+        if fb_hit and len(fb_hit.get("extract") or "") >= 60:
+            fb_hit["topic_source"] = "fallback+fact-bank-soft"
+            return fb_hit
+    return None
+
+
+def main():
+    out = sys.argv[1] if len(sys.argv) > 1 else "topic.json"
+    seen = load_seen()
+    seed = try_seed_topic(seen)
+    if seed:
+        Path(out).write_text(json.dumps(seed, indent=2), encoding="utf-8")
+        save_seen(seen, seed["title"])
+        print("TOPIC_SOURCE seed", seed["title"], file=sys.stderr)
+        return
+    candidates = discover_internet_titles(seen, want=60)
+    chosen = None
+    live_tries = 0
+    MAX_LIVE = 10
+    for title in candidates:
+        if is_seen(seen, title) or is_hard_blocked(title):
+            continue
+        fb_hit = fact_bank_extract(title)
+        if fb_hit and len(fb_hit.get("extract") or "") >= 80:
+            if is_school_safe(fb_hit.get("title") or title, fb_hit["extract"]) and not is_hard_blocked(fb_hit.get("title") or title):
+                fb_hit["title"] = title
+                fb_hit["topic_source"] = "internet+fact-bank"
+                chosen = fb_hit
+                break
+        if live_tries >= MAX_LIVE:
+            continue
+        for getter in (summary_wikipedia, summary_duckduckgo):
+            if live_tries >= MAX_LIVE:
+                break
+            live_tries += 1
+            s = getter(title)
+            if s and len(s.get("extract") or "") >= 80 and is_school_safe(s["title"], s["extract"]):
+                if is_hard_blocked(s["title"]):
+                    continue
+                s["topic_source"] = "internet+" + s.get("extract_source", "")
+                chosen = s
+                break
+        if chosen:
+            break
+        time.sleep(0.15)
+    if not chosen:
+        chosen = pick_from_fallback(seen)
+    if not chosen:
+        print("NO_TOPIC", file=sys.stderr)
+        sys.exit(1)
+    Path(out).write_text(json.dumps(chosen, indent=2), encoding="utf-8")
+    save_seen(seen, chosen["title"])
+    print("TOPIC_SOURCE", chosen.get("topic_source"), chosen["title"], file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
+'''
+          t = t[:idx] + new_tail
+          p.write_text(t, encoding="utf-8")
+          print("fetch_topics patched", p.stat().st_size)
+          PY
+      - name: commit push
+        run: |
+          git config user.name "mike-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add scripts/upload_buffer.py scripts/fetch_topics.py
+          git status
+          git diff --cached --stat
+          git commit -m "fix: full Buffer FB type + fact-bank-first topics + HARD_BLOCK" || echo nochange
+          git push
