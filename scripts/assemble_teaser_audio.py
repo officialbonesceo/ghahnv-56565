@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Teaser audio: Andrew Neural, human pace, ticks + jingle + calm bed."""
+"""Teaser audio: Andrew Neural, human pace, ticks + jingle + calm bed.
+Retries TTS and falls back to alternate voices on NoAudioReceived.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -14,11 +16,33 @@ import edge_tts
 VOICE = os.environ.get("VOICE", "en-US-AndrewNeural")
 RATE = os.environ.get("RATE", "+0%")  # human pace
 SR = 24000
+FALLBACK_VOICES = [
+    "en-US-AndrewNeural",
+    "en-US-GuyNeural",
+    "en-US-ChristopherNeural",
+    "en-GB-RyanNeural",
+    "en-US-JennyNeural",
+]
 
 
 async def synth(text: str, out: Path) -> None:
-    communicate = edge_tts.Communicate(text, VOICE, rate=RATE)
-    await communicate.save(str(out))
+    """Synthesize with retries and voice fallbacks."""
+    voices = [VOICE] + [v for v in FALLBACK_VOICES if v != VOICE]
+    last_err: Exception | None = None
+    for voice in voices:
+        for attempt in range(3):
+            try:
+                communicate = edge_tts.Communicate(text, voice, rate=RATE)
+                await communicate.save(str(out))
+                if out.exists() and out.stat().st_size > 200:
+                    if voice != VOICE:
+                        print(f"TTS_OK fallback voice={voice}", flush=True)
+                    return
+            except Exception as e:
+                last_err = e
+                print(f"TTS_RETRY voice={voice} attempt={attempt+1} err={e}", flush=True)
+                await asyncio.sleep(0.8 * (attempt + 1))
+    raise RuntimeError(f"TTS failed for all voices: {last_err}")
 
 
 def run_ff(args: list[str]) -> None:
@@ -85,15 +109,12 @@ def make_tick(path: Path) -> None:
 def make_countdown_with_ticks(path: Path, secs: float, tick: Path) -> None:
     """Silence bed + one tick per second."""
     n = max(1, int(round(secs)))
-    # base silence
     base = path.with_name(path.stem + "_base.wav")
     silence_wav(base, float(n))
-    # build filter: amix silence + delayed ticks
     inputs = ["-i", str(base)]
     filter_parts = []
     for i in range(n):
         inputs += ["-i", str(tick)]
-        # tick at start of each second: 0,1,2,...
         filter_parts.append(
             f"[{i + 1}]adelay={i * 1000}|{i * 1000},volume=0.55[t{i}]"
         )
@@ -124,7 +145,6 @@ def make_countdown_with_ticks(path: Path, secs: float, tick: Path) -> None:
 
 def make_jingle(path: Path) -> None:
     """Short bright twinkle (~0.6s) for correct answer."""
-    # C-E-G style beeps
     run_ff(
         [
             "ffmpeg",
@@ -161,7 +181,6 @@ def make_jingle(path: Path) -> None:
 
 def make_bed(path: Path, secs: float) -> None:
     """Very soft calm pad under whole video."""
-    # low quiet sine + slow amplitude — stays in background
     run_ff(
         [
             "ffmpeg",
@@ -267,7 +286,6 @@ async def main() -> None:
                     if phase == "reveal":
                         mix_voice_jingle(voice_wav, jingle, wav)
                     else:
-                        # slight headroom
                         run_ff(
                             [
                                 "ffmpeg",
@@ -319,7 +337,6 @@ async def main() -> None:
         bed = tmp_path / "bed.wav"
         make_bed(bed, max(t, 1.0))
         mixed = tmp_path / "mixed.wav"
-        # voice path louder; bed quiet under everything
         run_ff(
             [
                 "ffmpeg",
