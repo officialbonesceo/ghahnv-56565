@@ -59,34 +59,61 @@ jobs:
           cat data/trending_topics.json || true
 
       - name: topic
-        timeout-minutes: 8
+        timeout-minutes: 6
         run: |
-          # Fail-fast: short DDG timeouts + skip after first DDG death
-          python3 - <<'PY'
+          # Patch fetch_topics at runtime: offline extract + fail-fast DDG/wiki
+          python3 << 'PY'
           from pathlib import Path
           p = Path("scripts/fetch_topics.py")
           t = p.read_text(encoding="utf-8")
-          t2 = t.replace('api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)',
-                         'api.duckduckgo.com/", params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=6)')
-          t2 = t2.replace('definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=25)',
-                          'definition school science", "format": "json", "no_html": 1, "skip_disambig": 1}, headers=UA, timeout=6)')
-          if "_DDG_DEAD" not in t2:
-              t2 = t2.replace("_WIKI_RATE_LIMITED = False", "_WIKI_RATE_LIMITED = False\n_DDG_DEAD = False", 1)
-              t2 = t2.replace("def discover_ddg_related(query: str) -> list[str]:\n    out = []",
-                             "def discover_ddg_related(query: str) -> list[str]:\n    global _DDG_DEAD\n    if _DDG_DEAD:\n        return []\n    out = []", 1)
-              t2 = t2.replace("def summary_duckduckgo(title: str) -> dict:\n    if is_hard_blocked(title): return {}",
-                             "def summary_duckduckgo(title: str) -> dict:\n    global _DDG_DEAD\n    if _DDG_DEAD or is_hard_blocked(title): return {}", 1)
-              t2 = t2.replace('print("ddg discover fail", query, e, file=sys.stderr)',
-                             'print("ddg discover fail", query, e, file=sys.stderr)\n        if "timeout" in str(e).lower() or "timed out" in str(e).lower():\n            _DDG_DEAD = True\n            print("DDG_DEAD", file=sys.stderr)', 1)
-              t2 = t2.replace('print("ddg summary fail", title, e, file=sys.stderr)',
-                             'print("ddg summary fail", title, e, file=sys.stderr)\n        if "timeout" in str(e).lower() or "timed out" in str(e).lower():\n            _DDG_DEAD = True\n            print("DDG_DEAD", file=sys.stderr)', 1)
-          p.write_text(t2, encoding="utf-8")
-          print("topic runtime patch applied")
+          offline = '''
+def summary_offline(title: str) -> dict:
+    """Local extract so pipeline never dies when wiki/ddg are down."""
+    if is_hard_blocked(title):
+        return {}
+    core = re.sub(
+        r"(?i)^(types of|how|importance of|applications of|properties of|common mistakes in|exam tips on|revision on|key points on|factors affecting|uses of|ss[123]|jss|difference between)\\s+",
+        "",
+        title or "",
+    ).strip() or (title or "this topic")
+    extract = (
+        f"{title} is a core secondary-school topic for WAEC, NECO and JAMB. "
+        f"Students should understand what {core} means, recognise simple everyday examples, "
+        f"and avoid common exam mistakes. Focus on clear definition, one worked idea, and why it matters."
+    )
+    return {
+        "title": title,
+        "extract": extract[:650],
+        "description": "offline bank",
+        "url": "",
+        "bg": "classroom",
+        "trend": False,
+        "extract_source": "offline",
+    }
+
+'''
+          if "def summary_offline" not in t:
+              t = t.replace("def pick_from_fallback", offline + "def pick_from_fallback", 1)
+          # Prefer offline last in pick_from_fallback
+          t = t.replace(
+              "for getter in (summary_wikipedia, summary_duckduckgo):",
+              "for getter in (summary_wikipedia, summary_duckduckgo, summary_offline):",
+          )
+          # Shorter wiki backoff when 429
+          t = t.replace("wait = min(45.0, 5.0 * (2 ** attempt) + random.uniform(0, 2))",
+                        "wait = min(8.0, 2.0 * (2 ** attempt)); _WIKI_RATE_LIMITED = True")
+          # DDG timeout 6s
+          t = t.replace("headers=UA, timeout=25)", "headers=UA, timeout=6)")
+          # Fail-fast flags
+          if "_DDG_DEAD" not in t:
+              t = t.replace("_WIKI_RATE_LIMITED = False", "_WIKI_RATE_LIMITED = False\n_DDG_DEAD = False", 1)
+          p.write_text(t, encoding="utf-8")
+          print("patched fetch_topics offline+failfast")
           PY
           python scripts/fetch_topics.py topic.json
           echo "--- topic.json ---"
           cat topic.json
-          python -c "import json; t=json.load(open('topic.json')); assert 'petroleum' not in t.get('title','').lower() and 'refiner' not in t.get('title','').lower(), t"
+          python -c "import json; t=json.load(open('topic.json')); assert t.get('extract') and len(t['extract'])>40; assert 'petroleum' not in t.get('title','').lower() and 'refiner' not in t.get('title','').lower(), t"
 
       - name: commit-seen-topics
         continue-on-error: true
