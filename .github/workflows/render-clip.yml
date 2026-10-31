@@ -59,57 +59,9 @@ jobs:
           cat data/trending_topics.json || true
 
       - name: topic
-        timeout-minutes: 6
+        timeout-minutes: 8
         run: |
-          # Patch fetch_topics at runtime: offline extract + fail-fast DDG/wiki
-          python3 << 'PY'
-          from pathlib import Path
-          p = Path("scripts/fetch_topics.py")
-          t = p.read_text(encoding="utf-8")
-          offline = '''
-def summary_offline(title: str) -> dict:
-    """Local extract so pipeline never dies when wiki/ddg are down."""
-    if is_hard_blocked(title):
-        return {}
-    core = re.sub(
-        r"(?i)^(types of|how|importance of|applications of|properties of|common mistakes in|exam tips on|revision on|key points on|factors affecting|uses of|ss[123]|jss|difference between)\\s+",
-        "",
-        title or "",
-    ).strip() or (title or "this topic")
-    extract = (
-        f"{title} is a core secondary-school topic for WAEC, NECO and JAMB. "
-        f"Students should understand what {core} means, recognise simple everyday examples, "
-        f"and avoid common exam mistakes. Focus on clear definition, one worked idea, and why it matters."
-    )
-    return {
-        "title": title,
-        "extract": extract[:650],
-        "description": "offline bank",
-        "url": "",
-        "bg": "classroom",
-        "trend": False,
-        "extract_source": "offline",
-    }
-
-'''
-          if "def summary_offline" not in t:
-              t = t.replace("def pick_from_fallback", offline + "def pick_from_fallback", 1)
-          # Prefer offline last in pick_from_fallback
-          t = t.replace(
-              "for getter in (summary_wikipedia, summary_duckduckgo):",
-              "for getter in (summary_wikipedia, summary_duckduckgo, summary_offline):",
-          )
-          # Shorter wiki backoff when 429
-          t = t.replace("wait = min(45.0, 5.0 * (2 ** attempt) + random.uniform(0, 2))",
-                        "wait = min(8.0, 2.0 * (2 ** attempt)); _WIKI_RATE_LIMITED = True")
-          # DDG timeout 6s
-          t = t.replace("headers=UA, timeout=25)", "headers=UA, timeout=6)")
-          # Fail-fast flags
-          if "_DDG_DEAD" not in t:
-              t = t.replace("_WIKI_RATE_LIMITED = False", "_WIKI_RATE_LIMITED = False\n_DDG_DEAD = False", 1)
-          p.write_text(t, encoding="utf-8")
-          print("patched fetch_topics offline+failfast")
-          PY
+          python scripts/fetch_topics_offline_patch.py
           python scripts/fetch_topics.py topic.json
           echo "--- topic.json ---"
           cat topic.json
