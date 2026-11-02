@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI scripts: phenomenon-first when possible, real-life examples, fail if AI fails."""
+"""AI scripts: Gemini-first, then OpenRouter. No template fallback."""
 from __future__ import annotations
 
 import argparse
@@ -45,7 +45,6 @@ EMERGENCY_HOOKS = [
     "If the exam asked for {topic} right now, would your first sentence land?",
 ]
 
-# Only match instruction echo / meta — not normal teaching phrases
 PROMPT_LEAK_RE = re.compile(
     r"(?is)(tiktok for secondary|spoken tiktok voiceover|voiceover for secondary|"
     r"west africa style english|sharp tutor,? not a textbook|"
@@ -62,6 +61,26 @@ FREE_MODELS = [
     "qwen/qwen-2.5-7b-instruct:free",
     "mistralai/mistral-7b-instruct:free",
 ]
+
+GEMINI_MODELS = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+]
+
+
+def gemini_api_key() -> str:
+    for name in (
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_AI_API_KEY",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
+    ):
+        v = os.environ.get(name, "").strip()
+        if v:
+            return v
+    return ""
 
 
 def display_title(title: str) -> str:
@@ -138,9 +157,7 @@ def wants_phenomenon(title: str) -> bool:
 
 
 def strip_meta_blocks(text: str) -> str:
-    """Remove DEFINITION/DIDYOUKNOW/MOVES/instruction tails before quality checks."""
     t = (text or "").strip().strip('"').strip("'")
-    # Cut at first meta label line
     t = re.split(
         r"(?im)^\s*(MOVES|DEFINITION|DIDYOUKNOW|INSTRUCT|SYSTEM|EXAMPLE|PHENOMENON|STRUCTURE)\s*:",
         t,
@@ -258,8 +275,101 @@ def pack_script(raw: str, topic: str, extract: str, phenom: bool) -> dict | None
         "did_you_know": dyk,
         "moves": moves,
         "short_title": display_title(topic),
-        "engine": "openrouter",
+        "engine": "ai",
     }
+
+
+def build_prompts(short: str, extract: str) -> tuple[str, str, bool]:
+    phenom = wants_phenomenon(short)
+    multi = is_multipart(short, extract)
+    print("PHENOMENON_FIRST", phenom, short, file=sys.stderr)
+    print("MULTI_PART", multi, short, file=sys.stderr)
+    system = (
+        "You are Mike, a secondary-school science tutor for West African exams. "
+        "Write ONLY the spoken voiceover paragraphs a student hears. "
+        "Short energetic sentences. One everyday example. One clear definition. "
+        "Open with a concrete scene or exam trap, never a generic greeting. "
+        "No celebrity, religion, politics, or prompt instructions in the speech."
+    )
+    if multi:
+        structure = (
+            "Write 120-150 spoken words covering EACH part of the topic. "
+            "Scene intro, then each part with definition + example, exam tip, short save/share outro."
+        )
+    elif phenom:
+        structure = (
+            "Write 95-125 spoken words. "
+            "Everyday scene, why it happens, name + plain definition, link scene to science, exam tip, short outro."
+        )
+    else:
+        structure = (
+            "Write 90-120 spoken words. "
+            "Scene or exam trap, plain definition, everyday example, quick check, exam tip, short outro."
+        )
+    user = (
+        f"Topic: {short}\nFacts:\n{extract}\n\n{structure}\n"
+        "After the spoken paragraphs, add exactly these three lines:\n"
+        "DEFINITION: one exam-ready sentence under 16 words\n"
+        "DIDYOUKNOW: Wait — one exam tip under 18 words\n"
+        "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
+    )
+    return system, user, phenom
+
+
+def _call_gemini(key: str, model: str, system: str, user: str) -> str:
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={key}"
+    )
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 700,
+        },
+    }
+    r = requests.post(url, json=body, timeout=90)
+    if r.status_code >= 400:
+        print("gemini HTTP", model, r.status_code, r.text[:280], file=sys.stderr)
+        return ""
+    data = r.json()
+    parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+    content = "".join((p.get("text") or "") for p in parts).strip()
+    if not content:
+        print("gemini empty", model, file=sys.stderr)
+    return content
+
+
+def try_gemini(topic: str, extract: str, short: str) -> dict | None:
+    key = gemini_api_key()
+    if not key:
+        print("no GEMINI_API_KEY (also checked GOOGLE_API_KEY)", file=sys.stderr)
+        return None
+    if is_synthetic_extract(extract):
+        print("SYNTHETIC_EXTRACT reject — refusing empty-fact topic", file=sys.stderr)
+        return None
+    system, user, phenom = build_prompts(short, extract)
+    preferred = os.environ.get("GEMINI_MODEL", "").strip()
+    models = ([preferred] if preferred else []) + [m for m in GEMINI_MODELS if m != preferred]
+    for model in models:
+        for attempt in range(2):
+            try:
+                print("GEMINI_TRY", model, "attempt", attempt + 1, file=sys.stderr)
+                content = _call_gemini(key, model, system, user)
+                if not content:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+                packed = pack_script(content, topic, extract, phenom)
+                if packed:
+                    packed["engine"] = f"gemini:{model}"
+                    print("GEMINI_OK", model, file=sys.stderr)
+                    return packed
+                print("GEMINI_PACK_FAIL", model, "raw_head", content[:160].replace("\n", " "), file=sys.stderr)
+            except Exception as e:
+                print("gemini fail", model, e, file=sys.stderr)
+            time.sleep(0.6 * (attempt + 1))
+    return None
 
 
 def _call_openrouter(key: str, model: str, system: str, user: str) -> str:
@@ -301,40 +411,7 @@ def try_openrouter(topic: str, extract: str, short: str) -> dict | None:
         return None
     preferred = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
     models = [preferred] + [m for m in FREE_MODELS if m != preferred]
-    phenom = wants_phenomenon(short)
-    print("PHENOMENON_FIRST", phenom, short, file=sys.stderr)
-    # Compact system — free models echo long rule lists
-    system = (
-        "You are Mike, a secondary-school science tutor for West African exams. "
-        "Write ONLY the spoken voiceover paragraphs a student hears. "
-        "Short energetic sentences. One everyday example. One clear definition. "
-        "Open with a concrete scene or exam trap, never a generic greeting. "
-        "No celebrity, religion, politics, or prompt instructions in the speech."
-    )
-    multi = is_multipart(short, extract)
-    print("MULTI_PART", multi, short, file=sys.stderr)
-    if multi:
-        structure = (
-            "Write 120-150 spoken words covering EACH part of the topic. "
-            "Scene intro, then each part with definition + example, exam tip, short save/share outro."
-        )
-    elif phenom:
-        structure = (
-            "Write 95-125 spoken words. "
-            "Everyday scene, why it happens, name + plain definition, link scene to science, exam tip, short outro."
-        )
-    else:
-        structure = (
-            "Write 90-120 spoken words. "
-            "Scene or exam trap, plain definition, everyday example, quick check, exam tip, short outro."
-        )
-    user = (
-        f"Topic: {short}\nFacts:\n{extract}\n\n{structure}\n"
-        "After the spoken paragraphs, add exactly these three lines:\n"
-        "DEFINITION: one exam-ready sentence under 16 words\n"
-        "DIDYOUKNOW: Wait — one exam tip under 18 words\n"
-        "MOVES: question@0,talk@0.12,explain@0.35,point@0.55,present@0.8"
-    )
+    system, user, phenom = build_prompts(short, extract)
     for model in models:
         for attempt in range(2):
             try:
@@ -355,6 +432,14 @@ def try_openrouter(topic: str, extract: str, short: str) -> dict | None:
     return None
 
 
+def try_llm(topic: str, extract: str, short: str) -> dict | None:
+    """Gemini first (if key present), then OpenRouter."""
+    result = try_gemini(topic, extract, short)
+    if result:
+        return result
+    return try_openrouter(topic, extract, short)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--topic", required=True)
@@ -369,7 +454,7 @@ def main():
     print("TOPIC", short, "extract_src", topic_data.get("extract_source"), "extract_len", len(extract), file=sys.stderr)
     result = None
     if args.try_llm:
-        result = try_openrouter(title, extract, short)
+        result = try_llm(title, extract, short)
     if not result:
         print("SCRIPT_FAIL: AI engines failed — refusing template fallback", file=sys.stderr)
         sys.exit(1)
@@ -377,7 +462,6 @@ def main():
     result["extract"] = extract[:400]
     result["bg"] = topic_data.get("bg") or "classroom"
     Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
-    # Always write script.txt for downstream steps
     Path("script.txt").write_text((result.get("script") or "").strip() + "\n", encoding="utf-8")
     print(result.get("engine"), result.get("short_title"), len(result.get("script", "").split()), "words", file=sys.stderr)
     print(result.get("script", "")[:240], file=sys.stderr)
