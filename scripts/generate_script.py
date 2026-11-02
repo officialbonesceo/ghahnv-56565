@@ -54,19 +54,20 @@ PROMPT_LEAK_RE = re.compile(
     r"STRUCTURE:\s*\d|Rules:\s*no religion)"
 )
 
+# OpenRouter free tier is unstable; keep a short list only
 FREE_MODELS = [
     "openrouter/free",
-    "google/gemma-2-9b-it:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "meta-llama/llama-3.3-8b-instruct:free",
 ]
 
+# Current Gemini API model ids (as of 2026-11 API messages)
 GEMINI_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
     "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
 ]
 
 
@@ -331,13 +332,14 @@ def _call_gemini(key: str, model: str, system: str, user: str) -> str:
     }
     r = requests.post(url, json=body, timeout=90)
     if r.status_code >= 400:
-        print("gemini HTTP", model, r.status_code, r.text[:280], file=sys.stderr)
+        print("gemini HTTP", model, r.status_code, r.text[:320], file=sys.stderr)
         return ""
     data = r.json()
     parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
     content = "".join((p.get("text") or "") for p in parts).strip()
     if not content:
-        print("gemini empty", model, file=sys.stderr)
+        fr = ((data.get("candidates") or [{}])[0].get("finishReason") or "")
+        print("gemini empty", model, "finish", fr, file=sys.stderr)
     return content
 
 
@@ -358,7 +360,7 @@ def try_gemini(topic: str, extract: str, short: str) -> dict | None:
                 print("GEMINI_TRY", model, "attempt", attempt + 1, file=sys.stderr)
                 content = _call_gemini(key, model, system, user)
                 if not content:
-                    time.sleep(1.0 * (attempt + 1))
+                    time.sleep(0.8 * (attempt + 1))
                     continue
                 packed = pack_script(content, topic, extract, phenom)
                 if packed:
@@ -368,7 +370,7 @@ def try_gemini(topic: str, extract: str, short: str) -> dict | None:
                 print("GEMINI_PACK_FAIL", model, "raw_head", content[:160].replace("\n", " "), file=sys.stderr)
             except Exception as e:
                 print("gemini fail", model, e, file=sys.stderr)
-            time.sleep(0.6 * (attempt + 1))
+            time.sleep(0.5 * (attempt + 1))
     return None
 
 
@@ -418,7 +420,7 @@ def try_openrouter(topic: str, extract: str, short: str) -> dict | None:
                 print("OR_TRY", model, "attempt", attempt + 1, file=sys.stderr)
                 content = _call_openrouter(key, model, system, user)
                 if not content:
-                    time.sleep(1.2 * (attempt + 1))
+                    time.sleep(1.0 * (attempt + 1))
                     continue
                 packed = pack_script(content, topic, extract, phenom)
                 if packed:
@@ -428,12 +430,11 @@ def try_openrouter(topic: str, extract: str, short: str) -> dict | None:
                 print("OR_PACK_FAIL", model, "raw_head", content[:160].replace("\n", " "), file=sys.stderr)
             except Exception as e:
                 print("openrouter fail", model, e, file=sys.stderr)
-            time.sleep(0.8 * (attempt + 1))
+            time.sleep(0.6 * (attempt + 1))
     return None
 
 
 def try_llm(topic: str, extract: str, short: str) -> dict | None:
-    """Gemini first (if key present), then OpenRouter."""
     result = try_gemini(topic, extract, short)
     if result:
         return result
