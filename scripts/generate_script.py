@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""AI scripts: Gemini-first, then OpenRouter. No template fallback."""
+"""AI scripts: Gemini-first, then OpenRouter. No template fallback.
+Tight spoken scripts for <=60s Shorts with natural topic hooks.
+"""
 from __future__ import annotations
 
 import argparse
@@ -37,12 +39,12 @@ PHENOMENON_SKIP = re.compile(
     re.I,
 )
 
+# Natural scene hooks — never generic "stop scrolling" spam
 EMERGENCY_HOOKS = [
-    "Quick challenge: can you explain {topic} in one clear sentence before the board does?",
-    "Think about it — what really happens with {topic} when you try it in real life?",
-    "Most students lose marks on {topic} — here is the version that sticks.",
-    "Stop scrolling: one clean take on {topic} that actually helps in class.",
-    "If the exam asked for {topic} right now, would your first sentence land?",
+    "Picture this — {topic} shows up in the exam, and your first line has to land.",
+    "Here's the part of {topic} most students mix up.",
+    "One everyday moment makes {topic} click — watch.",
+    "If {topic} felt abstract, this example fixes that.",
 ]
 
 PROMPT_LEAK_RE = re.compile(
@@ -54,14 +56,12 @@ PROMPT_LEAK_RE = re.compile(
     r"STRUCTURE:\s*\d|Rules:\s*no religion)"
 )
 
-# OpenRouter free tier is unstable; keep a short list only
 FREE_MODELS = [
     "openrouter/free",
     "google/gemma-3-4b-it:free",
     "meta-llama/llama-3.3-8b-instruct:free",
 ]
 
-# Current Gemini API model ids (as of 2026-11 API messages)
 GEMINI_MODELS = [
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
@@ -69,6 +69,10 @@ GEMINI_MODELS = [
     "gemini-flash-latest",
     "gemini-2.0-flash",
 ]
+
+# Target for +22% TTS ~ under 60 seconds
+MAX_SPOKEN_WORDS = 110
+MIN_SPOKEN_WORDS = 55
 
 
 def gemini_api_key() -> str:
@@ -189,6 +193,17 @@ def clean_spoken(text: str) -> str:
     return t
 
 
+def trim_to_max_words(text: str, max_words: int = MAX_SPOKEN_WORDS) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    # Prefer cutting at sentence boundary near the limit
+    cut = " ".join(words[:max_words])
+    if "." in cut:
+        cut = cut.rsplit(".", 1)[0].strip() + "."
+    return cut
+
+
 def default_moves(topic: str) -> list:
     return [
         {"at": 0.00, "move": "question"}, {"at": 0.12, "move": "talk"},
@@ -223,16 +238,21 @@ def force_hook(script: str, topic: str, phenomenon: bool, extract: str = "") -> 
     storyish = re.match(
         r"^(you |when you |pour |imagine |think of |a cold |cold water|your phone|on a bus|"
         r"the bottle|have you|notice how|watch what|ever notice|throw |walk |put |shout |"
-        r"a bus |a green |lemon |one dead |same mass |a metal |a straw )",
+        r"a bus |a green |lemon |one dead |same mass |a metal |a straw |picture this|"
+        r"here's the|one everyday|if )",
         s, re.I,
     )
     if storyish:
         return re.sub(r"\s+", " ", s)
-    soft = re.match(r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is|learn |steps? to|here are|follow these|the steps)", s, re.I)
+    soft = re.match(
+        r"^(hey|hi|hello|welcome|i am mike|i'm mike|today we|let's talk|here is|learn |"
+        r"steps? to|here are|follow these|the steps|stop scrolling)",
+        s, re.I,
+    )
     first = s.split(".")[0] if "." in s else s
-    weak = soft or len(first.split()) > 20 or not re.search(
+    weak = soft or len(first.split()) > 22 or not re.search(
         r"\b(exam|mark|test|student|wrong|confus|trick|pour|bottle|phone|bus|cold|"
-        r"notice|throw|ball|light|water|heat|force|cell|circuit)\b", first, re.I,
+        r"notice|throw|ball|light|water|heat|force|cell|circuit|picture|mix)\b", first, re.I,
     )
     if not weak:
         return re.sub(r"\s+", " ", s)
@@ -250,15 +270,14 @@ def pack_script(raw: str, topic: str, extract: str, phenom: bool) -> dict | None
     if not cleaned:
         print("PACK_FAIL empty after clean", file=sys.stderr)
         return None
-    if len(cleaned.split()) < 60:
-        print("PACK_FAIL too_short", len(cleaned.split()), cleaned[:120], file=sys.stderr)
+    cleaned = force_hook(cleaned, topic, phenom, extract)
+    cleaned = trim_to_max_words(cleaned, MAX_SPOKEN_WORDS)
+    n = len(cleaned.split())
+    if n < MIN_SPOKEN_WORDS:
+        print("PACK_FAIL too_short", n, cleaned[:120], file=sys.stderr)
         return None
     if is_weak_script(cleaned, topic):
         print("WEAK_SCRIPT reject", is_weak_script(cleaned, topic), file=sys.stderr)
-        return None
-    cleaned = force_hook(cleaned, topic, phenom, extract)
-    if is_weak_script(cleaned, topic):
-        print("WEAK after force_hook", is_weak_script(cleaned, topic), file=sys.stderr)
         return None
     def_match = re.search(r"(?im)^DEFINITION:\s*(.+)$", raw)
     dyk_match = re.search(r"(?im)^DIDYOUKNOW:\s*(.+)$", raw)
@@ -286,29 +305,35 @@ def build_prompts(short: str, extract: str) -> tuple[str, str, bool]:
     print("PHENOMENON_FIRST", phenom, short, file=sys.stderr)
     print("MULTI_PART", multi, short, file=sys.stderr)
     system = (
-        "You are Mike, a secondary-school science tutor for West African exams. "
-        "Write ONLY the spoken voiceover paragraphs a student hears. "
-        "Short energetic sentences. One everyday example. One clear definition. "
-        "Open with a concrete scene or exam trap, never a generic greeting. "
+        "You are Mike, a secondary-school tutor for West African exams. "
+        "Write ONLY the spoken voiceover a student hears — under 100 words. "
+        "Sound natural and clear, not hypey. One concrete everyday scene as the open. "
+        "One plain definition. One real example. One exam tip. Short outro. "
         "No celebrity, religion, politics, or prompt instructions in the speech."
     )
     if multi:
         structure = (
-            "Write 120-150 spoken words covering EACH part of the topic. "
-            "Scene intro, then each part with definition + example, exam tip, short save/share outro."
+            "Write 80-100 spoken words. Cover each main part briefly. "
+            "Open with a real scene tied to THIS topic (not a generic greeting). "
+            "Then definition + example for each part, one exam tip, one short outro."
         )
     elif phenom:
         structure = (
-            "Write 95-125 spoken words. "
-            "Everyday scene, why it happens, name + plain definition, link scene to science, exam tip, short outro."
+            "Write 70-95 spoken words. "
+            "Open with a concrete everyday scene (bus, kitchen, phone, ball, leaf). "
+            "Explain why it happens. Name the concept and define it in plain words. "
+            "Link the scene to the science. One exam tip. Short outro — no hype."
         )
     else:
         structure = (
-            "Write 90-120 spoken words. "
-            "Scene or exam trap, plain definition, everyday example, quick check, exam tip, short outro."
+            "Write 65-90 spoken words. "
+            "Open with a scene or real exam trap for THIS topic only. "
+            "Plain definition, everyday example, one exam tip, short outro."
         )
     user = (
         f"Topic: {short}\nFacts:\n{extract}\n\n{structure}\n"
+        "Hard limit: under 100 spoken words total so the video stays under 60 seconds. "
+        "Hook must feel natural and specific to the topic — never 'stop scrolling'.\n"
         "After the spoken paragraphs, add exactly these three lines:\n"
         "DEFINITION: one exam-ready sentence under 16 words\n"
         "DIDYOUKNOW: Wait — one exam tip under 18 words\n"
@@ -327,7 +352,7 @@ def _call_gemini(key: str, model: str, system: str, user: str) -> str:
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 700,
+            "maxOutputTokens": 500,
         },
     }
     r = requests.post(url, json=body, timeout=90)
@@ -390,7 +415,7 @@ def _call_openrouter(key: str, model: str, system: str, user: str) -> str:
                 {"role": "user", "content": user},
             ],
             "temperature": 0.7,
-            "max_tokens": 700,
+            "max_tokens": 500,
         },
         timeout=90,
     )
