@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "rotation": "hash_topic",
+  "prefer_image_ratio": 0.55,
+  "include_procedural": true,
+  "image_environments": [
+    {
+      "id": "photo_classic_chalk",
+      "file": "assets/classrooms/photo_classic_chalk.jpg",
+      "prompt": "photorealistic empty secondary school classroom, front view, large blank green chalkboard centered on wall with wooden frame, empty desks in foreground slightly blurred, soft natural window light from left, vertical 9:16 composition, no people, no text, no writing on board, high detail",
+      "board": {"x": 0.12, "y": 0.08, "w": 0.76, "h": 0.38},
+      "text_color": [255, 255, 240],
+      "mike_scale": 0.70
+    },
+    {
+      "id": "photo_modern_white",
+      "file": "assets/classrooms/photo_modern_white.jpg",
+      "prompt": "photorealistic modern classroom, front view, large blank white dry-erase board centered, clean minimal walls, soft daylight, vertical 9:16, empty room no people, no writing on board, no text, high detail",
+      "board": {"x": 0.10, "y": 0.07, "w": 0.80, "h": 0.40},
+      "text_color": [25, 40, 60],
+      "mike_scale": 0.70
+    },
+    {
+      "id": "photo_lab_blue",
+      "file": "assets/classrooms/photo_lab_blue.jpg",
+      "prompt": "photorealistic school science lab classroom, front view, large blank dark blue teaching board centered with thin metal frame, lab tables in front blurred, cool fluorescent light, vertical 9:16, no people, empty board no writing, no text, high detail",
+      "board": {"x": 0.11, "y": 0.09, "w": 0.78, "h": 0.36},
+      "text_color": [230, 245, 255],
+      "mike_scale": 0.68
+    }
+  ],
+  "fonts": [
+    {"id": "dejavu_bold", "paths": ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]},
+    {"id": "liberation_sans_bold", "paths": ["/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]},
+    {"id": "liberation_serif_bold", "paths": ["/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"]},
+    {"id": "freefont_sans_bold", "paths": ["/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"]},
+    {"id": "freefont_serif_bold", "paths": ["/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf"]},
+    {"id": "noto_sans_bold", "paths": ["/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttc"]},
+    {"id": "ubuntu_bold", "paths": ["/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf", "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf"]},
+    {"id": "dejavu_serif_bold", "paths": ["/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"]},
+    {"id": "liberation_mono_bold", "paths": ["/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf"]},
+    {"id": "dejavu_sans", "paths": ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]}
+  ],
+  "caption_fonts": [
+    "DejaVu Sans",
+    "Liberation Sans",
+    "FreeSans",
+    "Noto Sans",
+    "Ubuntu",
+    "DejaVu Serif",
+    "Liberation Serif",
+    "FreeSerif",
+    "Liberation Mono",
+    "DejaVu Sans Mono"
+  ]
+}
