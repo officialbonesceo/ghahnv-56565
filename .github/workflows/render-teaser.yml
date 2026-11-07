@@ -2,21 +2,20 @@ name: mike-teaser
 
 on:
   workflow_dispatch:
-  # Manual kick: touch/update .github/trigger-teaser on main
   push:
     branches: [main]
     paths:
       - ".github/trigger-teaser"
   schedule:
-    # 2 teasers/day: ~08:15 and ~15:15 WAT (07:15 + 14:15 UTC)
-    - cron: "15 7,14 * * *"
+    # 1 teaser / day ~16:15 WAT (15:15 UTC) — pair with 1 full clip = 2 posts/day total
+    - cron: "15 15 * * *"
 
 permissions:
   contents: write
 
 env:
   VOICE: en-US-AndrewNeural
-  RATE: "+0%"
+  RATE: "+18%"
 
 jobs:
   teaser:
@@ -38,7 +37,7 @@ jobs:
 
       - name: deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-liberation
           pip install --upgrade pip
           pip install edge-tts Pillow requests
           pip install google-api-python-client google-auth google-auth-oauthlib
