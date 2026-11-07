@@ -17,7 +17,6 @@ env:
   MODEL_DIR: ${{ github.workspace }}/models
   PHI_FILE: phi-2.Q4_K_M.gguf
   PHI_URL: https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf
-  # Faster, still clear for West African secondary students
   VOICE: en-US-ChristopherNeural
   RATE: "+22%"
   OPENROUTER_MODEL: openrouter/free
@@ -42,7 +41,12 @@ jobs:
           cache: pip
 
       - name: deps-sys
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip fonts-dejavu-core fonts-liberation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg unzip \
+            fonts-dejavu-core fonts-liberation fonts-freefont-ttf \
+            fonts-noto-core fonts-ubuntu || true
+          fc-list : family | head -40 || true
 
       - name: deps-py
         run: |
@@ -53,6 +57,19 @@ jobs:
 
       - name: host-layers
         run: python scripts/write_mezi_assets.py
+
+      - name: cache-classrooms
+        uses: actions/cache@v4
+        with:
+          path: assets/classrooms
+          key: classrooms-v1-${{ hashFiles('data/environments.json') }}
+
+      - name: prepare-classrooms
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          python scripts/prepare_classroom_images.py
+          ls -lh assets/classrooms 2>/dev/null || echo "no photo classrooms yet (procedural still ok)"
 
       - name: trends
         continue-on-error: true
@@ -120,7 +137,6 @@ jobs:
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
           DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
           echo "AUDIO_DUR=$DUR"
-          # Hard cap ~60s: if over 62s, speed up slightly to fit Shorts
           python - <<'PY'
 import subprocess, os
 dur = float(subprocess.check_output(
@@ -128,7 +144,6 @@ dur = float(subprocess.check_output(
      "-of","default=noprint_wrappers=1:nokey=1","speech.mp3"], text=True).strip())
 print("duration", dur)
 if dur > 62:
-    # atempo max 2.0; chain if needed
     factor = min(dur / 58.0, 1.35)
     print("speed_up", factor)
     subprocess.check_call([
@@ -165,6 +180,7 @@ PY
           ls -lh output.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height -of default output.mp4
           ls -lh captions.srt 2>/dev/null || echo "no captions.srt"
+          cat env_used.json 2>/dev/null || true
 
       - name: consume-seed-after-success
         continue-on-error: true
@@ -226,5 +242,6 @@ PY
             title_short.txt
             hook.txt
             thumb_style.txt
+            env_used.json
           if-no-files-found: error
           retention-days: 3
