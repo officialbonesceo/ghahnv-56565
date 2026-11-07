@@ -3,18 +3,33 @@
 from __future__ import annotations
 
 import random
-from PIL import Image, ImageDraw, ImageFont
+import sys
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1080, 1920
 WHITE = (255, 255, 255)
 BLACK = (10, 12, 16)
 
-def font(size: int):
-    for name in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        if Path(name).exists():
-            return ImageFont.truetype(name, size)
-    return ImageFont.load_default()
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from env_manager import pick_font_path
+except Exception:
+    def pick_font_path(topic: str, size: int = 48):
+        for name in (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ):
+            if Path(name).exists():
+                return ImageFont.truetype(name, size)
+        return ImageFont.load_default()
+
+
+def font(size: int, topic: str = "Lesson"):
+    return pick_font_path(topic, size)
+
 
 def wrap_text(d, text, tf, max_w):
     words = (text or "").split()
@@ -187,7 +202,7 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
         for y in range(by0, by1, 8):
             d.line([(bx0, y), (bx1, y)], fill=(30, 10, 25), width=1)
         d.rounded_rectangle([40, 50, 160, 100], 8, fill=(180, 20, 40))
-        rf = font(22)
+        rf = font(22, topic)
         d.text((55, 62), "REC", font=rf, fill=WHITE)
         rng = random.Random(42)
         for _ in range(80):
@@ -208,17 +223,20 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
         bx0, by0, bx1, by1 = 140, 85, bw - 140, int(bh * 0.48)
     elif theme in ("glass", "neon", "lab", "cork", "chalk"):
         bx0, by0, bx1, by1 = 210, 90, bw - 140, int(bh * 0.50)
-    tf = font(56)
-    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and tf.size > 24:
-        tf = font(tf.size - 3)
+    tf = font(56, topic)
+    while d.textbbox((0, 0), topic, font=tf)[2] > (bx1 - bx0 - 48) and getattr(tf, "size", 24) > 24:
+        try:
+            tf = ImageFont.truetype(tf.path, tf.size - 3)  # type: ignore[attr-defined]
+        except Exception:
+            break
     y = by0 + 40
     for line in wrap_text(d, topic, tf, bx1 - bx0 - 48)[:2]:
         bb = d.textbbox((0, 0), line, font=tf)
         tw = bb[2] - bb[0]
         d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=tf, fill=text_c)
-        y += tf.size + 12
+        y += getattr(tf, "size", 40) + 12
     if definition:
-        df = font(26)
+        df = font(26, topic + "_def")
         y += 12
         def_col = text_c if theme not in ("modern", "lab", "glass", "cork") else (50, 70, 110)
         if theme == "cork":
@@ -227,6 +245,6 @@ def draw_classroom(topic: str, definition: str, room: dict) -> Image.Image:
             bb = d.textbbox((0, 0), line, font=df)
             tw = bb[2] - bb[0]
             d.text((bx0 + (bx1 - bx0 - tw) // 2, y), line, font=df, fill=def_col)
-            y += df.size + 6
+            y += getattr(df, "size", 26) + 6
     d.rounded_rectangle([bw // 2 - 300, int(bh * 0.72), bw // 2 + 300, int(bh * 0.79)], 10, fill=desk_c)
     return img
