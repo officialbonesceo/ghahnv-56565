@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mike Shorts: 12 distinct classrooms (rooms_mezi), phenomenon support, pan + bounce."""
+"""Mike Shorts: image + procedural classrooms, rotating fonts, board overlay."""
 from __future__ import annotations
 
 import argparse
@@ -22,6 +22,7 @@ MOUTH = {"X": 0.0, "B": 0.25, "A": 1.0, "C": 0.55, "D": 0.7, "E": 0.85, "F": 0.5
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rooms_mezi import ROOMS, draw_classroom
+from env_manager import pick_environment, load_image_classroom, pick_font_path
 
 
 def asset_dir() -> Path:
@@ -60,11 +61,8 @@ def mouth_name(open_amt: float) -> str:
     return "mouth_closed.png"
 
 
-def font(size: int):
-    for name in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        if Path(name).exists():
-            return ImageFont.truetype(name, size)
-    return ImageFont.load_default()
+def font(size: int, topic: str = "Lesson"):
+    return pick_font_path(topic, size)
 
 
 def wrap_text(d, text, tf, max_w):
@@ -81,11 +79,6 @@ def wrap_text(d, text, tf, max_w):
     if cur:
         lines.append(cur)
     return lines
-
-
-def pick_room(topic: str) -> dict:
-    h = int(hashlib.md5((topic or "x").encode()).hexdigest(), 16)
-    return ROOMS[h % len(ROOMS)]
 
 
 def prepare_topic_image(path: Path) -> Image.Image | None:
@@ -149,8 +142,11 @@ def load_moves() -> list:
                 return sorted(cleaned, key=lambda x: x["at"])
         except Exception:
             pass
-    return [{"at": 0.0, "move": "question"}, {"at": 0.12, "move": "talk"}, {"at": 0.35, "move": "explain"},
-            {"at": 0.55, "move": "point"}, {"at": 0.78, "move": "present"}, {"at": 0.92, "move": "happy"}]
+    return [
+        {"at": 0.0, "move": "question"}, {"at": 0.12, "move": "talk"},
+        {"at": 0.35, "move": "explain"}, {"at": 0.55, "move": "point"},
+        {"at": 0.78, "move": "present"}, {"at": 0.92, "move": "happy"},
+    ]
 
 
 def move_at(moves, t, duration):
@@ -184,22 +180,22 @@ def composite_host(move: str, mouth_amt: float) -> Image.Image:
     return out
 
 
-def draw_fullscreen_dyk(dyk: str) -> Image.Image:
+def draw_fullscreen_dyk(dyk: str, topic: str = "Lesson") -> Image.Image:
     img = Image.new("RGB", (W, H), (20, 18, 30))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 40], fill=(255, 180, 40))
     d.rectangle([0, H - 40, W, H], fill=(255, 180, 40))
-    tf = font(44)
+    tf = font(44, topic)
     d.text((60, 120), "Did you know?", font=tf, fill=(255, 220, 100))
-    df = font(36)
+    df = font(36, topic + "_dyk")
     y = 220
     for line in wrap_text(d, dyk, df, W - 100)[:12]:
         d.text((60, y), line, font=df, fill=WHITE)
-        y += df.size + 12
+        y += getattr(df, "size", 36) + 12
     return img
 
 
-def draw_fullscreen_cta() -> Image.Image:
+def draw_fullscreen_cta(topic: str = "Lesson") -> Image.Image:
     img = Image.new("RGB", (W, H), (25, 20, 40))
     d = ImageDraw.Draw(img)
     lines = [
@@ -209,7 +205,7 @@ def draw_fullscreen_cta() -> Image.Image:
     ]
     y = H // 2 - 120
     for msg, size, color in lines:
-        tf = font(size)
+        tf = font(size, topic + msg[:4])
         bb = d.textbbox((0, 0), msg, font=tf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), msg, font=tf, fill=color)
         y += size + 28
@@ -229,6 +225,23 @@ def camera_crop(full: Image.Image, t: float, duration: float) -> Image.Image:
     x = int(max_x * ox)
     y = int(max_y * max(0.0, min(1.0, oy)))
     return full.crop((x, y, x + cw, y + ch)).resize((W, H), Image.Resampling.LANCZOS)
+
+
+def build_classroom(topic: str, definition: str):
+    env = pick_environment(topic, ROOMS)
+    if env.get("kind") == "image":
+        img = load_image_classroom(env, topic, definition, W, H)
+        if img is not None:
+            # Slightly larger canvas for camera pan like procedural rooms
+            canvas = Image.new("RGB", (int(W * 1.12), int(H * 1.08)), (20, 20, 25))
+            ox = (canvas.width - W) // 2
+            oy = (canvas.height - H) // 2
+            canvas.paste(img, (ox, oy))
+            return canvas, env
+        print("image env missing, falling back to procedural", file=sys.stderr)
+        env = {"kind": "procedural", "id": env.get("id", "fallback"), "room": ROOMS[0]}
+    room = env.get("room") or ROOMS[0]
+    return draw_classroom(topic, (definition or "")[:320], room), env
 
 
 def main():
@@ -274,13 +287,16 @@ def main():
             except Exception:
                 pass
 
-    room = pick_room(topic)
-    print("ROOM", room["id"], room.get("theme"), "topic=", topic, file=sys.stderr)
+    classroom, env = build_classroom(topic, definition)
+    print("ROOM", env.get("kind"), env.get("id"), "topic=", topic, file=sys.stderr)
+    Path("env_used.json").write_text(
+        json.dumps({"kind": env.get("kind"), "id": env.get("id")}, indent=2),
+        encoding="utf-8",
+    )
 
     if args.preview:
-        img = draw_classroom(topic, (definition or "")[:120], room)
         outp = Path(args.out if str(args.out).endswith(".png") else "preview_classroom.png")
-        img.save(outp)
+        classroom.save(outp)
         return
 
     audio = Path(args.audio)
@@ -297,13 +313,13 @@ def main():
         except Exception as e:
             print("ffprobe fail", e, file=sys.stderr)
 
-    classroom = draw_classroom(topic, (definition or "")[:320], room)
     tip = Path(args.topic_image) if args.topic_image else None
     topic_img = prepare_topic_image(tip) if tip and tip.exists() else None
     moves = load_moves()
     img_win = image_window(duration) if topic_img is not None else None
     dyk_win = dyk_window(duration, img_win) if dyk else None
     cta_win = cta_window(duration)
+    mike_scale = float(env.get("mike_scale") or 0.72)
 
     out_mp4 = Path(args.out)
     with tempfile.TemporaryDirectory() as td:
@@ -316,16 +332,16 @@ def main():
             host = composite_host(move, mouth)
 
             if dyk_win and dyk_win[0] <= t < dyk_win[1]:
-                frame = draw_fullscreen_dyk(dyk)
+                frame = draw_fullscreen_dyk(dyk, topic)
             elif cta_win and t >= cta_win[0]:
-                frame = draw_fullscreen_cta()
+                frame = draw_fullscreen_cta(topic)
             elif img_win and img_win[0] <= t < img_win[1] and topic_img is not None:
                 local = t - img_win[0]
                 seg = img_win[1] - img_win[0]
                 frame = ken_burns_frame(topic_img, local, seg, "zoom_in")
             else:
                 base = camera_crop(classroom, t, duration).convert("RGBA")
-                target_h = int(H * 0.72)
+                target_h = int(H * mike_scale)
                 scale = target_h / max(host.height, 1)
                 nw, nh = int(host.width * scale), int(host.height * scale)
                 h = host.resize((nw, nh), Image.Resampling.LANCZOS)

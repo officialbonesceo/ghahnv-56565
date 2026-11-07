@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Burn short bottom captions onto output.mp4 — high contrast for YouTube + TikTok."""
+"""Burn short bottom captions onto output.mp4 — rotating readable fonts."""
 from __future__ import annotations
 
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from env_manager import pick_caption_font_name
+except Exception:
+    def pick_caption_font_name(topic: str) -> str:
+        return "DejaVu Sans"
 
 
 def chunks(text: str, max_words: int = 4) -> list[str]:
@@ -49,13 +56,11 @@ def ts(sec: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def write_ass(parts: list[str], duration: float, path: Path) -> None:
+def write_ass(parts: list[str], duration: float, path: Path, font_name: str) -> None:
     usable = max(3.0, duration - 2.8)
     slot = usable / max(len(parts), 1)
-    # Yellow text + thick black outline = visible on dark YT Shorts chrome
-    # ASS colour = &HAABBGGRR → yellow &H0000FFFF, black outline &H00000000
-    # MarginV 160 lifts text above YouTube bottom UI bar
-    header = """[Script Info]
+    # Yellow + thick black outline; MarginV above YT UI
+    header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -64,7 +69,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,DejaVu Sans,58,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,160,1
+Style: Cap,{font_name},60,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,160,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -98,6 +103,19 @@ def main() -> None:
     if not parts:
         print("skip captions: empty script", file=sys.stderr)
         return
+
+    topic = "Lesson"
+    if Path("title_short.txt").exists():
+        topic = Path("title_short.txt").read_text(encoding="utf-8").strip() or topic
+    elif Path("script_job.json").exists():
+        try:
+            import json
+            topic = json.loads(Path("script_job.json").read_text()).get("short_title") or topic
+        except Exception:
+            pass
+    font_name = pick_caption_font_name(topic)
+    print("CAPTION_FONT", font_name, file=sys.stderr)
+
     try:
         r = subprocess.run(
             [
@@ -112,7 +130,7 @@ def main() -> None:
         return
 
     ass = Path("captions.ass")
-    write_ass(parts, duration, ass)
+    write_ass(parts, duration, ass, font_name)
     srt_lines = []
     usable = max(3.0, duration - 2.8)
     slot = usable / len(parts)
@@ -136,7 +154,7 @@ def main() -> None:
             end = start + 0.35
         srt_lines.append(f"{i+1}\n{srt_ts(start)} --> {srt_ts(end)}\n{phrase}\n")
     Path("captions.srt").write_text("\n".join(srt_lines), encoding="utf-8")
-    print("CAPTIONS", len(parts), "yellow bottom lines over", round(usable, 2), "s", file=sys.stderr)
+    print("CAPTIONS", len(parts), "lines over", round(usable, 2), "s", file=sys.stderr)
 
     out = Path("output_captioned.mp4")
     cmd = [
@@ -150,7 +168,7 @@ def main() -> None:
     if r.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
         print("ffmpeg ass fail, trying subtitles fallback", (r.stderr or "")[-500:], file=sys.stderr)
         style = (
-            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H0000FFFF,"
+            f"FontName={font_name},FontSize=18,PrimaryColour=&H0000FFFF,"
             "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,"
             "Alignment=2,MarginV=90,MarginL=40,MarginR=40,Bold=1"
         )
