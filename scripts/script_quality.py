@@ -26,12 +26,16 @@ EMPTY_HOOK = re.compile(
     r"most students lose marks on .{1,40} — here is the clean version\.?)"
 )
 
+# Natural scene / explanation markers (broad enough for short Shorts)
 EXAMPLE_MARK = re.compile(
     r"(?i)\b("
     r"for example|when you|imagine|think of|like when|in the kitchen|"
-    r"on the (road|bus)|your (phone|body|hand)|a (ball|car|bottle|metal)|"
+    r"on the (road|bus)|your (phone|body|hand|little)|a (ball|car|bottle|metal)|"
     r"because|means that|is when|called|this happens|in real life|"
-    r"rust|iron|oxygen|apple|cut|breath|respir|battery|fuel|burn"
+    r"rust|iron|oxygen|apple|cut|breath|respir|battery|fuel|burn|"
+    r"mixing|mix|pour|throw|walk|put|shout|notice|using|use|"
+    r"compares?|happens|picture this|birthday|juice|salt|cucumber|"
+    r"bus|brakes|spoon|straw|leaf|sunlight|slip|floor"
     r")\b"
 )
 
@@ -57,21 +61,22 @@ def is_weak_script(script: str, topic: str = "") -> str | None:
         return "dialogue_dump"
     body = body_without_cta(s)
     words = body.split()
-    if len(words) < 70:
+    # Align with short Shorts target (about 55-110 spoken words)
+    if len(words) < 50:
         return f"too_short_body:{len(words)}"
     if not EXAMPLE_MARK.search(body):
         return "no_example_or_explanation"
     head = " ".join(words[:35]).lower()
     if re.search(r"(?i)^(today'?s topic|the topic is|our topic|teachers?|hello,? class)\b", head):
         return "textbook_open"
-    if EMPTY_HOOK.search(body[:120]) and len(words) < 90:
+    if EMPTY_HOOK.search(body[:120]) and len(words) < 80:
         return "empty_exam_trap_hook"
     if re.search(r"(?i)\b(they|you|student|teacher)\s*:\s*\w+", body):
         return "role_labels"
-    # pure padding about exams without science content
     if re.search(r"(?i)waec|jamb|neco", body) and not re.search(
         r"(?i)\b(energy|force|cell|heat|light|wave|atom|mass|oxygen|rust|"
-        r"acid|base|current|pressure|oxid|reduc|electron|metal)\b",
+        r"acid|base|current|pressure|oxid|reduc|electron|metal|ratio|"
+        r"fraction|percent|number|quantity|compare)\b",
         body,
     ):
         return "exam_padding_no_science"
@@ -79,7 +84,6 @@ def is_weak_script(script: str, topic: str = "") -> str | None:
 
 
 def is_broad_topic_title(title: str) -> bool:
-    """Block vague curriculum shells that produce empty lessons."""
     t = (title or "").strip()
     if re.match(
         r"(?i)^(introduction|intro|basics?|overview|summary|revision)\s+(to|of|on)\b",
@@ -88,7 +92,6 @@ def is_broad_topic_title(title: str) -> bool:
         return True
     if re.match(r"(?i)^(introduction|intro)\s+to\b", t):
         return True
-    # Applications of X with no specificity often becomes synthetic fluff
     if re.match(r"(?i)^applications? of\s+\w+$", t):
         return True
     if re.fullmatch(r"(?i)(radiation|energy|force|matter|science|biology|physics|chemistry)", t):

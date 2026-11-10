@@ -39,7 +39,6 @@ PHENOMENON_SKIP = re.compile(
     re.I,
 )
 
-# Natural scene hooks — never generic "stop scrolling" spam
 EMERGENCY_HOOKS = [
     "Picture this — {topic} shows up in the exam, and your first line has to land.",
     "Here's the part of {topic} most students mix up.",
@@ -58,19 +57,15 @@ PROMPT_LEAK_RE = re.compile(
 
 FREE_MODELS = [
     "openrouter/free",
-    "google/gemma-3-4b-it:free",
-    "meta-llama/llama-3.3-8b-instruct:free",
 ]
 
+# Only models that still respond (2026-11)
 GEMINI_MODELS = [
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
     "gemini-flash-latest",
-    "gemini-2.0-flash",
 ]
 
-# Target for +22% TTS ~ under 60 seconds
 MAX_SPOKEN_WORDS = 110
 MIN_SPOKEN_WORDS = 55
 
@@ -105,7 +100,7 @@ def scene_hook_from_extract(topic: str, extract: str) -> str:
     concrete = re.compile(
         r"\b(when|if|for example|such as|like|because|causes|makes|moves|flows|"
         r"ball|car|bus|phone|water|bottle|kitchen|road|football|body|heart|plant|"
-        r"metal|wire|light|sound|heat|cold|rain|sun|earth|moon)\b",
+        r"metal|wire|light|sound|heat|cold|rain|sun|earth|moon|ratio|juice)\b",
         re.I,
     )
     for s in sents:
@@ -133,8 +128,9 @@ def scene_hook_from_extract(topic: str, extract: str) -> str:
         (r"heat|temper|conduct|latent", "A metal spoon in hot tea burns your hand first — conduction."),
         (r"reflect|refract|light|lens", "A straw in water looks bent — light changes speed."),
         (r"sound|echo|wave", "Shout at a wall and the sound comes back — that is an echo."),
+        (r"ratio|proportion", "Mixing juice concentrate and water — that is a ratio in real life."),
         (r"essay|paragraph|grammar", "Examiners mark structure first — messy paragraphs lose easy points."),
-        (r"fraction|percent|ratio|algebra|equation", "One wrong step in the working can wipe the whole method mark."),
+        (r"fraction|percent|algebra|equation", "One wrong step in the working can wipe the whole method mark."),
     ]
     for pat, line in micro:
         if re.search(pat, t):
@@ -197,7 +193,6 @@ def trim_to_max_words(text: str, max_words: int = MAX_SPOKEN_WORDS) -> str:
     words = text.split()
     if len(words) <= max_words:
         return text
-    # Prefer cutting at sentence boundary near the limit
     cut = " ".join(words[:max_words])
     if "." in cut:
         cut = cut.rsplit(".", 1)[0].strip() + "."
@@ -239,7 +234,7 @@ def force_hook(script: str, topic: str, phenomenon: bool, extract: str = "") -> 
         r"^(you |when you |pour |imagine |think of |a cold |cold water|your phone|on a bus|"
         r"the bottle|have you|notice how|watch what|ever notice|throw |walk |put |shout |"
         r"a bus |a green |lemon |one dead |same mass |a metal |a straw |picture this|"
-        r"here's the|one everyday|if )",
+        r"here's the|one everyday|if |mixing )",
         s, re.I,
     )
     if storyish:
@@ -252,7 +247,7 @@ def force_hook(script: str, topic: str, phenomenon: bool, extract: str = "") -> 
     first = s.split(".")[0] if "." in s else s
     weak = soft or len(first.split()) > 22 or not re.search(
         r"\b(exam|mark|test|student|wrong|confus|trick|pour|bottle|phone|bus|cold|"
-        r"notice|throw|ball|light|water|heat|force|cell|circuit|picture|mix)\b", first, re.I,
+        r"notice|throw|ball|light|water|heat|force|cell|circuit|picture|mix|ratio)\b", first, re.I,
     )
     if not weak:
         return re.sub(r"\s+", " ", s)
@@ -276,8 +271,9 @@ def pack_script(raw: str, topic: str, extract: str, phenom: bool) -> dict | None
     if n < MIN_SPOKEN_WORDS:
         print("PACK_FAIL too_short", n, cleaned[:120], file=sys.stderr)
         return None
-    if is_weak_script(cleaned, topic):
-        print("WEAK_SCRIPT reject", is_weak_script(cleaned, topic), file=sys.stderr)
+    reason = is_weak_script(cleaned, topic)
+    if reason:
+        print("WEAK_SCRIPT reject", reason, file=sys.stderr)
         return None
     def_match = re.search(r"(?im)^DEFINITION:\s*(.+)$", raw)
     dyk_match = re.search(r"(?im)^DIDYOUKNOW:\s*(.+)$", raw)
@@ -380,12 +376,12 @@ def try_gemini(topic: str, extract: str, short: str) -> dict | None:
     preferred = os.environ.get("GEMINI_MODEL", "").strip()
     models = ([preferred] if preferred else []) + [m for m in GEMINI_MODELS if m != preferred]
     for model in models:
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 print("GEMINI_TRY", model, "attempt", attempt + 1, file=sys.stderr)
                 content = _call_gemini(key, model, system, user)
                 if not content:
-                    time.sleep(0.8 * (attempt + 1))
+                    time.sleep(1.2 * (attempt + 1))
                     continue
                 packed = pack_script(content, topic, extract, phenom)
                 if packed:
@@ -395,7 +391,7 @@ def try_gemini(topic: str, extract: str, short: str) -> dict | None:
                 print("GEMINI_PACK_FAIL", model, "raw_head", content[:160].replace("\n", " "), file=sys.stderr)
             except Exception as e:
                 print("gemini fail", model, e, file=sys.stderr)
-            time.sleep(0.5 * (attempt + 1))
+            time.sleep(0.8 * (attempt + 1))
     return None
 
 
