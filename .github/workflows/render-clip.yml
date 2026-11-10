@@ -3,7 +3,6 @@ name: qxil-job
 on:
   workflow_dispatch:
   schedule:
-    # 1 full lesson / day ~11:15 WAT (10:15 UTC) — pair with 1 teaser = 2 posts/day total
     - cron: "15 10 * * *"
   push:
     paths:
@@ -43,9 +42,7 @@ jobs:
       - name: deps-sys
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip \
-            fonts-dejavu-core fonts-liberation fonts-freefont-ttf \
-            fonts-noto-core fonts-ubuntu || true
+          sudo apt-get install -y ffmpeg unzip fonts-dejavu-core fonts-liberation fonts-freefont-ttf fonts-noto-core fonts-ubuntu || true
           fc-list : family | head -40 || true
 
       - name: deps-py
@@ -69,7 +66,7 @@ jobs:
         timeout-minutes: 5
         run: |
           python scripts/prepare_classroom_images.py
-          ls -lh assets/classrooms 2>/dev/null || echo "no photo classrooms yet (procedural still ok)"
+          ls -lh assets/classrooms 2>/dev/null || echo "no photo classrooms yet"
 
       - name: trends
         continue-on-error: true
@@ -126,7 +123,7 @@ jobs:
         continue-on-error: true
         run: |
           python scripts/fetch_topic_image.py || true
-          ls -lh topic_image.jpg 2>/dev/null || echo "no topic image (will skip beat)"
+          ls -lh topic_image.jpg 2>/dev/null || echo "no topic image"
 
       - name: tts
         run: |
@@ -137,27 +134,7 @@ jobs:
           ffmpeg -y -i speech.mp3 -ar 16000 -ac 1 speech.wav
           DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 speech.mp3)
           echo "AUDIO_DUR=$DUR"
-          python - <<'PY'
-import subprocess, os
-dur = float(subprocess.check_output(
-    ["ffprobe","-v","error","-show_entries","format=duration",
-     "-of","default=noprint_wrappers=1:nokey=1","speech.mp3"], text=True).strip())
-print("duration", dur)
-if dur > 62:
-    factor = min(dur / 58.0, 1.35)
-    print("speed_up", factor)
-    subprocess.check_call([
-        "ffmpeg","-y","-i","speech.mp3",
-        "-filter:a", f"atempo={factor:.4f}",
-        "speech_fast.mp3"
-    ])
-    os.replace("speech_fast.mp3", "speech.mp3")
-    subprocess.check_call(["ffmpeg","-y","-i","speech.mp3","-ar","16000","-ac","1","speech.wav"])
-    dur2 = float(subprocess.check_output(
-        ["ffprobe","-v","error","-show_entries","format=duration",
-         "-of","default=noprint_wrappers=1:nokey=1","speech.mp3"], text=True).strip())
-    print("duration_after", dur2)
-PY
+          python scripts/cap_audio_60s.py
 
       - name: cache-lips
         uses: actions/cache@v4
