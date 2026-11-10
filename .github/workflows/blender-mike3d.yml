@@ -1,0 +1,46 @@
+name: blender-mike3d-test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "data/force_blender3d.tick"
+      - "scripts/blender_mike3d.py"
+      - ".github/workflows/blender-mike3d.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  render3d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install-blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender xvfb ffmpeg || true
+          blender --version || true
+
+      - name: render-seeded-mike3d
+        run: |
+          mkdir -p assets/blender
+          # Seeded short vertical test: 3D Mike + classroom, no AI, no upload
+          xvfb-run -a blender -b -noaudio -P scripts/blender_mike3d.py -- \
+            --out assets/blender/mike3d_test.mp4 \
+            --seconds 4 \
+            --width 720 \
+            --height 1280
+          ls -lh assets/blender/mike3d_test.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default assets/blender/mike3d_test.mp4
+
+      - name: pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: mike3d-test
+          path: |
+            assets/blender/mike3d_test.mp4
+          if-no-files-found: error
+          retention-days: 5

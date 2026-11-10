@@ -7,7 +7,6 @@ on:
     paths:
       - ".github/trigger-teaser"
   schedule:
-    # 1 teaser / day ~16:15 WAT (15:15 UTC) — pair with 1 full clip = 2 posts/day total
     - cron: "15 15 * * *"
 
 permissions:
@@ -46,6 +45,13 @@ jobs:
         run: python scripts/write_mezi_assets.py
 
       - name: generate
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: openrouter/free
         run: |
           python scripts/generate_teaser.py
           echo "--- teaser_job ---"
@@ -104,10 +110,11 @@ jobs:
             teaser_timeline.json
             tiktok_caption.txt
             tiktok_comment.txt
+            youtube_description.txt
+            facebook_caption.txt
             buffer_result.json
             youtube_result.json
             title_short.txt
-            quiz_card.jpg
             image_caption.txt
           if-no-files-found: error
           retention-days: 3
