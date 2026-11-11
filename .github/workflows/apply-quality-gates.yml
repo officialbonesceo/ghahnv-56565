@@ -1,63 +1,9 @@
-name: apply-quality-gates
+name: apply-quality-gates-DISABLED
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/apply-quality-gates.yml'
 jobs:
-  patch:
+  noop:
+    if: false
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: patch-files
-        run: |
-          python3 << 'PY'
-          from pathlib import Path
-
-          ft = Path('scripts/fetch_topics.py')
-          t = ft.read_text()
-          if 'from script_quality import is_broad_topic_title' not in t:
-              t = t.replace(
-                  'from content_safety import is_school_safe, filter_title_list\n',
-                  'from content_safety import is_school_safe, filter_title_list\nfrom script_quality import is_broad_topic_title\n',
-              )
-          if 'is_broad_topic_title(title' not in t:
-              t = t.replace(
-                  'def is_hard_blocked(title: str) -> bool:\n',
-                  'def is_hard_blocked(title: str) -> bool:\n    if is_broad_topic_title(title or ""):\n        return True\n',
-              )
-          t = t.replace('"Basics of {t}", "Introduction to {t}", ', '')
-          t = t.replace('"Introduction to {t}", ', '')
-          t = t.replace('"Basics of {t}", ', '')
-          t = t.replace(', "Introduction to {t}"', '')
-          ft.write_text(t)
-          print('FT', 'broad' in t, 'Introduction to' in t)
-
-          gs = Path('scripts/generate_script.py')
-          g = gs.read_text()
-          if 'from script_quality import is_weak_script' not in g:
-              g = g.replace('import requests\n', 'import requests\n\nfrom script_quality import is_weak_script\n')
-          if 'is_weak_script(cleaned' not in g:
-              marker = '        print("VAGUE_EXAMPLE reject", file=sys.stderr)\n        return None\n'
-              insert = marker + '    weak = is_weak_script(cleaned, short)\n    if weak:\n        print("WEAK_SCRIPT reject", weak, file=sys.stderr)\n        return None\n'
-              if marker in g:
-                  g = g.replace(marker, insert, 1)
-          if 'Must include one concrete everyday example' not in g:
-              g = g.replace(
-                  '"Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
-                  '"Must include one concrete everyday example and a clear plain-language definition. Never pad with only exam-name drops or Save/Share without teaching. "\n        "Return ONLY the spoken paragraphs — never list rules inside the voiceover."',
-              )
-          gs.write_text(g)
-          print('GS', 'is_weak_script(cleaned' in g)
-          PY
-      - name: commit
-        run: |
-          git config user.name "mike-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add scripts/fetch_topics.py scripts/generate_script.py
-          git status
-          git diff --cached --stat
-          git diff --cached --quiet || git commit -m "fix: block Introduction-to topics; reject weak gibberish scripts"
-          git push || true
+      - run: echo disabled

@@ -1,10 +1,9 @@
-name: restore-buffer-topics
+name: restore-buffer-topics-DISABLED
 on:
   workflow_dispatch:
 jobs:
-  restore:
+  noop:
+    if: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: note
-        run: echo "Use local push instead - workflow payload too large for this path"
+      - run: echo disabled
