@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Teaser v5: AI-only single question + platform captions/hashtags. No seed bank."""
+"""Teaser v5.1: AI-first single question + captions. Hardened Gemini JSON mode."""
 from __future__ import annotations
 
 import json
@@ -22,9 +22,35 @@ ALWAYS_TAGS = [
     "#education",
 ]
 
+# Last-resort only when every AI call fails — pipeline must not die silent
+EMERGENCY = {
+    "title": "OTP scam check",
+    "type": "real",
+    "question": "An OTP you did not request just arrived. Safest move?",
+    "choices": [
+        "A) Share it with the caller who says they are the bank",
+        "B) Ignore it and never share the code",
+        "C) Post it on your status for advice",
+    ],
+    "answer": "B",
+    "reason": "OTPs are private. Sharing them lets scammers empty your account.",
+    "spoken_intro": "Quick one. An OTP you did not request just arrived. What should you do?",
+    "spoken_reveal": "Answer B. Ignore it and never share the code. OTPs open your account if someone else gets them.",
+    "topic_hashtags": ["#safety", "#scamalert", "#otp", "#moneytips"],
+    "youtube_description": "OTP you didn't request? Comment A B or C before the reveal.",
+    "tiktok_caption": "OTP just landed — what do you do?",
+    "instagram_caption": "OTP you didn't request. Safest move?",
+    "facebook_caption": "OTP scam check — pick A, B or C.",
+}
+
 
 def gemini_key() -> str:
-    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY"):
+    for name in (
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_AI_API_KEY",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
+    ):
         v = os.environ.get(name, "").strip()
         if v:
             return v
@@ -32,19 +58,34 @@ def gemini_key() -> str:
 
 
 def _call_gemini(key: str, model: str, system: str, user: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={key}"
+    )
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
-        "generationConfig": {"temperature": 0.85, "maxOutputTokens": 900},
+        "generationConfig": {
+            "temperature": 0.9,
+            "maxOutputTokens": 1000,
+            "responseMimeType": "application/json",
+        },
     }
     r = requests.post(url, json=body, timeout=90)
     if r.status_code >= 400:
-        print("gemini HTTP", model, r.status_code, r.text[:280], file=sys.stderr)
-        return ""
+        # retry without responseMimeType for older models
+        body["generationConfig"].pop("responseMimeType", None)
+        r = requests.post(url, json=body, timeout=90)
+        if r.status_code >= 400:
+            print("gemini HTTP", model, r.status_code, r.text[:300], file=sys.stderr)
+            return ""
     data = r.json()
     parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
-    return "".join((p.get("text") or "") for p in parts).strip()
+    content = "".join((p.get("text") or "") for p in parts).strip()
+    if not content:
+        fr = ((data.get("candidates") or [{}])[0].get("finishReason") or "")
+        print("gemini empty", model, "finish", fr, file=sys.stderr)
+    return content
 
 
 def _call_openrouter(key: str, model: str, system: str, user: str) -> str:
@@ -62,8 +103,8 @@ def _call_openrouter(key: str, model: str, system: str, user: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.85,
-            "max_tokens": 900,
+            "temperature": 0.9,
+            "max_tokens": 1000,
         },
         timeout=90,
     )
@@ -95,8 +136,8 @@ def normalize_payload(data: dict) -> dict | None:
     choices = data.get("choices") or []
     ans = str(data.get("answer") or "").strip().upper()[:1]
     reason = (data.get("reason") or "").strip()
-    if not q or len(choices) < 3 or ans not in "ABC" or len(reason) < 12:
-        print("normalize fail fields", file=sys.stderr)
+    if not q or len(choices) < 3 or ans not in "ABC" or len(reason) < 10:
+        print("normalize fail fields", "q", bool(q), "ch", len(choices), "ans", ans, "reason_len", len(reason), file=sys.stderr)
         return None
     low = q.lower()
     if any(x in low for x in ("what is 2+", "what colour is", "how many days in a week")):
@@ -121,7 +162,6 @@ def normalize_payload(data: dict) -> dict | None:
         t = re.sub(r"[^#A-Za-z0-9_]", "", t)[:32]
         if len(t) > 2:
             clean_tags.append(t)
-    # Always tags first, then topic, always include mike variants
     hashtags = []
     for t in ALWAYS_TAGS + clean_tags:
         if t.lower() not in {h.lower() for h in hashtags}:
@@ -158,65 +198,77 @@ def normalize_payload(data: dict) -> dict | None:
 def fetch_ai_question() -> dict | None:
     system = (
         "You create ONE hard real-life or exam multiple-choice question for Nigerian secondary students. "
-        "Output ONLY valid JSON. No markdown."
+        "Return ONLY a JSON object. No markdown."
     )
     user = (
         "Create exactly ONE medium-to-hard multiple-choice question.\n"
         "Prefer real-life (money, online safety, transport, shopping, health, everyday decisions) "
         "or applied school reasoning (logic, grammar, science in daily life).\n"
         "Not baby-level. Requires thinking.\n\n"
-        "Return ONE JSON object with keys:\n"
-        "title (short, under 60 chars),\n"
-        "type (real|logic|grammar|science|vocab),\n"
-        "question,\n"
-        "choices (array of exactly 3 strings),\n"
-        "answer (A or B or C),\n"
-        "reason (why correct, under 30 words),\n"
-        "spoken_intro (Mike reads the question aloud, natural, under 35 words),\n"
-        "spoken_reveal (Mike says the answer and short why, under 40 words),\n"
-        "topic_hashtags (array of 3-6 topic tags without forcing fyp),\n"
-        "youtube_description,\n"
-        "tiktok_caption,\n"
-        "instagram_caption,\n"
-        "facebook_caption\n"
+        "JSON keys required:\n"
+        "title, type, question, choices (exactly 3 strings), answer (A|B|C), reason,\n"
+        "spoken_intro, spoken_reveal, topic_hashtags (array),\n"
+        "youtube_description, tiktok_caption, instagram_caption, facebook_caption\n"
     )
     key = gemini_key()
-    models = [
-        os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.8-flash",
+    preferred = os.environ.get("GEMINI_MODEL", "").strip()
+    models = []
+    if preferred:
+        models.append(preferred)
+    for m in (
         "gemini-3.8-flash",
         "gemini-3.5-flash-lite",
         "gemini-flash-latest",
-    ]
-    seen = set()
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    ):
+        if m not in models:
+            models.append(m)
+
     for model in models:
-        if not key or model in seen:
-            continue
-        seen.add(model)
+        if not key:
+            break
         for attempt in range(3):
             print("TEASER_GEMINI", model, "attempt", attempt + 1, file=sys.stderr)
-            content = _call_gemini(key, model, system, user)
-            data = parse_json_obj(content)
-            if data:
-                packed = normalize_payload(data)
-                if packed:
-                    packed["engine"] = f"gemini:{model}"
-                    return packed
-            time.sleep(0.8 * (attempt + 1))
+            try:
+                content = _call_gemini(key, model, system, user)
+                data = parse_json_obj(content)
+                if data:
+                    packed = normalize_payload(data)
+                    if packed:
+                        packed["engine"] = f"gemini:{model}"
+                        print("TEASER_GEMINI_OK", model, file=sys.stderr)
+                        return packed
+                    print("TEASER_NORM_FAIL", model, file=sys.stderr)
+                else:
+                    print("TEASER_PARSE_FAIL", model, "head", (content or "")[:120], file=sys.stderr)
+            except Exception as e:
+                print("TEASER_GEMINI_EXC", model, e, file=sys.stderr)
+            time.sleep(0.7 * (attempt + 1))
 
     or_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if or_key:
         model = os.environ.get("OPENROUTER_MODEL", "openrouter/free").strip()
-        for attempt in range(2):
+        for attempt in range(3):
             print("TEASER_OR", model, "attempt", attempt + 1, file=sys.stderr)
-            content = _call_openrouter(or_key, model, system, user)
-            data = parse_json_obj(content)
-            if data:
-                packed = normalize_payload(data)
-                if packed:
-                    packed["engine"] = f"openrouter:{model}"
-                    return packed
+            try:
+                content = _call_openrouter(or_key, model, system, user)
+                data = parse_json_obj(content)
+                if data:
+                    packed = normalize_payload(data)
+                    if packed:
+                        packed["engine"] = f"openrouter:{model}"
+                        print("TEASER_OR_OK", model, file=sys.stderr)
+                        return packed
+            except Exception as e:
+                print("TEASER_OR_EXC", e, file=sys.stderr)
             time.sleep(1.0)
-    return None
+
+    print("TEASER_EMERGENCY fallback (AI failed)", file=sys.stderr)
+    packed = normalize_payload(EMERGENCY)
+    if packed:
+        packed["engine"] = "emergency"
+    return packed
 
 
 def write_side_files(job: dict) -> None:
@@ -238,7 +290,6 @@ def write_side_files(job: dict) -> None:
     Path("facebook_caption.txt").write_text(
         f"{(caps.get('facebook') or '').strip()}\n\n{tags}\n", encoding="utf-8"
     )
-    # script.txt for legacy tools
     Path("script.txt").write_text(
         f"{job.get('spoken_intro','')}\n{job.get('spoken_reveal','')}\n", encoding="utf-8"
     )
@@ -247,7 +298,7 @@ def write_side_files(job: dict) -> None:
 def main() -> None:
     packed = fetch_ai_question()
     if not packed:
-        print("TEASER_FAIL: AI did not return a valid question (no seed bank)", file=sys.stderr)
+        print("TEASER_FAIL: no question", file=sys.stderr)
         sys.exit(1)
 
     q = {
@@ -260,7 +311,6 @@ def main() -> None:
         "reason": packed["reason"],
     }
 
-    # Timeline segments for audio/render: intro (Mike reads) -> countdown (timer) -> reveal
     segments = [
         {"phase": "intro", "q": 1, "text": packed["spoken_intro"]},
         {"phase": "countdown", "q": 1, "secs": 8},
@@ -284,7 +334,7 @@ def main() -> None:
     Path("teaser_job.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
     write_side_files(job)
     print("TEASER_OK", job["engine"], job["title"], "answer", q["answer"], file=sys.stderr)
-    print(json.dumps({"title": job["title"], "answer": q["answer"], "tags": job["hashtags"][:8]}))
+    print(json.dumps({"title": job["title"], "answer": q["answer"], "engine": job["engine"], "tags": job["hashtags"][:8]}))
 
 
 if __name__ == "__main__":

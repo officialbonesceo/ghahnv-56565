@@ -1,6 +1,7 @@
 """
-Blender 3D Mike — matches 2D Mike (yellow hoodie, brown skin, navy pants).
-Richer classroom set. Workbench-friendly for GitHub Actions.
+Blender 3D Mike v3 — connected cartoon figure matching 2D Mike colors.
+Yellow hoodie, brown skin, navy pants. Classroom set.
+Workbench engine for GitHub Actions.
 
 blender -b -noaudio -P blender_mike3d.py -- \
   --out assets/blender/mike3d_test.mp4 --seconds 4 --width 720 --height 1280
@@ -13,20 +14,19 @@ from pathlib import Path
 
 import bpy
 
-# Colors aligned with write_mezi_assets.py (normalized 0-1)
+# Match write_mezi_assets.py
 HOODIE = (1.0, 0.80, 0.16)
-HOODIE_D = (0.92, 0.68, 0.10)
-HOODIE_L = (1.0, 0.90, 0.43)
+HOODIE_D = (0.90, 0.66, 0.08)
+HOODIE_L = (1.0, 0.90, 0.45)
 SKIN = (0.77, 0.55, 0.37)
-SKIN_D = (0.66, 0.44, 0.28)
-SKIN_L = (0.86, 0.67, 0.49)
-HAIR = (0.12, 0.09, 0.07)
-PANTS = (0.11, 0.16, 0.27)
-SHOE = (0.12, 0.12, 0.14)
-SHOE_W = (0.96, 0.96, 0.97)
-BADGE = (0.16, 0.22, 0.35)
+SKIN_D = (0.64, 0.42, 0.27)
+HAIR = (0.10, 0.07, 0.05)
+PANTS = (0.11, 0.16, 0.28)
+SHOE = (0.10, 0.10, 0.12)
+SHOE_W = (0.95, 0.95, 0.97)
+BADGE_C = (0.14, 0.20, 0.32)
 WHITE = (0.98, 0.98, 0.99)
-MOUTH = (0.59, 0.22, 0.24)
+MOUTH_C = (0.55, 0.18, 0.20)
 
 
 def parse_args(argv):
@@ -46,7 +46,7 @@ def parse_args(argv):
         if argv[i].startswith("--") and i + 1 < len(argv):
             key = argv[i][2:]
             val = argv[i + 1]
-            if key in ("seconds",):
+            if key == "seconds":
                 args[key] = float(val)
             elif key in ("width", "height", "fps"):
                 args[key] = int(val)
@@ -71,19 +71,16 @@ def mat(name, color, emit=0.0):
     m.use_nodes = False
     r, g, b = color
     if emit > 0:
-        r = min(1.0, r + emit * 0.35)
-        g = min(1.0, g + emit * 0.35)
-        b = min(1.0, b + emit * 0.4)
+        r = min(1.0, r + emit * 0.3)
+        g = min(1.0, g + emit * 0.3)
+        b = min(1.0, b + emit * 0.35)
     m.diffuse_color = (r, g, b, 1.0)
     return m
 
 
-def add(op, **kw):
+def mesh(op, **kw):
     getattr(bpy.ops.mesh, op)(**kw)
-    return bpy.context.active_object
-
-
-def shade_smooth(obj):
+    obj = bpy.context.active_object
     try:
         bpy.ops.object.shade_smooth()
     except Exception:
@@ -91,298 +88,310 @@ def shade_smooth(obj):
     return obj
 
 
-def build_classroom():
-    # Floor — warm wood planks feel (single plane + strip accents)
-    floor = add("primitive_plane_add", size=14, location=(0, 0.2, 0))
-    floor.name = "Floor"
-    floor.data.materials.append(mat("Floor", (0.42, 0.28, 0.16)))
+def parent(child, parent_obj):
+    child.parent = parent_obj
 
-    for i, y in enumerate((-1.2, 0.0, 1.2, 2.4)):
-        plank = add("primitive_cube_add", size=1, location=(0, y, 0.01))
-        plank.scale = (6.5, 0.55, 0.02)
-        c = (0.38 + 0.04 * (i % 2), 0.24 + 0.03 * (i % 2), 0.13)
-        plank.data.materials.append(mat(f"Plank{i}", c))
 
-    # Back wall — soft teal-grey
-    wall = add("primitive_cube_add", size=1, location=(0, 3.4, 2.3))
-    wall.scale = (7.0, 0.12, 2.5)
-    wall.data.materials.append(mat("WallBack", (0.78, 0.88, 0.92)))
+def build_room():
+    # Floor
+    floor = mesh("primitive_plane_add", size=16, location=(0, 0, 0))
+    floor.data.materials.append(mat("Floor", (0.40, 0.26, 0.15)))
 
-    # Accent stripe on wall
-    stripe = add("primitive_cube_add", size=1, location=(0, 3.32, 0.55))
-    stripe.scale = (6.8, 0.04, 0.18)
-    stripe.data.materials.append(mat("WallStripe", (1.0, 0.78, 0.15), emit=0.25))
+    # Back wall
+    wall = mesh("primitive_cube_add", size=1, location=(0, 4.0, 2.4))
+    wall.scale = (8, 0.15, 2.6)
+    wall.data.materials.append(mat("Wall", (0.80, 0.88, 0.92)))
+
+    # Yellow accent stripe
+    stripe = mesh("primitive_cube_add", size=1, location=(0, 3.9, 0.5))
+    stripe.scale = (7.5, 0.05, 0.16)
+    stripe.data.materials.append(mat("Stripe", HOODIE, emit=0.2))
 
     # Side walls
-    for x, name in ((-6.2, "L"), (6.2, "R")):
-        sw = add("primitive_cube_add", size=1, location=(x, 0.6, 2.1))
-        sw.scale = (0.1, 5.0, 2.3)
-        sw.data.materials.append(mat(f"Side{name}", (0.72, 0.82, 0.88)))
+    for x in (-7.0, 7.0):
+        sw = mesh("primitive_cube_add", size=1, location=(x, 0.5, 2.2))
+        sw.scale = (0.12, 5.5, 2.4)
+        sw.data.materials.append(mat("Side", (0.74, 0.82, 0.88)))
 
     # Ceiling
-    ceil = add("primitive_plane_add", size=14, location=(0, 0.5, 4.5))
+    ceil = mesh("primitive_plane_add", size=16, location=(0, 0.5, 4.8))
     ceil.rotation_euler = (math.radians(180), 0, 0)
-    ceil.data.materials.append(mat("Ceiling", (0.92, 0.94, 0.96)))
+    ceil.data.materials.append(mat("Ceil", (0.93, 0.95, 0.97)))
 
-    # Ceiling lights (glow panels)
-    for x in (-2.2, 0.0, 2.2):
-        lamp = add("primitive_cube_add", size=1, location=(x, 0.8, 4.35))
-        lamp.scale = (0.9, 0.35, 0.04)
-        lamp.data.materials.append(mat(f"CLight{x}", (1.0, 0.98, 0.85), emit=0.7))
+    # Ceiling lights
+    for x in (-2.0, 2.0):
+        lamp = mesh("primitive_cube_add", size=1, location=(x, 1.0, 4.65))
+        lamp.scale = (1.0, 0.4, 0.05)
+        lamp.data.materials.append(mat("Lamp", (1.0, 0.97, 0.85), emit=0.6))
 
-    # Chalkboard with frame + green surface + chalk lines (thin cubes)
-    frame = add("primitive_cube_add", size=1, location=(0, 3.25, 2.55))
-    frame.scale = (3.6, 0.1, 1.85)
-    frame.data.materials.append(mat("BoardFrame", (0.28, 0.18, 0.1)))
-    board = add("primitive_cube_add", size=1, location=(0, 3.18, 2.55))
-    board.scale = (3.3, 0.05, 1.65)
-    board.data.materials.append(mat("Board", (0.14, 0.38, 0.26)))
-    # chalk-ish horizontal guides
-    for i, z in enumerate((2.9, 2.55, 2.2)):
-        line = add("primitive_cube_add", size=1, location=(0, 3.12, z))
-        line.scale = (2.6, 0.01, 0.015)
-        line.data.materials.append(mat(f"Chalk{i}", (0.85, 0.9, 0.85), emit=0.15))
+    # Board
+    frame = mesh("primitive_cube_add", size=1, location=(0, 3.85, 2.6))
+    frame.scale = (3.8, 0.1, 1.9)
+    frame.data.materials.append(mat("Frame", (0.30, 0.18, 0.10)))
+    board = mesh("primitive_cube_add", size=1, location=(0, 3.78, 2.6))
+    board.scale = (3.5, 0.05, 1.7)
+    board.data.materials.append(mat("Board", (0.15, 0.40, 0.28)))
+    for i, z in enumerate((3.0, 2.6, 2.2)):
+        line = mesh("primitive_cube_add", size=1, location=(0, 3.72, z))
+        line.scale = (2.8, 0.01, 0.012)
+        line.data.materials.append(mat(f"Chalk{i}", (0.88, 0.92, 0.88), emit=0.1))
 
-    # Yellow "MIKE" accent bar under board
-    bar = add("primitive_cube_add", size=1, location=(0, 3.15, 1.55))
-    bar.scale = (2.0, 0.05, 0.12)
-    bar.data.materials.append(mat("MikeBar", HOODIE, emit=0.35))
+    # Desk further forward, lower profile so full Mike visible
+    desk = mesh("primitive_cube_add", size=1, location=(0, -1.1, 0.55))
+    desk.scale = (2.0, 0.7, 0.06)
+    desk.data.materials.append(mat("Desk", (0.48, 0.32, 0.18)))
+    for x in (-0.9, 0.9):
+        for y in (-1.3, -0.9):
+            leg = mesh("primitive_cylinder_add", radius=0.04, depth=0.55, location=(x, y, 0.27))
+            leg.data.materials.append(mat("DLeg", (0.25, 0.16, 0.1)))
 
-    # Desk in foreground
-    desk_top = add("primitive_cube_add", size=1, location=(0, -0.35, 0.72))
-    desk_top.scale = (1.9, 0.85, 0.07)
-    desk_top.data.materials.append(mat("DeskTop", (0.45, 0.3, 0.17)))
-    for x in (-0.85, 0.85):
-        for y in (-0.55, -0.15):
-            leg = add("primitive_cylinder_add", radius=0.045, depth=0.7, location=(x, y, 0.35))
-            leg.data.materials.append(mat("DeskLeg", (0.22, 0.15, 0.1)))
+    # Books
+    for i, c in enumerate([(0.9, 0.3, 0.2), (0.2, 0.45, 0.9), (0.95, 0.75, 0.2)]):
+        b = mesh("primitive_cube_add", size=1, location=(0.7, -1.2, 0.65 + i * 0.06))
+        b.scale = (0.32, 0.25, 0.035)
+        b.rotation_euler = (0, 0, math.radians(6 * i))
+        b.data.materials.append(mat(f"Book{i}", c))
 
-    # Books stack on desk
-    colors = [(0.85, 0.25, 0.2), (0.2, 0.45, 0.85), (0.95, 0.75, 0.2)]
-    for i, c in enumerate(colors):
-        book = add("primitive_cube_add", size=1, location=(0.55, -0.5, 0.82 + i * 0.07))
-        book.scale = (0.35, 0.28, 0.04)
-        book.rotation_euler = (0, 0, math.radians(8 * i))
-        book.data.materials.append(mat(f"Book{i}", c))
+    # Rug under Mike
+    rug = mesh("primitive_cylinder_add", radius=1.0, depth=0.025, location=(0, 1.15, 0.02))
+    rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.42)))
 
-    # Poster panels on side wall
-    for i, z in enumerate((2.8, 1.7)):
-        poster = add("primitive_cube_add", size=1, location=(-5.9, 1.5, z))
-        poster.scale = (0.04, 0.7, 0.55)
-        poster.data.materials.append(
-            mat(f"Poster{i}", (0.95, 0.55, 0.2) if i == 0 else (0.3, 0.55, 0.95), emit=0.2)
-        )
-
-    # Window glow (right)
-    win = add("primitive_cube_add", size=1, location=(5.9, 1.2, 2.4))
-    win.scale = (0.05, 1.4, 1.1)
-    win.data.materials.append(mat("Window", (0.75, 0.9, 1.0), emit=0.55))
-    # window frame cross
-    for scale, loc in (
-        ((0.06, 1.4, 0.06), (5.85, 1.2, 2.4)),
-        ((0.06, 0.06, 1.1), (5.85, 1.2, 2.4)),
-    ):
-        fr = add("primitive_cube_add", size=1, location=loc)
-        fr.scale = scale
-        fr.data.materials.append(mat("WinFrame", (0.9, 0.9, 0.92)))
-
-    # Floor rug under Mike
-    rug = add("primitive_cylinder_add", radius=1.1, depth=0.03, location=(0, 1.0, 0.03))
-    rug.data.materials.append(mat("Rug", (0.15, 0.25, 0.45)))
+    # Window glow
+    win = mesh("primitive_cube_add", size=1, location=(6.6, 1.5, 2.5))
+    win.scale = (0.06, 1.5, 1.2)
+    win.data.materials.append(mat("Win", (0.7, 0.88, 1.0), emit=0.5))
 
 
 def build_mike():
-    """Human-proportioned Mike: yellow hoodie, navy pants, brown skin."""
-    # --- legs / pants ---
-    for x in (-0.13, 0.13):
-        thigh = add("primitive_cylinder_add", radius=0.12, depth=0.55, location=(x, 1.05, 0.55))
-        thigh.data.materials.append(mat("Pants", PANTS))
-        shade_smooth(thigh)
-        shin = add("primitive_cylinder_add", radius=0.1, depth=0.45, location=(x, 1.05, 0.18))
-        shin.data.materials.append(mat("Pants2", PANTS))
-        shade_smooth(shin)
-        # shoe
-        shoe = add("primitive_cube_add", size=1, location=(x, 0.95, 0.05))
-        shoe.scale = (0.14, 0.22, 0.07)
-        shoe.data.materials.append(mat("Shoe", SHOE))
-        sole = add("primitive_cube_add", size=1, location=(x, 0.92, 0.015))
-        sole.scale = (0.145, 0.24, 0.02)
-        sole.data.materials.append(mat("Sole", SHOE_W))
+    """Connected stylized Mike. Root empty at pelvis; all parts parented."""
+    # Root
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 1.2, 0))
+    root = bpy.context.active_object
+    root.name = "MikeRoot"
 
-    # hips
-    hips = add("primitive_cube_add", size=1, location=(0, 1.05, 0.88))
-    hips.scale = (0.32, 0.18, 0.12)
+    # --- Legs ---
+    for side, x in (("L", -0.14), ("R", 0.14)):
+        thigh = mesh("primitive_cylinder_add", radius=0.11, depth=0.5, location=(x, 0, 0.55))
+        thigh.name = f"Thigh{side}"
+        thigh.data.materials.append(mat(f"Pants{side}", PANTS))
+        parent(thigh, root)
+
+        shin = mesh("primitive_cylinder_add", radius=0.09, depth=0.42, location=(x, 0, 0.18))
+        shin.name = f"Shin{side}"
+        shin.data.materials.append(mat(f"Shin{side}", PANTS))
+        parent(shin, root)
+
+        shoe = mesh("primitive_cube_add", size=1, location=(x, -0.06, 0.04))
+        shoe.scale = (0.13, 0.22, 0.07)
+        shoe.data.materials.append(mat(f"Shoe{side}", SHOE))
+        parent(shoe, root)
+
+        sole = mesh("primitive_cube_add", size=1, location=(x, -0.07, 0.005))
+        sole.scale = (0.135, 0.24, 0.015)
+        sole.data.materials.append(mat(f"Sole{side}", SHOE_W))
+        parent(sole, root)
+
+    # Hips
+    hips = mesh("primitive_cube_add", size=1, location=(0, 0, 0.85))
+    hips.scale = (0.34, 0.18, 0.12)
     hips.data.materials.append(mat("Hips", PANTS))
+    parent(hips, root)
 
-    # --- torso / yellow hoodie ---
-    torso = add("primitive_cube_add", size=1, location=(0, 1.05, 1.35))
-    torso.name = "MikeTorso"
-    torso.scale = (0.42, 0.24, 0.42)
+    # --- Torso (yellow hoodie) — larger, human proportion ---
+    torso = mesh("primitive_cube_add", size=1, location=(0, 0, 1.35))
+    torso.name = "Torso"
+    torso.scale = (0.38, 0.22, 0.42)
     torso.data.materials.append(mat("Hoodie", HOODIE))
-    shade_smooth(torso)
+    parent(torso, root)
 
-    # hoodie belly darker panel
-    panel = add("primitive_cube_add", size=1, location=(0, 0.88, 1.28))
-    panel.scale = (0.22, 0.04, 0.22)
-    panel.data.materials.append(mat("HoodiePanel", HOODIE_D))
+    # Pocket panel
+    pocket = mesh("primitive_cube_add", size=1, location=(0, -0.2, 1.25))
+    pocket.scale = (0.2, 0.03, 0.18)
+    pocket.data.materials.append(mat("Pocket", HOODIE_D))
+    parent(pocket, root)
 
-    # drawstrings
-    for x in (-0.08, 0.08):
-        s = add("primitive_cylinder_add", radius=0.012, depth=0.28, location=(x, 0.82, 1.25))
+    # Drawstrings
+    for x in (-0.07, 0.07):
+        s = mesh("primitive_cylinder_add", radius=0.012, depth=0.22, location=(x, -0.22, 1.2))
         s.data.materials.append(mat("String", WHITE))
-        tip = add("primitive_uv_sphere_add", radius=0.02, location=(x, 0.82, 1.1))
-        tip.data.materials.append(mat("StringTip", WHITE))
+        parent(s, root)
+        tip = mesh("primitive_uv_sphere_add", radius=0.018, location=(x, -0.22, 1.08))
+        tip.data.materials.append(mat("STip", WHITE))
+        parent(tip, root)
 
-    # hoodie hood flap behind neck
-    hood = add("primitive_uv_sphere_add", radius=0.28, location=(0, 1.22, 1.72))
-    hood.scale = (0.95, 0.7, 0.55)
+    # Hood (behind head, not a ring)
+    hood = mesh("primitive_uv_sphere_add", radius=0.26, location=(0, 0.12, 1.78))
+    hood.scale = (0.9, 0.55, 0.5)
     hood.data.materials.append(mat("Hood", HOODIE_D))
+    parent(hood, root)
 
-    # collar ring
-    collar = add("primitive_torus_add", major_radius=0.2, minor_radius=0.04, location=(0, 1.05, 1.72))
-    collar.rotation_euler = (math.radians(90), 0, 0)
-    collar.data.materials.append(mat("Collar", HOODIE_L))
+    # Badge
+    badge = mesh("primitive_cube_add", size=1, location=(0.2, -0.2, 1.48))
+    badge.scale = (0.07, 0.025, 0.055)
+    badge.data.materials.append(mat("Badge", BADGE_C))
+    parent(badge, root)
+    bw = mesh("primitive_cube_add", size=1, location=(0.2, -0.22, 1.48))
+    bw.scale = (0.05, 0.015, 0.04)
+    bw.data.materials.append(mat("BadgeW", WHITE))
+    parent(bw, root)
 
-    # badge (chest)
-    badge = add("primitive_cube_add", size=1, location=(0.22, 0.84, 1.48))
-    badge.scale = (0.08, 0.03, 0.06)
-    badge.data.materials.append(mat("Badge", BADGE))
-    badge_w = add("primitive_cube_add", size=1, location=(0.22, 0.82, 1.48))
-    badge_w.scale = (0.06, 0.02, 0.045)
-    badge_w.data.materials.append(mat("BadgeW", WHITE))
+    # --- Arms: shoulder joint at torso side, upper + lower + hand connected ---
+    for side, xsign in (("L", -1), ("R", 1)):
+        sx = 0.38 * xsign
+        # Upper arm from shoulder, angled down-out
+        ua = mesh(
+            "primitive_cylinder_add",
+            radius=0.085,
+            depth=0.38,
+            location=(sx + 0.12 * xsign, 0, 1.42),
+        )
+        ua.rotation_euler = (0, math.radians(25 * xsign), math.radians(-15 * xsign))
+        ua.data.materials.append(mat(f"UA{side}", HOODIE))
+        parent(ua, root)
 
-    # --- arms (hoodie sleeves + skin hands) ---
-    # upper arms
-    for x, ang in ((-0.48, 18), (0.48, -18)):
-        ua = add("primitive_cylinder_add", radius=0.09, depth=0.42, location=(x, 1.05, 1.4))
-        ua.rotation_euler = (0, math.radians(ang), 0)
-        ua.data.materials.append(mat("Sleeve", HOODIE))
-        shade_smooth(ua)
-    # lower arms slightly out
-    for x, ang in ((-0.62, 8), (0.62, -8)):
-        la = add("primitive_cylinder_add", radius=0.08, depth=0.38, location=(x, 1.0, 1.05))
-        la.rotation_euler = (math.radians(12), math.radians(ang), 0)
-        la.data.materials.append(mat("Sleeve2", HOODIE))
-        shade_smooth(la)
-    # hands
-    for x in (-0.7, 0.7):
-        hand = add("primitive_uv_sphere_add", radius=0.09, location=(x, 0.95, 0.82))
-        hand.scale = (0.85, 0.7, 1.1)
-        hand.data.materials.append(mat("Hand", SKIN))
-        shade_smooth(hand)
+        # Elbow position roughly
+        ex = sx + 0.28 * xsign
+        ez = 1.15
+        la = mesh(
+            "primitive_cylinder_add",
+            radius=0.075,
+            depth=0.36,
+            location=(ex, -0.05, ez),
+        )
+        la.rotation_euler = (math.radians(20), math.radians(10 * xsign), 0)
+        la.data.materials.append(mat(f"LA{side}", HOODIE))
+        parent(la, root)
 
-    # --- neck + head ---
-    neck = add("primitive_cylinder_add", radius=0.1, depth=0.16, location=(0, 1.05, 1.78))
+        # Hand
+        hx = ex + 0.05 * xsign
+        hand = mesh("primitive_uv_sphere_add", radius=0.085, location=(hx, -0.08, 0.92))
+        hand.scale = (0.9, 0.75, 1.05)
+        hand.data.materials.append(mat(f"Hand{side}", SKIN))
+        parent(hand, root)
+
+    # --- Neck + Head ---
+    neck = mesh("primitive_cylinder_add", radius=0.09, depth=0.14, location=(0, 0, 1.78))
     neck.data.materials.append(mat("Neck", SKIN))
-    shade_smooth(neck)
+    parent(neck, root)
 
-    head = add("primitive_uv_sphere_add", radius=0.32, location=(0, 1.05, 2.12))
+    head = mesh("primitive_uv_sphere_add", radius=0.30, location=(0, 0, 2.12))
     head.name = "MikeHead"
-    head.scale = (0.92, 0.95, 1.05)
+    head.scale = (0.92, 0.95, 1.02)
     head.data.materials.append(mat("Head", SKIN))
-    shade_smooth(head)
+    parent(head, root)
 
-    # ears
-    for x in (-0.3, 0.3):
-        ear = add("primitive_uv_sphere_add", radius=0.07, location=(x, 1.05, 2.1))
-        ear.scale = (0.5, 0.7, 1.0)
+    # Ears
+    for x in (-0.28, 0.28):
+        ear = mesh("primitive_uv_sphere_add", radius=0.065, location=(x, 0, 2.1))
+        ear.scale = (0.45, 0.7, 0.95)
         ear.data.materials.append(mat("Ear", SKIN_D))
+        parent(ear, root)
 
-    # hair cap + peaks (Mike's volume)
-    hair = add("primitive_uv_sphere_add", radius=0.34, location=(0, 1.08, 2.28))
-    hair.scale = (0.95, 1.05, 0.72)
+    # Hair
+    hair = mesh("primitive_uv_sphere_add", radius=0.32, location=(0, 0.05, 2.28))
+    hair.scale = (0.95, 1.05, 0.7)
     hair.data.materials.append(mat("Hair", HAIR))
-    shade_smooth(hair)
-    # front peaks
-    for x, zoff in ((-0.12, 0.02), (0.05, 0.05), (0.18, 0.0)):
-        peak = add("primitive_uv_sphere_add", radius=0.1, location=(x, 0.88, 2.35 + zoff))
-        peak.scale = (0.7, 0.9, 1.1)
-        peak.data.materials.append(mat("HairPeak", HAIR))
+    parent(hair, root)
+    for x, yo, zo in ((-0.1, -0.15, 0.05), (0.05, -0.18, 0.08), (0.14, -0.12, 0.02)):
+        peak = mesh("primitive_uv_sphere_add", radius=0.09, location=(x, yo, 2.35 + zo))
+        peak.scale = (0.7, 0.85, 1.0)
+        peak.data.materials.append(mat("Peak", HAIR))
+        parent(peak, root)
 
-    # eyes — bigger, friendly
-    for x in (-0.1, 0.1):
-        white = add("primitive_uv_sphere_add", radius=0.07, location=(x, 0.78, 2.14))
-        white.scale = (0.85, 0.55, 1.0)
-        white.data.materials.append(mat("EyeW", WHITE))
-        iris = add("primitive_uv_sphere_add", radius=0.04, location=(x, 0.74, 2.14))
-        iris.data.materials.append(mat("Iris", (0.18, 0.11, 0.07)))
-        pupil = add("primitive_uv_sphere_add", radius=0.022, location=(x, 0.72, 2.14))
-        pupil.data.materials.append(mat("Pupil", (0.05, 0.04, 0.04)))
-        shine = add("primitive_uv_sphere_add", radius=0.012, location=(x - 0.015, 0.71, 2.16))
-        shine.data.materials.append(mat("Shine", WHITE, emit=0.4))
+    # Eyes
+    for x in (-0.09, 0.09):
+        w = mesh("primitive_uv_sphere_add", radius=0.065, location=(x, -0.26, 2.14))
+        w.scale = (0.85, 0.5, 1.0)
+        w.data.materials.append(mat("EyeW", WHITE))
+        parent(w, root)
+        iris = mesh("primitive_uv_sphere_add", radius=0.038, location=(x, -0.30, 2.14))
+        iris.data.materials.append(mat("Iris", (0.16, 0.10, 0.06)))
+        parent(iris, root)
+        pupil = mesh("primitive_uv_sphere_add", radius=0.02, location=(x, -0.32, 2.14))
+        pupil.data.materials.append(mat("Pupil", (0.04, 0.03, 0.03)))
+        parent(pupil, root)
+        shine = mesh("primitive_uv_sphere_add", radius=0.01, location=(x - 0.012, -0.33, 2.16))
+        shine.data.materials.append(mat("Shine", WHITE, emit=0.3))
+        parent(shine, root)
 
-    # brows
-    for x in (-0.1, 0.1):
-        brow = add("primitive_cube_add", size=1, location=(x, 0.76, 2.26))
-        brow.scale = (0.07, 0.02, 0.015)
-        brow.rotation_euler = (0, 0, math.radians(8 if x > 0 else -8))
+    # Brows
+    for x in (-0.09, 0.09):
+        brow = mesh("primitive_cube_add", size=1, location=(x, -0.28, 2.26))
+        brow.scale = (0.065, 0.015, 0.012)
+        brow.rotation_euler = (0, 0, math.radians(10 if x > 0 else -10))
         brow.data.materials.append(mat("Brow", HAIR))
+        parent(brow, root)
 
-    # nose
-    nose = add("primitive_uv_sphere_add", radius=0.04, location=(0, 0.76, 2.02))
-    nose.scale = (0.7, 0.9, 1.0)
+    # Nose
+    nose = mesh("primitive_uv_sphere_add", radius=0.035, location=(0, -0.28, 2.02))
+    nose.scale = (0.7, 0.85, 1.0)
     nose.data.materials.append(mat("Nose", SKIN_D))
+    parent(nose, root)
 
-    # mouth (smile-ish)
-    mouth = add("primitive_cube_add", size=1, location=(0, 0.75, 1.9))
+    # Mouth
+    mouth = mesh("primitive_cube_add", size=1, location=(0, -0.28, 1.9))
     mouth.name = "MikeMouth"
-    mouth.scale = (0.09, 0.03, 0.025)
-    mouth.data.materials.append(mat("Mouth", MOUTH))
+    mouth.scale = (0.08, 0.025, 0.022)
+    mouth.data.materials.append(mat("Mouth", MOUTH_C))
+    parent(mouth, root)
 
-    # soft cheek tint
-    for x in (-0.18, 0.18):
-        cheek = add("primitive_uv_sphere_add", radius=0.05, location=(x, 0.82, 1.98))
+    # Cheeks
+    for x in (-0.16, 0.16):
+        cheek = mesh("primitive_uv_sphere_add", radius=0.045, location=(x, -0.22, 1.98))
         cheek.scale = (1.0, 0.5, 0.8)
-        cheek.data.materials.append(mat("Cheek", (0.85, 0.5, 0.42), emit=0.1))
+        cheek.data.materials.append(mat("Cheek", (0.85, 0.48, 0.40), emit=0.08))
+        parent(cheek, root)
 
-    return head, mouth
+    return root, head, mouth
 
 
 def setup_camera_lights():
-    # Key sun from front-left
-    bpy.ops.object.light_add(type="SUN", location=(2.5, -4, 7))
+    bpy.ops.object.light_add(type="SUN", location=(3, -4, 7))
     sun = bpy.context.active_object
-    sun.data.energy = 2.8
-    sun.rotation_euler = (math.radians(45), math.radians(15), math.radians(10))
+    sun.data.energy = 2.6
+    sun.rotation_euler = (math.radians(50), math.radians(12), 0)
 
-    # Fill
-    bpy.ops.object.light_add(type="AREA", location=(-2.5, -2.5, 3.2))
+    bpy.ops.object.light_add(type="AREA", location=(-2.5, -2, 3.5))
     fill = bpy.context.active_object
-    fill.data.energy = 60
+    fill.data.energy = 55
     fill.data.size = 3
 
-    # Rim / window side
-    bpy.ops.object.light_add(type="AREA", location=(4, 0.5, 3))
+    bpy.ops.object.light_add(type="AREA", location=(4, 1, 3))
     rim = bpy.context.active_object
-    rim.data.energy = 40
+    rim.data.energy = 35
     rim.data.size = 2
 
-    # Camera — slightly above eye, looking at Mike
-    bpy.ops.object.camera_add(location=(0, -3.6, 1.85))
+    # Camera: full-body vertical, Mike centered, desk at bottom only
+    bpy.ops.object.camera_add(location=(0, -4.0, 1.55))
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(82), 0, 0)
-    cam.data.lens = 35
+    cam.rotation_euler = (math.radians(88), 0, 0)
+    cam.data.lens = 32
     bpy.context.scene.camera = cam
 
     world = bpy.data.worlds.new("World")
     bpy.context.scene.world = world
     world.use_nodes = False
-    world.color = (0.55, 0.68, 0.78)
+    world.color = (0.58, 0.70, 0.80)
 
 
-def animate_mike(head, mouth, fps, total_frames):
+def animate(root, head, mouth, fps, total_frames):
     for f in range(1, total_frames + 1):
         t = f / float(fps)
-        head.location.z = 2.12 + 0.02 * math.sin(t * 2.8)
+        # gentle body sway
+        root.rotation_euler = (0, 0, math.radians(2.5 * math.sin(t * 1.5)))
+        root.keyframe_insert(data_path="rotation_euler", frame=f)
+        # head bob
+        head.location.z = 2.12 + 0.018 * math.sin(t * 2.6)
         head.rotation_euler = (
-            math.radians(2 * math.sin(t * 1.2)),
+            math.radians(2 * math.sin(t * 1.3)),
             0,
-            math.radians(5 * math.sin(t * 1.4)),
+            math.radians(4 * math.sin(t * 1.6)),
         )
         head.keyframe_insert(data_path="location", frame=f, index=2)
         head.keyframe_insert(data_path="rotation_euler", frame=f)
-        open_z = 0.02 + 0.035 * abs(math.sin(t * 8.5))
-        mouth.scale = (0.09, 0.03, open_z)
+        # mouth chatter
+        open_z = 0.018 + 0.03 * abs(math.sin(t * 8.0))
+        mouth.scale = (0.08, 0.025, open_z)
         mouth.keyframe_insert(data_path="scale", frame=f)
 
 
@@ -418,15 +427,15 @@ def main():
     height = int(args.get("height", 1280))
 
     clear_scene()
-    build_classroom()
-    head, mouth = build_mike()
+    build_room()
+    root, head, mouth = build_mike()
     setup_camera_lights()
-    animate_mike(head, mouth, fps, total_frames)
+    animate(root, head, mouth, fps, total_frames)
 
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     setup_render(out, fps, total_frames, width, height)
-    print(f"Render Mike3D {total_frames}f {width}x{height} -> {out}")
+    print(f"Render Mike3D v3 {total_frames}f {width}x{height} -> {out}")
     bpy.ops.render.render(animation=True)
     if not (out.exists() and out.stat().st_size > 0):
         matches = sorted(out.parent.glob(out.stem + "*"))
