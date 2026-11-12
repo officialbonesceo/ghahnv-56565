@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Teaser v5 render: Mike reads -> full-screen Q+timer -> green reveal + Mike head."""
+"""Teaser v6 render: full question + full choices on screen, no mid-word cuts."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +17,6 @@ WHITE = (255, 255, 255)
 BLACK = (12, 14, 20)
 YELLOW = (255, 210, 40)
 GREEN = (36, 180, 100)
-RED_SOFT = (90, 40, 50)
 CARD = (18, 24, 40)
 CARD_HI = (28, 40, 70)
 SOFT = (170, 180, 200)
@@ -36,6 +35,7 @@ def font(size: int):
 
 
 def wrap(d, text, tf, max_w):
+    """Word-wrap without cutting words."""
     words, lines, cur = (text or "").split(), [], ""
     for w in words:
         test = (cur + " " + w).strip()
@@ -48,6 +48,21 @@ def wrap(d, text, tf, max_w):
     if cur:
         lines.append(cur)
     return lines
+
+
+def fit_lines(d, text, max_w, max_lines, start_size, min_size=20):
+    """Shrink font until text fits in max_lines without truncating words."""
+    size = start_size
+    while size >= min_size:
+        tf = font(size)
+        lines = wrap(d, text, tf, max_w)
+        if len(lines) <= max_lines:
+            return tf, size, lines
+        size -= 2
+    tf = font(min_size)
+    lines = wrap(d, text, tf, max_w)
+    # last resort: keep as many full lines as fit (no mid-word)
+    return tf, min_size, lines[:max_lines]
 
 
 def lerp(a, b, t):
@@ -94,11 +109,9 @@ def load_mike(pose: str = "point"):
 
 
 def mike_head_logo(size: int = 96) -> Image.Image | None:
-    """Crop upper portion of Mike body as a circular logo."""
     mike = load_mike("happy") or load_mike("stand")
     if mike is None:
         return None
-    # head-ish crop from top of sprite
     w, h = mike.size
     crop = mike.crop((int(w * 0.18), int(h * 0.02), int(w * 0.82), int(h * 0.42))).convert("RGBA")
     crop = crop.resize((size, size), Image.Resampling.LANCZOS)
@@ -109,142 +122,142 @@ def mike_head_logo(size: int = 96) -> Image.Image | None:
     return out
 
 
-def paste_mike(base: Image.Image, pose: str, bob: float = 0.0, scale: float = 0.92):
+def paste_mike(base: Image.Image, pose: str, bob: float = 0.0, scale: float = 0.85):
     mike = load_mike(pose)
     if mike is None:
         return
-    mw = int(520 * scale)
+    mw = int(480 * scale)
     mh = int(mw * mike.height / max(1, mike.width))
     mike = mike.resize((mw, mh), Image.Resampling.LANCZOS)
-    base.paste(mike, ((W - mw) // 2, H - mh - 20 + int(bob)), mike)
+    base.paste(mike, ((W - mw) // 2, H - mh - 10 + int(bob)), mike)
 
 
-def draw_choice_bar(d, left, top, right, height, text, fill, outline, width, fsize=34):
-    d.rounded_rectangle([left, top, right, top + height], 22, fill=fill, outline=outline, width=width)
-    pad, max_w = 20, right - left - 40
-    size = fsize
-    lines = []
-    while size >= 22:
-        cf = font(size)
-        lines = wrap(d, text, cf, max_w)[:2]
-        if lines and d.textbbox((0, 0), lines[0], font=cf)[2] <= max_w:
-            break
-        size -= 2
-    cf = font(size)
-    th = len(lines) * (size + 8)
-    ty = top + max(8, (height - th) // 2)
+def draw_choice_bar(d, left, top, right, height, text, fill, outline, width):
+    d.rounded_rectangle([left, top, right, top + height], 20, fill=fill, outline=outline, width=width)
+    pad = 18
+    max_w = right - left - 36
+    # Allow up to 3 full lines so options are not cut
+    tf, size, lines = fit_lines(d, text, max_w, max_lines=3, start_size=32, min_size=18)
+    th = len(lines) * (size + 6)
+    ty = top + max(6, (height - th) // 2)
     for line in lines:
-        d.text((left + pad, ty), line, font=cf, fill=WHITE)
-        ty += size + 8
+        d.text((left + pad, ty), line, font=tf, fill=WHITE)
+        ty += size + 6
 
 
 def draw_intro(job, q, t_local: float):
-    """Scene 1: Mike reading the question."""
     img = bg_gradient()
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 100], fill=YELLOW)
-    tf = font(40)
-    title = (job.get("title") or "Quick quiz")[:40]
+    tf = font(36)
+    title = (job.get("title") or "Quick quiz")[:50]
     bb = d.textbbox((0, 0), title, font=tf)
-    d.text(((W - (bb[2] - bb[0])) // 2, 28), title, font=tf, fill=BLACK)
+    d.text(((W - (bb[2] - bb[0])) // 2, 30), title, font=tf, fill=BLACK)
 
-    # question card mid
-    qf = font(36)
-    lines = wrap(d, q.get("question") or "", qf, W - 120)[:6]
-    card_h = 40 + len(lines) * 48
-    cy0 = 180
-    d.rounded_rectangle([40, cy0, W - 40, cy0 + card_h], 24, fill=CARD, outline=(80, 100, 140), width=3)
-    y = cy0 + 24
+    max_w = W - 100
+    qf, qsize, lines = fit_lines(d, q.get("question") or "", max_w, max_lines=7, start_size=34, min_size=22)
+    card_h = 36 + len(lines) * (qsize + 10)
+    cy0 = 140
+    d.rounded_rectangle([36, cy0, W - 36, cy0 + card_h], 22, fill=CARD, outline=(80, 100, 140), width=3)
+    y = cy0 + 18
     for line in lines:
         bb = d.textbbox((0, 0), line, font=qf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=WHITE)
-        y += 48
+        y += qsize + 10
 
-    tip = font(28)
+    tip = font(26)
     msg = "Listen… then pick A, B or C"
     bb = d.textbbox((0, 0), msg, font=tip)
-    d.text(((W - (bb[2] - bb[0])) // 2, cy0 + card_h + 40), msg, font=tip, fill=YELLOW)
+    d.text(((W - (bb[2] - bb[0])) // 2, min(cy0 + card_h + 28, H - 420)), msg, font=tip, fill=YELLOW)
 
-    paste_mike(img, "question", bob=math.sin(t_local * 3.0) * 6, scale=0.95)
+    paste_mike(img, "question", bob=math.sin(t_local * 3.0) * 5, scale=0.78)
     return img
 
 
 def draw_ask(q, remaining: float | None, t_local: float, total_cd: float):
-    """Scene 2: full-screen question + options + top timer. No Mike."""
     img = bg_gradient()
     d = ImageDraw.Draw(img)
 
-    # Top timer bar
-    bar_h = 120
+    bar_h = 100
     d.rectangle([0, 0, W, bar_h], fill=(16, 20, 32))
     if remaining is not None:
         frac = max(0.0, min(1.0, float(remaining) / max(0.01, total_cd)))
         fill_w = int(W * frac)
-        color = YELLOW if remaining > 3 else (255, 90, 70)
+        color = YELLOW if remaining > 4 else (255, 90, 70)
         d.rectangle([0, 0, fill_w, bar_h], fill=color)
         n = max(0, int(math.ceil(remaining)))
-        nf = font(64)
+        nf = font(56)
         s = f"{n}s"
         bb = d.textbbox((0, 0), s, font=nf)
-        d.text(((W - (bb[2] - bb[0])) // 2, 28), s, font=nf, fill=BLACK if remaining > 3 else WHITE)
+        d.text(((W - (bb[2] - bb[0])) // 2, 22), s, font=nf, fill=BLACK if remaining > 4 else WHITE)
     else:
-        tf = font(40)
+        tf = font(36)
         bb = d.textbbox((0, 0), "GET READY", font=tf)
-        d.text(((W - (bb[2] - bb[0])) // 2, 36), "GET READY", font=tf, fill=YELLOW)
+        d.text(((W - (bb[2] - bb[0])) // 2, 28), "GET READY", font=tf, fill=YELLOW)
 
-    # Question
-    qf = font(40)
-    q_lines = wrap(d, q.get("question") or "", qf, W - 80)[:5]
-    y = bar_h + 50
+    max_w = W - 72
+    qf, qsize, q_lines = fit_lines(
+        d, q.get("question") or "", max_w, max_lines=6, start_size=36, min_size=22
+    )
+    y = bar_h + 28
     for line in q_lines:
         bb = d.textbbox((0, 0), line, font=qf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=WHITE)
-        y += 52
+        y += qsize + 8
 
-    # Choices full width
-    top = y + 40
-    btn_h, gap = 150, 24
-    for i, ch in enumerate((q.get("choices") or [])[:3]):
-        appear = ease_out(max(0.0, min(1.0, (t_local - 0.1 * i) * 3)))
-        inset = int((1 - appear) * 30)
+    # Dynamic choice height from remaining space
+    top = y + 24
+    choices = (q.get("choices") or [])[:3]
+    avail = H - top - 40
+    gap = 16
+    btn_h = max(110, min(160, (avail - gap * 2) // 3))
+
+    for i, ch in enumerate(choices):
+        appear = ease_out(max(0.0, min(1.0, (t_local - 0.08 * i) * 3)))
+        inset = int((1 - appear) * 24)
         draw_choice_bar(
             d,
-            36 + inset,
+            28 + inset,
             top + i * (btn_h + gap),
-            W - 36 - inset,
+            W - 28 - inset,
             btn_h,
             ch,
             CARD_HI if appear > 0.4 else CARD,
             (90, 110, 160),
             4,
-            36,
         )
     return img
 
 
 def draw_reveal(q, t_local: float):
-    """Scene 3: correct option green + Mike head logo + reason."""
     img = bg_gradient()
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, 110], fill=GREEN)
-    tf = font(44)
+    d.rectangle([0, 0, W, 100], fill=GREEN)
+    tf = font(42)
     ans = str(q.get("answer") or "").upper()
     msg = f"ANSWER  {ans}"
     bb = d.textbbox((0, 0), msg, font=tf)
-    d.text(((W - (bb[2] - bb[0])) // 2, 30), msg, font=tf, fill=WHITE)
+    d.text(((W - (bb[2] - bb[0])) // 2, 26), msg, font=tf, fill=WHITE)
 
-    qf = font(32)
-    q_lines = wrap(d, q.get("question") or "", qf, W - 80)[:3]
-    y = 150
+    max_w = W - 72
+    qf, qsize, q_lines = fit_lines(
+        d, q.get("question") or "", max_w, max_lines=4, start_size=28, min_size=18
+    )
+    y = 120
     for line in q_lines:
         bb = d.textbbox((0, 0), line, font=qf)
         d.text(((W - (bb[2] - bb[0])) // 2, y), line, font=qf, fill=SOFT)
-        y += 42
+        y += qsize + 6
 
     flash = ease_out(min(1.0, t_local * 3.5))
-    top = y + 30
-    btn_h, gap = 140, 20
-    for i, ch in enumerate((q.get("choices") or [])[:3]):
+    top = y + 16
+    choices = (q.get("choices") or [])[:3]
+    gap = 12
+    # Leave room for reason box (~180px)
+    avail = H - top - 200
+    btn_h = max(100, min(140, (avail - gap * 2) // 3))
+
+    for i, ch in enumerate(choices):
         letter = ch.strip()[0].upper() if ch else "?"
         hit = letter == ans or ch.upper().startswith(ans + ")")
         by = top + i * (btn_h + gap)
@@ -257,22 +270,22 @@ def draw_reveal(q, t_local: float):
             outline, width = YELLOW, 6
         else:
             fill, outline, width = (30, 34, 48), (50, 55, 70), 3
-        draw_choice_bar(d, 36, by, W - 36, btn_h, ch, fill, outline, width, 34)
+        draw_choice_bar(d, 28, by, W - 28, btn_h, ch, fill, outline, width)
         if hit and flash > 0.4:
-            logo = mike_head_logo(88)
+            logo = mike_head_logo(72)
             if logo is not None:
-                img.paste(logo, (W - 130, by + (btn_h - 88) // 2), logo)
+                img.paste(logo, (W - 110, by + max(0, (btn_h - 72) // 2)), logo)
 
-    # reason
-    rf = font(30)
-    reason = (q.get("reason") or "")[:160]
-    ry = top + 3 * (btn_h + gap) + 20
-    d.rounded_rectangle([40, ry, W - 40, min(H - 40, ry + 160)], 20, fill=CARD)
-    yy = ry + 24
-    for line in wrap(d, reason, rf, W - 100)[:4]:
+    reason = (q.get("reason") or "").strip()
+    ry = top + 3 * (btn_h + gap) + 12
+    rf, rsize, rlines = fit_lines(d, reason, W - 100, max_lines=5, start_size=28, min_size=18)
+    box_h = 24 + len(rlines) * (rsize + 6)
+    d.rounded_rectangle([28, ry, W - 28, min(H - 24, ry + box_h)], 18, fill=CARD)
+    yy = ry + 14
+    for line in rlines:
         bb = d.textbbox((0, 0), line, font=rf)
         d.text(((W - (bb[2] - bb[0])) // 2, yy), line, font=rf, fill=YELLOW)
-        yy += 36
+        yy += rsize + 6
     return img
 
 
@@ -305,7 +318,7 @@ def frame_at(job, timeline, t):
     if phase == "reveal" and q:
         return draw_reveal(q, t_local)
     if q:
-        return draw_ask(q, remaining=None, t_local=t_local, total_cd=8)
+        return draw_ask(q, remaining=None, t_local=t_local, total_cd=12)
     return bg_gradient()
 
 
