@@ -1,10 +1,11 @@
 """
-Blender 3D Mike — load Tripo Mike.glb + procedural classroom.
-Blender 5 safe: PNG frames + ffmpeg.
+Blender 3D Mike — load Tripo Mike.glb + classroom.
+GLB is a STATIC mesh (no armature / morph targets), so motion is root-level:
+walk-in-place bob, sway, present lean. True hand wave / blink / lips need a rig.
 
 blender -b -noaudio -P scripts/blender_mike3d.py -- \
-  --out assets/blender/mike3d_test.mp4 --seconds 4 --width 720 --height 1280 \
-  --glb assets/mike/Mike.glb
+  --glb assets/mike/Mike.glb --out assets/blender/mike3d_test.mp4 \
+  --seconds 6 --width 720 --height 1280
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 HOODIE = (1.0, 0.80, 0.16)
 
@@ -23,7 +25,7 @@ def parse_args(argv):
     args = {
         "out": "assets/blender/mike3d_test.mp4",
         "fps": 24,
-        "seconds": 4.0,
+        "seconds": 6.0,
         "width": 720,
         "height": 1280,
         "glb": "assets/mike/Mike.glb",
@@ -137,41 +139,48 @@ def import_mike_glb(glb_path: Path):
     if not after:
         raise SystemExit("GLB import produced no objects")
 
+    # Report capability (this Tripo export is static)
+    has_armature = any(o.type == "ARMATURE" for o in after)
+    mesh_objs = [o for o in after if o.type == "MESH"]
+    morph_count = 0
+    for o in mesh_objs:
+        if o.data and getattr(o.data, "shape_keys", None):
+            kb = o.data.shape_keys
+            if kb and kb.key_blocks:
+                morph_count += max(0, len(kb.key_blocks) - 1)
+    print(
+        "MIKE_CAPABILITY",
+        "armature=" + str(has_armature),
+        "meshes=" + str(len(mesh_objs)),
+        "shape_keys=" + str(morph_count),
+        "animations=" + str(len(bpy.data.actions)),
+    )
+
     bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.9, 0))
     root = bpy.context.active_object
     root.name = "MikeRoot"
 
-    meshes = [o for o in after if o.type == "MESH"] or after
-
-    min_c = [1e9, 1e9, 1e9]
-    max_c = [-1e9, -1e9, -1e9]
+    meshes = mesh_objs or after
+    min_c = Vector((1e9, 1e9, 1e9))
+    max_c = Vector((-1e9, -1e9, -1e9))
     for o in meshes:
         for corner in o.bound_box:
-            w = o.matrix_world @ __import__("mathutils").Vector(corner)
-            for i in range(3):
-                min_c[i] = min(min_c[i], w[i])
-                max_c[i] = max(max_c[i], w[i])
+            w = o.matrix_world @ Vector(corner)
+            min_c = Vector((min(min_c.x, w.x), min(min_c.y, w.y), min(min_c.z, w.z)))
+            max_c = Vector((max(max_c.x, w.x), max(max_c.y, w.y), max(max_c.z, w.z)))
 
-    height = max(0.01, max_c[2] - min_c[2])
+    height = max(0.01, max_c.z - min_c.z)
     scale = 1.75 / height
 
     for o in after:
         o.parent = root
 
     root.scale = (scale, scale, scale)
-    root.location = (0, 0.9, -min_c[2] * scale)
+    root.location = (0, 0.9, -min_c.z * scale)
     root.rotation_euler = (0, 0, 0)
 
-    head = None
-    for o in meshes:
-        if "head" in o.name.lower():
-            head = o
-            break
-    if head is None and meshes:
-        head = meshes[0]
-
-    print("MIKE_GLB", glb_path, "objs", len(after), "height", round(height, 3), "scale", round(scale, 3))
-    return root, head
+    print("MIKE_GLB", glb_path, "height", round(height, 3), "scale", round(scale, 3))
+    return root, has_armature, morph_count
 
 
 def setup_camera_lights():
@@ -205,24 +214,34 @@ def setup_camera_lights():
     world.color = (0.58, 0.70, 0.80)
 
 
-def animate(root, head, fps, total_frames):
+def animate_static_mesh(root, fps, total_frames):
+    """Best-effort motion without bones: walk-in-place + present lean."""
+    base_z = root.location.z
+    base_y = root.location.y
     for f in range(1, total_frames + 1):
         t = f / float(fps)
-        root.rotation_euler = (0, 0, math.radians(3.0 * math.sin(t * 1.4)))
+        # Walk cycle phase (~2 steps/sec)
+        phase = t * 2.0 * math.pi * 1.0
+        # Vertical bob (walk)
+        bob = 0.025 * abs(math.sin(phase))
+        # Side lean + slight yaw (weight shift)
+        lean = math.radians(4.0 * math.sin(phase))
+        yaw = math.radians(6.0 * math.sin(phase * 0.5))
+        # Present: lean toward camera a bit on the beat
+        pitch = math.radians(3.0 + 2.0 * math.sin(t * 1.2))
+        # Tiny forward/back shift
+        y_shift = 0.02 * math.sin(phase)
+
+        root.location = (0.0, base_y + y_shift, base_z + bob)
+        root.rotation_euler = (pitch, lean, yaw)
+        root.keyframe_insert(data_path="location", frame=f)
         root.keyframe_insert(data_path="rotation_euler", frame=f)
-        base_z = root.location.z
-        root.location.z = base_z + 0.012 * math.sin(t * 2.4)
-        root.keyframe_insert(data_path="location", frame=f, index=2)
-        if head is not None:
-            try:
-                head.rotation_euler = (
-                    math.radians(2 * math.sin(t * 1.2)),
-                    0,
-                    math.radians(4 * math.sin(t * 1.5)),
-                )
-                head.keyframe_insert(data_path="rotation_euler", frame=f)
-            except Exception:
-                pass
+
+    # Smooth interpolation
+    if root.animation_data and root.animation_data.action:
+        for fc in root.animation_data.action.fcurves:
+            for kp in fc.keyframe_points:
+                kp.interpolation = "BEZIER"
 
 
 def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
@@ -282,7 +301,7 @@ def frames_to_mp4(frame_dir: Path, out: Path, fps: int) -> None:
 def main():
     args = parse_args(sys.argv)
     fps = int(args.get("fps", 24))
-    seconds = min(max(float(args["seconds"]), 1.0), 8.0)
+    seconds = min(max(float(args["seconds"]), 1.0), 12.0)
     total_frames = max(fps, int(round(seconds * fps)))
     width = int(args.get("width", 720))
     height = int(args.get("height", 1280))
@@ -290,9 +309,9 @@ def main():
 
     clear_scene()
     build_room()
-    root, head = import_mike_glb(glb)
+    root, has_arm, morphs = import_mike_glb(glb)
     setup_camera_lights()
-    animate(root, head, fps, total_frames)
+    animate_static_mesh(root, fps, total_frames)
 
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -311,6 +330,10 @@ def main():
     if not (out.exists() and out.stat().st_size > 0):
         raise SystemExit("No video written")
     print("OK", out, out.stat().st_size)
+    print(
+        "NOTE: wave/blink/mouth need armature+shape keys. "
+        "Current GLB is static mesh; used walk-in-place root motion only."
+    )
 
 
 if __name__ == "__main__":
