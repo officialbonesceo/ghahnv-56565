@@ -1,10 +1,10 @@
 """
-Blender 3D Mike v3 — connected cartoon figure matching 2D Mike colors.
-Yellow hoodie, brown skin, navy pants. Classroom set.
-Blender 5 compatible: PNG frames + ffmpeg (no FFMPEG file_format).
+Blender 3D Mike — load Tripo Mike.glb + procedural classroom.
+Blender 5 safe: PNG frames + ffmpeg.
 
-blender -b -noaudio -P blender_mike3d.py -- \
-  --out assets/blender/mike3d_test.mp4 --seconds 4 --width 720 --height 1280
+blender -b -noaudio -P scripts/blender_mike3d.py -- \
+  --out assets/blender/mike3d_test.mp4 --seconds 4 --width 720 --height 1280 \
+  --glb assets/mike/Mike.glb
 """
 from __future__ import annotations
 
@@ -16,19 +16,7 @@ from pathlib import Path
 
 import bpy
 
-# Match write_mezi_assets.py
 HOODIE = (1.0, 0.80, 0.16)
-HOODIE_D = (0.90, 0.66, 0.08)
-HOODIE_L = (1.0, 0.90, 0.45)
-SKIN = (0.77, 0.55, 0.37)
-SKIN_D = (0.64, 0.42, 0.27)
-HAIR = (0.10, 0.07, 0.05)
-PANTS = (0.11, 0.16, 0.28)
-SHOE = (0.10, 0.10, 0.12)
-SHOE_W = (0.95, 0.95, 0.97)
-BADGE_C = (0.14, 0.20, 0.32)
-WHITE = (0.98, 0.98, 0.99)
-MOUTH_C = (0.55, 0.18, 0.20)
 
 
 def parse_args(argv):
@@ -38,6 +26,7 @@ def parse_args(argv):
         "seconds": 4.0,
         "width": 720,
         "height": 1280,
+        "glb": "assets/mike/Mike.glb",
     }
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
@@ -93,10 +82,6 @@ def mesh(op, **kw):
     return obj
 
 
-def parent(child, parent_obj):
-    child.parent = parent_obj
-
-
 def build_room():
     floor = mesh("primitive_plane_add", size=16, location=(0, 0, 0))
     floor.data.materials.append(mat("Floor", (0.40, 0.26, 0.15)))
@@ -129,213 +114,86 @@ def build_room():
     board = mesh("primitive_cube_add", size=1, location=(0, 3.78, 2.6))
     board.scale = (3.5, 0.05, 1.7)
     board.data.materials.append(mat("Board", (0.15, 0.40, 0.28)))
-    for i, z in enumerate((3.0, 2.6, 2.2)):
-        line = mesh("primitive_cube_add", size=1, location=(0, 3.72, z))
-        line.scale = (2.8, 0.01, 0.012)
-        line.data.materials.append(mat(f"Chalk{i}", (0.88, 0.92, 0.88), emit=0.1))
 
-    desk = mesh("primitive_cube_add", size=1, location=(0, -1.1, 0.55))
+    desk = mesh("primitive_cube_add", size=1, location=(0, -1.0, 0.55))
     desk.scale = (2.0, 0.7, 0.06)
     desk.data.materials.append(mat("Desk", (0.48, 0.32, 0.18)))
     for x in (-0.9, 0.9):
-        for y in (-1.3, -0.9):
+        for y in (-1.2, -0.8):
             leg = mesh("primitive_cylinder_add", radius=0.04, depth=0.55, location=(x, y, 0.27))
             leg.data.materials.append(mat("DLeg", (0.25, 0.16, 0.1)))
 
-    for i, c in enumerate([(0.9, 0.3, 0.2), (0.2, 0.45, 0.9), (0.95, 0.75, 0.2)]):
-        b = mesh("primitive_cube_add", size=1, location=(0.7, -1.2, 0.65 + i * 0.06))
-        b.scale = (0.32, 0.25, 0.035)
-        b.rotation_euler = (0, 0, math.radians(6 * i))
-        b.data.materials.append(mat(f"Book{i}", c))
-
-    rug = mesh("primitive_cylinder_add", radius=1.0, depth=0.025, location=(0, 1.15, 0.02))
+    rug = mesh("primitive_cylinder_add", radius=1.0, depth=0.025, location=(0, 0.9, 0.02))
     rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.42)))
 
-    win = mesh("primitive_cube_add", size=1, location=(6.6, 1.5, 2.5))
-    win.scale = (0.06, 1.5, 1.2)
-    win.data.materials.append(mat("Win", (0.7, 0.88, 1.0), emit=0.5))
 
+def import_mike_glb(glb_path: Path):
+    if not glb_path.exists():
+        raise SystemExit(f"Missing GLB: {glb_path}")
 
-def build_mike():
-    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 1.2, 0))
+    before = set(bpy.data.objects.keys())
+    bpy.ops.import_scene.gltf(filepath=str(glb_path))
+    after = [o for o in bpy.data.objects if o.name not in before]
+    if not after:
+        raise SystemExit("GLB import produced no objects")
+
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.9, 0))
     root = bpy.context.active_object
     root.name = "MikeRoot"
 
-    for side, x in (("L", -0.14), ("R", 0.14)):
-        thigh = mesh("primitive_cylinder_add", radius=0.11, depth=0.5, location=(x, 0, 0.55))
-        thigh.data.materials.append(mat(f"Pants{side}", PANTS))
-        parent(thigh, root)
+    meshes = [o for o in after if o.type == "MESH"] or after
 
-        shin = mesh("primitive_cylinder_add", radius=0.09, depth=0.42, location=(x, 0, 0.18))
-        shin.data.materials.append(mat(f"Shin{side}", PANTS))
-        parent(shin, root)
+    min_c = [1e9, 1e9, 1e9]
+    max_c = [-1e9, -1e9, -1e9]
+    for o in meshes:
+        for corner in o.bound_box:
+            w = o.matrix_world @ __import__("mathutils").Vector(corner)
+            for i in range(3):
+                min_c[i] = min(min_c[i], w[i])
+                max_c[i] = max(max_c[i], w[i])
 
-        shoe = mesh("primitive_cube_add", size=1, location=(x, -0.06, 0.04))
-        shoe.scale = (0.13, 0.22, 0.07)
-        shoe.data.materials.append(mat(f"Shoe{side}", SHOE))
-        parent(shoe, root)
+    height = max(0.01, max_c[2] - min_c[2])
+    scale = 1.75 / height
 
-        sole = mesh("primitive_cube_add", size=1, location=(x, -0.07, 0.005))
-        sole.scale = (0.135, 0.24, 0.015)
-        sole.data.materials.append(mat(f"Sole{side}", SHOE_W))
-        parent(sole, root)
+    for o in after:
+        o.parent = root
 
-    hips = mesh("primitive_cube_add", size=1, location=(0, 0, 0.85))
-    hips.scale = (0.34, 0.18, 0.12)
-    hips.data.materials.append(mat("Hips", PANTS))
-    parent(hips, root)
+    root.scale = (scale, scale, scale)
+    root.location = (0, 0.9, -min_c[2] * scale)
+    root.rotation_euler = (0, 0, 0)
 
-    torso = mesh("primitive_cube_add", size=1, location=(0, 0, 1.35))
-    torso.name = "Torso"
-    torso.scale = (0.38, 0.22, 0.42)
-    torso.data.materials.append(mat("Hoodie", HOODIE))
-    parent(torso, root)
+    head = None
+    for o in meshes:
+        if "head" in o.name.lower():
+            head = o
+            break
+    if head is None and meshes:
+        head = meshes[0]
 
-    pocket = mesh("primitive_cube_add", size=1, location=(0, -0.2, 1.25))
-    pocket.scale = (0.2, 0.03, 0.18)
-    pocket.data.materials.append(mat("Pocket", HOODIE_D))
-    parent(pocket, root)
-
-    for x in (-0.07, 0.07):
-        s = mesh("primitive_cylinder_add", radius=0.012, depth=0.22, location=(x, -0.22, 1.2))
-        s.data.materials.append(mat("String", WHITE))
-        parent(s, root)
-        tip = mesh("primitive_uv_sphere_add", radius=0.018, location=(x, -0.22, 1.08))
-        tip.data.materials.append(mat("STip", WHITE))
-        parent(tip, root)
-
-    hood = mesh("primitive_uv_sphere_add", radius=0.26, location=(0, 0.12, 1.78))
-    hood.scale = (0.9, 0.55, 0.5)
-    hood.data.materials.append(mat("Hood", HOODIE_D))
-    parent(hood, root)
-
-    badge = mesh("primitive_cube_add", size=1, location=(0.2, -0.2, 1.48))
-    badge.scale = (0.07, 0.025, 0.055)
-    badge.data.materials.append(mat("Badge", BADGE_C))
-    parent(badge, root)
-    bw = mesh("primitive_cube_add", size=1, location=(0.2, -0.22, 1.48))
-    bw.scale = (0.05, 0.015, 0.04)
-    bw.data.materials.append(mat("BadgeW", WHITE))
-    parent(bw, root)
-
-    for side, xsign in (("L", -1), ("R", 1)):
-        sx = 0.38 * xsign
-        ua = mesh(
-            "primitive_cylinder_add",
-            radius=0.085,
-            depth=0.38,
-            location=(sx + 0.12 * xsign, 0, 1.42),
-        )
-        ua.rotation_euler = (0, math.radians(25 * xsign), math.radians(-15 * xsign))
-        ua.data.materials.append(mat(f"UA{side}", HOODIE))
-        parent(ua, root)
-
-        ex = sx + 0.28 * xsign
-        ez = 1.15
-        la = mesh(
-            "primitive_cylinder_add",
-            radius=0.075,
-            depth=0.36,
-            location=(ex, -0.05, ez),
-        )
-        la.rotation_euler = (math.radians(20), math.radians(10 * xsign), 0)
-        la.data.materials.append(mat(f"LA{side}", HOODIE))
-        parent(la, root)
-
-        hx = ex + 0.05 * xsign
-        hand = mesh("primitive_uv_sphere_add", radius=0.085, location=(hx, -0.08, 0.92))
-        hand.scale = (0.9, 0.75, 1.05)
-        hand.data.materials.append(mat(f"Hand{side}", SKIN))
-        parent(hand, root)
-
-    neck = mesh("primitive_cylinder_add", radius=0.09, depth=0.14, location=(0, 0, 1.78))
-    neck.data.materials.append(mat("Neck", SKIN))
-    parent(neck, root)
-
-    head = mesh("primitive_uv_sphere_add", radius=0.30, location=(0, 0, 2.12))
-    head.name = "MikeHead"
-    head.scale = (0.92, 0.95, 1.02)
-    head.data.materials.append(mat("Head", SKIN))
-    parent(head, root)
-
-    for x in (-0.28, 0.28):
-        ear = mesh("primitive_uv_sphere_add", radius=0.065, location=(x, 0, 2.1))
-        ear.scale = (0.45, 0.7, 0.95)
-        ear.data.materials.append(mat("Ear", SKIN_D))
-        parent(ear, root)
-
-    hair = mesh("primitive_uv_sphere_add", radius=0.32, location=(0, 0.05, 2.28))
-    hair.scale = (0.95, 1.05, 0.7)
-    hair.data.materials.append(mat("Hair", HAIR))
-    parent(hair, root)
-    for x, yo, zo in ((-0.1, -0.15, 0.05), (0.05, -0.18, 0.08), (0.14, -0.12, 0.02)):
-        peak = mesh("primitive_uv_sphere_add", radius=0.09, location=(x, yo, 2.35 + zo))
-        peak.scale = (0.7, 0.85, 1.0)
-        peak.data.materials.append(mat("Peak", HAIR))
-        parent(peak, root)
-
-    for x in (-0.09, 0.09):
-        w = mesh("primitive_uv_sphere_add", radius=0.065, location=(x, -0.26, 2.14))
-        w.scale = (0.85, 0.5, 1.0)
-        w.data.materials.append(mat("EyeW", WHITE))
-        parent(w, root)
-        iris = mesh("primitive_uv_sphere_add", radius=0.038, location=(x, -0.30, 2.14))
-        iris.data.materials.append(mat("Iris", (0.16, 0.10, 0.06)))
-        parent(iris, root)
-        pupil = mesh("primitive_uv_sphere_add", radius=0.02, location=(x, -0.32, 2.14))
-        pupil.data.materials.append(mat("Pupil", (0.04, 0.03, 0.03)))
-        parent(pupil, root)
-        shine = mesh("primitive_uv_sphere_add", radius=0.01, location=(x - 0.012, -0.33, 2.16))
-        shine.data.materials.append(mat("Shine", WHITE, emit=0.3))
-        parent(shine, root)
-
-    for x in (-0.09, 0.09):
-        brow = mesh("primitive_cube_add", size=1, location=(x, -0.28, 2.26))
-        brow.scale = (0.065, 0.015, 0.012)
-        brow.rotation_euler = (0, 0, math.radians(10 if x > 0 else -10))
-        brow.data.materials.append(mat("Brow", HAIR))
-        parent(brow, root)
-
-    nose = mesh("primitive_uv_sphere_add", radius=0.035, location=(0, -0.28, 2.02))
-    nose.scale = (0.7, 0.85, 1.0)
-    nose.data.materials.append(mat("Nose", SKIN_D))
-    parent(nose, root)
-
-    mouth = mesh("primitive_cube_add", size=1, location=(0, -0.28, 1.9))
-    mouth.name = "MikeMouth"
-    mouth.scale = (0.08, 0.025, 0.022)
-    mouth.data.materials.append(mat("Mouth", MOUTH_C))
-    parent(mouth, root)
-
-    for x in (-0.16, 0.16):
-        cheek = mesh("primitive_uv_sphere_add", radius=0.045, location=(x, -0.22, 1.98))
-        cheek.scale = (1.0, 0.5, 0.8)
-        cheek.data.materials.append(mat("Cheek", (0.85, 0.48, 0.40), emit=0.08))
-        parent(cheek, root)
-
-    return root, head, mouth
+    print("MIKE_GLB", glb_path, "objs", len(after), "height", round(height, 3), "scale", round(scale, 3))
+    return root, head
 
 
 def setup_camera_lights():
     bpy.ops.object.light_add(type="SUN", location=(3, -4, 7))
     sun = bpy.context.active_object
-    sun.data.energy = 2.6
+    sun.data.energy = 2.8
     sun.rotation_euler = (math.radians(50), math.radians(12), 0)
 
     bpy.ops.object.light_add(type="AREA", location=(-2.5, -2, 3.5))
     fill = bpy.context.active_object
-    fill.data.energy = 55
+    fill.data.energy = 60
     fill.data.size = 3
 
     bpy.ops.object.light_add(type="AREA", location=(4, 1, 3))
     rim = bpy.context.active_object
-    rim.data.energy = 35
+    rim.data.energy = 40
     rim.data.size = 2
 
-    bpy.ops.object.camera_add(location=(0, -4.0, 1.55))
+    bpy.ops.object.camera_add(location=(0, -3.6, 1.35))
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(88), 0, 0)
-    cam.data.lens = 32
+    cam.rotation_euler = (math.radians(86), 0, 0)
+    cam.data.lens = 35
     bpy.context.scene.camera = cam
 
     world = bpy.data.worlds.new("World")
@@ -347,34 +205,38 @@ def setup_camera_lights():
     world.color = (0.58, 0.70, 0.80)
 
 
-def animate(root, head, mouth, fps, total_frames):
+def animate(root, head, fps, total_frames):
     for f in range(1, total_frames + 1):
         t = f / float(fps)
-        root.rotation_euler = (0, 0, math.radians(2.5 * math.sin(t * 1.5)))
+        root.rotation_euler = (0, 0, math.radians(3.0 * math.sin(t * 1.4)))
         root.keyframe_insert(data_path="rotation_euler", frame=f)
-        head.location.z = 2.12 + 0.018 * math.sin(t * 2.6)
-        head.rotation_euler = (
-            math.radians(2 * math.sin(t * 1.3)),
-            0,
-            math.radians(4 * math.sin(t * 1.6)),
-        )
-        head.keyframe_insert(data_path="location", frame=f, index=2)
-        head.keyframe_insert(data_path="rotation_euler", frame=f)
-        open_z = 0.018 + 0.03 * abs(math.sin(t * 8.0))
-        mouth.scale = (0.08, 0.025, open_z)
-        mouth.keyframe_insert(data_path="scale", frame=f)
+        base_z = root.location.z
+        root.location.z = base_z + 0.012 * math.sin(t * 2.4)
+        root.keyframe_insert(data_path="location", frame=f, index=2)
+        if head is not None:
+            try:
+                head.rotation_euler = (
+                    math.radians(2 * math.sin(t * 1.2)),
+                    0,
+                    math.radians(4 * math.sin(t * 1.5)),
+                )
+                head.keyframe_insert(data_path="rotation_euler", frame=f)
+            except Exception:
+                pass
 
 
 def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
-    """Blender 5: image_settings only supports still formats (PNG etc)."""
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_WORKBENCH"
     try:
         scene.display.shading.light = "STUDIO"
-        scene.display.shading.color_type = "MATERIAL"
+        scene.display.shading.color_type = "TEXTURE"
         scene.display.shading.show_shadows = True
     except Exception:
-        pass
+        try:
+            scene.display.shading.color_type = "MATERIAL"
+        except Exception:
+            pass
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
@@ -387,36 +249,6 @@ def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
 
 
 def frames_to_mp4(frame_dir: Path, out: Path, fps: int) -> None:
-    pattern = str(frame_dir / "frame_%04d.png")
-    # Blender uses 4-digit frame numbers by default in filepath
-    # Actually default is frame_0001.png when filepath ends with frame_
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-framerate",
-        str(fps),
-        "-i",
-        pattern,
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-crf",
-        "20",
-        "-movflags",
-        "+faststart",
-        str(out),
-    ]
-    # Try 4-digit then 5-digit patterns
-    for pat in ("frame_%04d.png", "frame_%05d.png", "frame_%d.png"):
-        cmd[5] = str(frame_dir / pat)
-        try:
-            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if out.exists() and out.stat().st_size > 0:
-                return
-        except Exception:
-            continue
-    # Fallback: glob and concat demuxer
     frames = sorted(frame_dir.glob("frame_*.png"))
     if not frames:
         raise SystemExit(f"No frames in {frame_dir}")
@@ -440,6 +272,8 @@ def frames_to_mp4(frame_dir: Path, out: Path, fps: int) -> None:
             "yuv420p",
             "-crf",
             "20",
+            "-movflags",
+            "+faststart",
             str(out),
         ]
     )
@@ -452,12 +286,13 @@ def main():
     total_frames = max(fps, int(round(seconds * fps)))
     width = int(args.get("width", 720))
     height = int(args.get("height", 1280))
+    glb = Path(args["glb"]).resolve()
 
     clear_scene()
     build_room()
-    root, head, mouth = build_mike()
+    root, head = import_mike_glb(glb)
     setup_camera_lights()
-    animate(root, head, mouth, fps, total_frames)
+    animate(root, head, fps, total_frames)
 
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -465,7 +300,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         frame_dir = Path(tmp)
         setup_render_png(frame_dir, fps, total_frames, width, height)
-        print(f"Render Mike3D v3 {total_frames}f {width}x{height} PNG -> {frame_dir}")
+        print(f"Render Mike3D GLB {total_frames}f {width}x{height}")
         bpy.ops.render.render(animation=True)
         n = len(list(frame_dir.glob("frame_*.png")))
         print(f"frames={n}")
