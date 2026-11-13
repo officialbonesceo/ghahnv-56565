@@ -6,6 +6,8 @@ on:
     paths:
       - "data/force_blender3d.tick"
       - "scripts/blender_mike3d.py"
+      - "scripts/assemble_mike_glb.py"
+      - "assets/mike/**"
       - ".github/workflows/blender-mike3d.yml"
 
 permissions:
@@ -14,21 +16,26 @@ permissions:
 jobs:
   render3d:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: install-blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender xvfb ffmpeg || true
+          sudo apt-get install -y blender xvfb ffmpeg python3 || true
           blender --version || true
 
-      - name: render-seeded-mike3d
+      - name: assemble-mike-glb
+        run: |
+          python3 scripts/assemble_mike_glb.py
+          ls -lh assets/mike/Mike.glb
+
+      - name: render-glb-mike3d
         run: |
           mkdir -p assets/blender
-          # Seeded short vertical test: 3D Mike + classroom, no AI, no upload
           xvfb-run -a blender -b -noaudio -P scripts/blender_mike3d.py -- \
+            --glb assets/mike/Mike.glb \
             --out assets/blender/mike3d_test.mp4 \
             --seconds 4 \
             --width 720 \
