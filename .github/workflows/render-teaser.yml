@@ -1,14 +1,10 @@
 name: mike-teaser
 
+# PAUSED — teasers stopped per request. Manual only via workflow_dispatch.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/trigger-teaser"
-  schedule:
-    # 1 teaser / day — avoid spam
-    - cron: "15 15 * * *"
+  # schedule disabled
+  # push paths disabled so normal commits do not fire teasers
 
 permissions:
   contents: write
@@ -19,6 +15,7 @@ env:
 
 jobs:
   teaser:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -29,6 +26,7 @@ jobs:
           echo "event=${{ github.event_name }}"
           date -u
           echo "VOICE=$VOICE RATE=$RATE"
+          echo "TEASER_PAUSED=true (manual only)"
 
       - uses: actions/setup-python@v5
         with:

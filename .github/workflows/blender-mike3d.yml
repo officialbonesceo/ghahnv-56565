@@ -30,6 +30,21 @@ jobs:
         run: |
           python3 scripts/assemble_mike_glb.py
           ls -lh assets/mike/Mike.glb
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct, json
+          p = Path("assets/mike/Mike.glb")
+          data = p.read_bytes()
+          assert data[:4] == b"glTF"
+          offset = 12
+          clen, ctype = struct.unpack_from("<I4s", data, offset)
+          js = json.loads(data[offset+8:offset+8+clen].decode().rstrip(" \0"))
+          print("skins", len(js.get("skins", [])))
+          print("nodes", len(js.get("nodes", [])))
+          print("anims", len(js.get("animations", [])))
+          if js.get("skins"):
+              print("joints", len(js["skins"][0].get("joints", [])))
+          PY
 
       - name: render-glb-mike3d
         run: |
@@ -37,7 +52,7 @@ jobs:
           xvfb-run -a blender -b -noaudio -P scripts/blender_mike3d.py -- \
             --glb assets/mike/Mike.glb \
             --out assets/blender/mike3d_test.mp4 \
-            --seconds 4 \
+            --seconds 6 \
             --width 720 \
             --height 1280
           ls -lh assets/blender/mike3d_test.mp4

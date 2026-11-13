@@ -3,7 +3,9 @@ name: qxil-job
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 10 * * *"
+    # 2 normal teaching videos per day (WAT ≈ UTC+1 → 09:15 & 17:15 WAT)
+    - cron: "15 8 * * *"
+    - cron: "15 16 * * *"
   push:
     paths:
       - "data/force_run.tick"
