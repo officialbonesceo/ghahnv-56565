@@ -4,5 +4,11 @@
     "question": "You receive an SMS from your bank asking you to click a link and update your BVN immediately or your account will be blocked. What is the safest action to take?",
     "title": "Data Privacy Dilemma",
     "answer": "B"
+  },
+  {
+    "fp": "72e6a7e00ac6cbca",
+    "question": "Chinedu wants to connect to a free public Wi-Fi network at a Lagos motor park to check his WAEC results. Which activity poses the highest security risk on this unsecured network?",
+    "title": "NECO Data Processing Safety Check",
+    "answer": "B"
   }
 ]
