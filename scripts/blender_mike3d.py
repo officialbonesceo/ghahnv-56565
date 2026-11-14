@@ -1,8 +1,6 @@
 """
-Blender 3D Mike — Mixamo-rigged GLB, close-up teaching framing.
-- Camera: medium shot (no 3-band desk/wall crop)
-- Body: idle present + clear raised-arm wave (no broken walk)
-- Face: stronger procedural mouth + blink shape keys
+Blender 3D Mike — Mixamo-rigged GLB, close teaching shot.
+Cleaner poses: real raised-arm wave, calm head, less rubber stretch.
 """
 from __future__ import annotations
 
@@ -14,8 +12,6 @@ from pathlib import Path
 
 import bpy
 from mathutils import Euler, Vector
-
-HOODIE = (1.0, 0.80, 0.16)
 
 
 def parse_args(argv):
@@ -92,7 +88,6 @@ def mesh(op, **kw):
 
 
 def build_room():
-    """Classroom behind Mike — no foreground desk (was causing 3-band crop)."""
     floor = mesh("primitive_plane_add", size=16, location=(0, 0, 0))
     floor.data.materials.append(mat("Floor", (0.42, 0.28, 0.16)))
 
@@ -121,7 +116,6 @@ def build_room():
     board.scale = (2.95, 0.04, 1.5)
     board.data.materials.append(mat("Board", (0.14, 0.38, 0.26)))
 
-    # Thin floor stripe only — no big desk in camera
     rug = mesh("primitive_cylinder_add", radius=0.9, depth=0.02, location=(0, 0.5, 0.015))
     rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.40)))
 
@@ -185,7 +179,6 @@ def import_mike_glb(glb_path: Path):
             max_c = Vector((max(max_c.x, w.x), max(max_c.y, w.y), max(max_c.z, w.z)))
 
     height = max(0.01, max_c.z - min_c.z)
-    # Slightly larger on screen
     scale = 1.95 / height
 
     if arm and arm.parent is None:
@@ -198,12 +191,20 @@ def import_mike_glb(glb_path: Path):
     root.location = (0, 0.55, -min_c.z * scale)
     root.rotation_euler = (0, 0, 0)
 
+    # Soften extreme mesh stretch from skinning
+    if arm:
+        for mod in list(getattr(body, "modifiers", []) if body else []):
+            if mod.type == "ARMATURE":
+                try:
+                    mod.use_deform_preserve_volume = True
+                except Exception:
+                    pass
+
     print("MIKE_GLB height", round(height, 3), "scale", round(scale, 3))
     return root, arm, body
 
 
 def add_facial_shape_keys(body):
-    """Stronger approximate mouth + blink on head verts."""
     if body is None or body.type != "MESH":
         return
 
@@ -222,32 +223,27 @@ def add_facial_shape_keys(body):
     xmin, xmax = min(xs), max(xs)
     zspan = max(1e-6, zmax - zmin)
     yspan = max(1e-6, ymax - ymin)
-    xspan = max(1e-6, xmax - xmin)
 
     mouth = body.shape_key_add(name="mouth_open", from_mix=False)
     blink = body.shape_key_add(name="blink", from_mix=False)
 
-    # Stronger displacements so they read on camera
     for i, _v in enumerate(me.vertices):
         c = coords[i]
         zn = (c.z - zmin) / zspan
         yn = (c.y - ymin) / yspan
-        xn = (c.x - xmin) / xspan
+        xn = (c.x - xmin) / max(1e-6, xmax - xmin)
 
-        # Mouth — wider band, bigger open
         if 0.70 < zn < 0.92 and 0.28 < xn < 0.72 and yn > 0.40:
             w = (1.0 - abs(xn - 0.5) * 1.6) * max(0.0, min(1.0, (0.92 - zn) / 0.20))
-            w = max(0.0, w)
-            mouth.data[i].co.z -= 0.045 * w * zspan
-            mouth.data[i].co.y -= 0.018 * w * yspan
+            mouth.data[i].co.z -= 0.040 * w * zspan
+            mouth.data[i].co.y -= 0.015 * w * yspan
 
-        # Blink — both eye regions, stronger lid drop
         if 0.80 < zn < 0.94 and yn > 0.45 and (xn < 0.45 or xn > 0.55):
             w = max(0.0, 1.0 - abs(zn - 0.87) / 0.08)
-            blink.data[i].co.z -= 0.028 * w * zspan
-            blink.data[i].co.y -= 0.012 * w * yspan
+            blink.data[i].co.z -= 0.025 * w * zspan
+            blink.data[i].co.y -= 0.010 * w * yspan
 
-    print("FACIAL_SHAPEKEYS strong mouth_open+blink on", body.name)
+    print("FACIAL_SHAPEKEYS on", body.name)
 
 
 def key_rot(pb, frame, rx=0.0, ry=0.0, rz=0.0):
@@ -256,8 +252,18 @@ def key_rot(pb, frame, rx=0.0, ry=0.0, rz=0.0):
     pb.keyframe_insert(data_path="rotation_euler", frame=frame)
 
 
+def smooth_action(arm):
+    if not arm.animation_data or not arm.animation_data.action:
+        return
+    for fc in arm.animation_data.action.fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = "BEZIER"
+            kp.handle_left_type = "AUTO_CLAMPED"
+            kp.handle_right_type = "AUTO_CLAMPED"
+
+
 def animate_rig(arm, body, fps, total_frames):
-    """Idle + exaggerated wave (no walk). Head talk + face keys."""
+    """Calm idle + clear wave. Minimal head motion. No rubber stretch poses."""
     if arm is None:
         print("NO_ARMATURE")
         return
@@ -289,76 +295,83 @@ def animate_rig(arm, body, fps, total_frames):
     except Exception:
         pass
 
-    for f in range(1, total_frames + 1):
-        t = f / float(fps)
-        # Wave cycle: arm up and side-to-side clearly
-        wave = 0.5 + 0.5 * math.sin(t * 2.2 * math.pi)  # ~1.1 Hz
+    # Key only a few poses (not every frame) → smoother, less rubber jitter
+    # Wave pattern: rest → raise → side flap → raise → rest
+    # frames at 0%, 20%, 40%, 60%, 80%, 100%
+    keys = [
+        # t_frac, wave_phase 0=down 1=up/side
+        (0.00, 0.0),
+        (0.18, 1.0),
+        (0.35, 0.55),
+        (0.52, 1.0),
+        (0.70, 0.55),
+        (0.88, 1.0),
+        (1.00, 0.2),
+    ]
 
-        # Soft idle (no walk)
+    for t_frac, wave in keys:
+        f = max(1, int(round(t_frac * (total_frames - 1))) + 1)
+        f = min(total_frames, f)
+
+        # Body: almost still (stops rubber sway)
         if hips:
-            key_rot(hips, f, rx=2, ry=3 * math.sin(t * 1.2), rz=2 * math.sin(t * 0.9))
+            key_rot(hips, f, rx=1, ry=0, rz=0)
         if spine:
-            key_rot(spine, f, rx=6 + 2 * math.sin(t * 1.4), ry=0, rz=0)
+            key_rot(spine, f, rx=4, ry=0, rz=0)
         if spine1:
-            key_rot(spine1, f, rx=3 * math.sin(t * 1.1), ry=0, rz=0)
-
-        # Legs neutral slight bend (standing)
+            key_rot(spine1, f, rx=2, ry=0, rz=0)
         if luleg:
-            key_rot(luleg, f, rx=4, ry=0, rz=0)
+            key_rot(luleg, f, rx=3, ry=0, rz=0)
         if ruleg:
-            key_rot(ruleg, f, rx=4, ry=0, rz=0)
+            key_rot(ruleg, f, rx=3, ry=0, rz=0)
 
-        # LEFT ARM — big clear wave (Mixamo: raise + flap)
-        # Try multiple axis combinations exaggerated so motion is obvious
+        # Head/neck: tiny nod only (no shake)
+        if neck:
+            key_rot(neck, f, rx=2, ry=0, rz=0)
+        if head:
+            key_rot(head, f, rx=3 + 2 * wave, ry=0, rz=0)
+
+        # LEFT ARM — clear wave: raise high, forearm flaps
         if larm:
-            # Raise arm high + swing
+            # down → up beside head
             key_rot(
                 larm,
                 f,
-                rx=-80 - 25 * wave,
-                ry=-10,
-                rz=55 + 40 * wave,
+                rx=-35 - 55 * wave,
+                ry=-5,
+                rz=25 + 55 * wave,
             )
         if lfore:
-            key_rot(lfore, f, rx=0, ry=0, rz=-35 - 50 * wave)
+            key_rot(lfore, f, rx=0, ry=0, rz=-10 - 55 * wave)
         if lhand:
-            key_rot(lhand, f, rx=0, ry=15 * wave, rz=-20 * wave)
+            key_rot(lhand, f, rx=0, ry=10 * wave, rz=-15 * wave)
 
-        # Right arm relaxed open gesture
+        # RIGHT ARM — stable open present (almost static)
         if rarm:
-            key_rot(rarm, f, rx=-25, ry=15, rz=-35)
+            key_rot(rarm, f, rx=-20, ry=12, rz=-30)
         if rfore:
-            key_rot(rfore, f, rx=0, ry=0, rz=20)
-
-        # Head talk
-        talk = 0.5 + 0.5 * math.sin(t * 5.0)
-        if neck:
-            key_rot(neck, f, rx=5 * talk, ry=6 * math.sin(t * 1.8), rz=0)
-        if head:
-            key_rot(head, f, rx=8 * talk, ry=5 * math.sin(t * 2.0), rz=0)
+            key_rot(rfore, f, rx=0, ry=0, rz=15)
 
         # Face
         if body and body.data.shape_keys:
             kb = body.data.shape_keys.key_blocks
             if "mouth_open" in kb:
-                # Very readable open/close
-                kb["mouth_open"].value = 0.25 + 0.75 * max(0.0, math.sin(t * 5.5))
+                kb["mouth_open"].value = 0.2 + 0.55 * wave
                 kb["mouth_open"].keyframe_insert(data_path="value", frame=f)
             if "blink" in kb:
-                # Blink every ~2s, 3 frames closed
-                step = int(t * 12) % 24
-                kb["blink"].value = 1.0 if step in (0, 1, 2) else 0.0
+                # one blink near middle
+                kb["blink"].value = 1.0 if 0.45 < t_frac < 0.52 else 0.0
                 kb["blink"].keyframe_insert(data_path="value", frame=f)
 
+    smooth_action(arm)
     try:
         bpy.ops.object.mode_set(mode="OBJECT")
     except Exception:
         pass
-    print("ANIM_RIG idle+wave+talk+face frames", total_frames)
+    print("ANIM_RIG sparse-keys wave frames", total_frames)
 
 
 def setup_camera_lights():
-    """Close medium shot — character fills frame, even lighting."""
     bpy.ops.object.light_add(type="SUN", location=(2, -3, 6))
     sun = bpy.context.active_object
     sun.data.energy = 3.2
@@ -374,7 +387,6 @@ def setup_camera_lights():
     rim.data.energy = 50
     rim.data.size = 2
 
-    # Front-facing medium shot (chest/head), vertical 9:16
     bpy.ops.object.camera_add(location=(0, -2.05, 1.15))
     cam = bpy.context.active_object
     cam.rotation_euler = (math.radians(88), 0, 0)
