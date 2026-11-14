@@ -1,12 +1,8 @@
 """
-Blender 3D Mike — Tripo Mixamo-rigged GLB + classroom.
-Body: Mixamo bones (walk-in-place, wave, present).
-Face: procedural shape keys (mouth open + blink) driven on a talk cycle.
-No face bones/morphs in the GLB — facial is approximate mesh deformation.
-
-blender -b -noaudio -P scripts/blender_mike3d.py -- \
-  --glb assets/mike/Mike.glb --out assets/blender/mike3d_test.mp4 \
-  --seconds 6 --width 720 --height 1280
+Blender 3D Mike — Mixamo-rigged GLB, close-up teaching framing.
+- Camera: medium shot (no 3-band desk/wall crop)
+- Body: idle present + clear raised-arm wave (no broken walk)
+- Face: stronger procedural mouth + blink shape keys
 """
 from __future__ import annotations
 
@@ -55,7 +51,14 @@ def parse_args(argv):
 def clear_scene():
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    for coll in (bpy.data.meshes, bpy.data.materials, bpy.data.cameras, bpy.data.lights, bpy.data.armatures, bpy.data.actions):
+    for coll in (
+        bpy.data.meshes,
+        bpy.data.materials,
+        bpy.data.cameras,
+        bpy.data.lights,
+        bpy.data.armatures,
+        bpy.data.actions,
+    ):
         for block in list(coll):
             try:
                 coll.remove(block)
@@ -89,52 +92,41 @@ def mesh(op, **kw):
 
 
 def build_room():
+    """Classroom behind Mike — no foreground desk (was causing 3-band crop)."""
     floor = mesh("primitive_plane_add", size=16, location=(0, 0, 0))
-    floor.data.materials.append(mat("Floor", (0.40, 0.26, 0.15)))
+    floor.data.materials.append(mat("Floor", (0.42, 0.28, 0.16)))
 
-    wall = mesh("primitive_cube_add", size=1, location=(0, 4.0, 2.4))
-    wall.scale = (8, 0.15, 2.6)
-    wall.data.materials.append(mat("Wall", (0.80, 0.88, 0.92)))
+    wall = mesh("primitive_cube_add", size=1, location=(0, 3.2, 2.2))
+    wall.scale = (6, 0.12, 2.5)
+    wall.data.materials.append(mat("Wall", (0.82, 0.88, 0.92)))
 
-    stripe = mesh("primitive_cube_add", size=1, location=(0, 3.9, 0.5))
-    stripe.scale = (7.5, 0.05, 0.16)
-    stripe.data.materials.append(mat("Stripe", HOODIE, emit=0.2))
+    for x in (-5.5, 5.5):
+        sw = mesh("primitive_cube_add", size=1, location=(x, 0.8, 2.0))
+        sw.scale = (0.1, 4.0, 2.3)
+        sw.data.materials.append(mat("Side", (0.76, 0.84, 0.90)))
 
-    for x in (-7.0, 7.0):
-        sw = mesh("primitive_cube_add", size=1, location=(x, 0.5, 2.2))
-        sw.scale = (0.12, 5.5, 2.4)
-        sw.data.materials.append(mat("Side", (0.74, 0.82, 0.88)))
-
-    ceil = mesh("primitive_plane_add", size=16, location=(0, 0.5, 4.8))
+    ceil = mesh("primitive_plane_add", size=16, location=(0, 0.5, 4.4))
     ceil.rotation_euler = (math.radians(180), 0, 0)
-    ceil.data.materials.append(mat("Ceil", (0.93, 0.95, 0.97)))
+    ceil.data.materials.append(mat("Ceil", (0.94, 0.96, 0.98)))
 
-    for x in (-2.0, 2.0):
-        lamp = mesh("primitive_cube_add", size=1, location=(x, 1.0, 4.65))
-        lamp.scale = (1.0, 0.4, 0.05)
-        lamp.data.materials.append(mat("Lamp", (1.0, 0.97, 0.85), emit=0.6))
+    for x in (-1.5, 1.5):
+        lamp = mesh("primitive_cube_add", size=1, location=(x, 1.0, 4.25))
+        lamp.scale = (0.9, 0.35, 0.04)
+        lamp.data.materials.append(mat("Lamp", (1.0, 0.97, 0.88), emit=0.7))
 
-    frame = mesh("primitive_cube_add", size=1, location=(0, 3.85, 2.6))
-    frame.scale = (3.8, 0.1, 1.9)
-    frame.data.materials.append(mat("Frame", (0.30, 0.18, 0.10)))
-    board = mesh("primitive_cube_add", size=1, location=(0, 3.78, 2.6))
-    board.scale = (3.5, 0.05, 1.7)
-    board.data.materials.append(mat("Board", (0.15, 0.40, 0.28)))
+    frame = mesh("primitive_cube_add", size=1, location=(0, 3.05, 2.35))
+    frame.scale = (3.2, 0.08, 1.7)
+    frame.data.materials.append(mat("Frame", (0.28, 0.16, 0.08)))
+    board = mesh("primitive_cube_add", size=1, location=(0, 2.98, 2.35))
+    board.scale = (2.95, 0.04, 1.5)
+    board.data.materials.append(mat("Board", (0.14, 0.38, 0.26)))
 
-    desk = mesh("primitive_cube_add", size=1, location=(0, -1.0, 0.55))
-    desk.scale = (2.0, 0.7, 0.06)
-    desk.data.materials.append(mat("Desk", (0.48, 0.32, 0.18)))
-    for x in (-0.9, 0.9):
-        for y in (-1.2, -0.8):
-            leg = mesh("primitive_cylinder_add", radius=0.04, depth=0.55, location=(x, y, 0.27))
-            leg.data.materials.append(mat("DLeg", (0.25, 0.16, 0.1)))
-
-    rug = mesh("primitive_cylinder_add", radius=1.0, depth=0.025, location=(0, 0.9, 0.02))
-    rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.42)))
+    # Thin floor stripe only — no big desk in camera
+    rug = mesh("primitive_cylinder_add", radius=0.9, depth=0.02, location=(0, 0.5, 0.015))
+    rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.40)))
 
 
 def bone_map(arm_obj):
-    """Map short name -> pose bone (handles mixamorig: prefix)."""
     m = {}
     for pb in arm_obj.pose.bones:
         n = pb.name
@@ -156,7 +148,7 @@ def find_armature_and_mesh(objects):
                 body = mo
                 break
         if body is None:
-            body = meshes[0]
+            body = max(meshes, key=lambda o: len(o.data.vertices) if o.data else 0)
     elif meshes:
         body = meshes[0]
     return arm, body, meshes
@@ -173,46 +165,29 @@ def import_mike_glb(glb_path: Path):
         raise SystemExit("GLB import produced no objects")
 
     arm, body, meshes = find_armature_and_mesh(after)
-    morph_count = 0
-    if body and body.data and getattr(body.data, "shape_keys", None):
-        kb = body.data.shape_keys
-        if kb and kb.key_blocks:
-            morph_count = max(0, len(kb.key_blocks) - 1)
-
     print(
         "MIKE_CAPABILITY",
         "armature=" + str(bool(arm)),
         "meshes=" + str(len(meshes)),
-        "shape_keys=" + str(morph_count),
         "bones=" + str(len(arm.pose.bones) if arm else 0),
     )
 
-    # Root empty for placement
-    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.9, 0))
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.5, 0))
     root = bpy.context.active_object
     root.name = "MikeRoot"
 
-    # Bounds from meshes in world space
     min_c = Vector((1e9, 1e9, 1e9))
     max_c = Vector((-1e9, -1e9, -1e9))
-    targets = meshes or after
-    for o in targets:
+    for o in meshes or after:
         for corner in o.bound_box:
             w = o.matrix_world @ Vector(corner)
             min_c = Vector((min(min_c.x, w.x), min(min_c.y, w.y), min(min_c.z, w.z)))
             max_c = Vector((max(max_c.x, w.x), max(max_c.y, w.y), max(max_c.z, w.z)))
 
     height = max(0.01, max_c.z - min_c.z)
-    scale = 1.75 / height
+    # Slightly larger on screen
+    scale = 1.95 / height
 
-    # Parent hierarchy under root without breaking armature-mesh link
-    tops = [o for o in after if o.parent is None or o.parent.name not in before]
-    for o in tops:
-        # keep relative parent if already parented inside import tree
-        if o.parent is None:
-            o.parent = root
-
-    # Prefer parenting the armature root if present
     if arm and arm.parent is None:
         arm.parent = root
     for o in after:
@@ -220,27 +195,25 @@ def import_mike_glb(glb_path: Path):
             o.parent = root
 
     root.scale = (scale, scale, scale)
-    root.location = (0, 0.9, -min_c.z * scale)
+    root.location = (0, 0.55, -min_c.z * scale)
     root.rotation_euler = (0, 0, 0)
 
-    print("MIKE_GLB", glb_path, "height", round(height, 3), "scale", round(scale, 3))
-    return root, arm, body, morph_count
+    print("MIKE_GLB height", round(height, 3), "scale", round(scale, 3))
+    return root, arm, body
 
 
 def add_facial_shape_keys(body):
-    """Create approximate mouth_open and blink shape keys from head-region verts."""
+    """Stronger approximate mouth + blink on head verts."""
     if body is None or body.type != "MESH":
-        return None, None
+        return
 
     me = body.data
-    # Ensure basis
     if me.shape_keys is None:
         body.shape_key_add(name="Basis", from_mix=False)
 
-    # World-ish local coords
     coords = [v.co.copy() for v in me.vertices]
     if not coords:
-        return None, None
+        return
     zs = [c.z for c in coords]
     ys = [c.y for c in coords]
     xs = [c.x for c in coords]
@@ -251,74 +224,65 @@ def add_facial_shape_keys(body):
     yspan = max(1e-6, ymax - ymin)
     xspan = max(1e-6, xmax - xmin)
 
-    # Head band: upper 25% of height
-    head_z0 = zmin + 0.72 * zspan
-    # Mouth: lower part of head, center X, forward Y
     mouth = body.shape_key_add(name="mouth_open", from_mix=False)
     blink = body.shape_key_add(name="blink", from_mix=False)
 
-    for i, v in enumerate(me.vertices):
+    # Stronger displacements so they read on camera
+    for i, _v in enumerate(me.vertices):
         c = coords[i]
         zn = (c.z - zmin) / zspan
         yn = (c.y - ymin) / yspan
         xn = (c.x - xmin) / xspan
 
-        # Mouth: lower-face center, pull down + slightly back
-        if zn > 0.72 and zn < 0.90 and 0.35 < xn < 0.65 and yn > 0.45:
-            w = (1.0 - abs(xn - 0.5) * 2.0) * max(0.0, (0.90 - zn) / 0.18)
-            mouth.data[i].co.z -= 0.018 * w * zspan
-            mouth.data[i].co.y -= 0.006 * w * yspan
+        # Mouth — wider band, bigger open
+        if 0.70 < zn < 0.92 and 0.28 < xn < 0.72 and yn > 0.40:
+            w = (1.0 - abs(xn - 0.5) * 1.6) * max(0.0, min(1.0, (0.92 - zn) / 0.20))
+            w = max(0.0, w)
+            mouth.data[i].co.z -= 0.045 * w * zspan
+            mouth.data[i].co.y -= 0.018 * w * yspan
 
-        # Blink: upper-face thin band near eyes (approx), pull lids down
-        if zn > 0.82 and zn < 0.92 and (xn < 0.42 or xn > 0.58) and yn > 0.50:
-            w = max(0.0, 1.0 - abs(zn - 0.87) / 0.06)
-            blink.data[i].co.z -= 0.010 * w * zspan
-            blink.data[i].co.y -= 0.004 * w * yspan
+        # Blink — both eye regions, stronger lid drop
+        if 0.80 < zn < 0.94 and yn > 0.45 and (xn < 0.45 or xn > 0.55):
+            w = max(0.0, 1.0 - abs(zn - 0.87) / 0.08)
+            blink.data[i].co.z -= 0.028 * w * zspan
+            blink.data[i].co.y -= 0.012 * w * yspan
 
-    print("FACIAL_SHAPEKEYS mouth_open+blink created on", body.name)
-    return mouth, blink
-
-
-def key_pose_bone(pb, frame, rot_euler=None, loc=None):
-    if rot_euler is not None:
-        pb.rotation_mode = "XYZ"
-        pb.rotation_euler = rot_euler
-        pb.keyframe_insert(data_path="rotation_euler", frame=frame)
-    if loc is not None:
-        pb.location = loc
-        pb.keyframe_insert(data_path="location", frame=frame)
+    print("FACIAL_SHAPEKEYS strong mouth_open+blink on", body.name)
 
 
-def animate_rig(arm, body, mouth_key, blink_key, fps, total_frames):
-    """Walk-in-place + wave + head talk + shape-key face."""
+def key_rot(pb, frame, rx=0.0, ry=0.0, rz=0.0):
+    pb.rotation_mode = "XYZ"
+    pb.rotation_euler = Euler((math.radians(rx), math.radians(ry), math.radians(rz)), "XYZ")
+    pb.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+
+def animate_rig(arm, body, fps, total_frames):
+    """Idle + exaggerated wave (no walk). Head talk + face keys."""
     if arm is None:
-        print("NO_ARMATURE — skipping bone animation")
+        print("NO_ARMATURE")
         return
 
     bm = bone_map(arm)
+
     def B(*names):
         for n in names:
             if n in bm:
                 return bm[n]
         return None
 
-    hips = B("Hips", "mixamorig:Hips")
-    spine = B("Spine", "mixamorig:Spine")
-    spine1 = B("Spine1", "mixamorig:Spine1")
-    spine2 = B("Spine2", "mixamorig:Spine2")
-    neck = B("Neck", "mixamorig:Neck")
-    head = B("Head", "mixamorig:Head")
-    luleg = B("LeftUpLeg", "mixamorig:LeftUpLeg")
-    lleg = B("LeftLeg", "mixamorig:LeftLeg")
-    ruleg = B("RightUpLeg", "mixamorig:RightUpLeg")
-    rleg = B("RightLeg", "mixamorig:RightLeg")
-    larm = B("LeftArm", "mixamorig:LeftArm")
-    lfore = B("LeftForeArm", "mixamorig:LeftForeArm")
-    lhand = B("LeftHand", "mixamorig:LeftHand")
-    rarm = B("RightArm", "mixamorig:RightArm")
-    rfore = B("RightForeArm", "mixamorig:RightForeArm")
+    hips = B("Hips")
+    spine = B("Spine")
+    spine1 = B("Spine1")
+    neck = B("Neck")
+    head = B("Head")
+    larm = B("LeftArm")
+    lfore = B("LeftForeArm")
+    lhand = B("LeftHand")
+    rarm = B("RightArm")
+    rfore = B("RightForeArm")
+    luleg = B("LeftUpLeg")
+    ruleg = B("RightUpLeg")
 
-    # Ensure pose mode data path works from object mode keyframes
     bpy.context.view_layer.objects.active = arm
     try:
         bpy.ops.object.mode_set(mode="POSE")
@@ -327,104 +291,95 @@ def animate_rig(arm, body, mouth_key, blink_key, fps, total_frames):
 
     for f in range(1, total_frames + 1):
         t = f / float(fps)
-        phase = t * 2.0 * math.pi * 1.1  # walk frequency
+        # Wave cycle: arm up and side-to-side clearly
+        wave = 0.5 + 0.5 * math.sin(t * 2.2 * math.pi)  # ~1.1 Hz
 
-        # Legs — walk cycle
-        if luleg:
-            key_pose_bone(luleg, f, Euler((math.radians(25 * math.sin(phase)), 0, 0), "XYZ"))
-        if lleg:
-            key_pose_bone(lleg, f, Euler((math.radians(20 * max(0, math.sin(phase))), 0, 0), "XYZ"))
-        if ruleg:
-            key_pose_bone(ruleg, f, Euler((math.radians(25 * math.sin(phase + math.pi)), 0, 0), "XYZ"))
-        if rleg:
-            key_pose_bone(rleg, f, Euler((math.radians(20 * max(0, math.sin(phase + math.pi))), 0, 0), "XYZ"))
-
-        # Hips bob / sway
+        # Soft idle (no walk)
         if hips:
-            key_pose_bone(
-                hips,
-                f,
-                Euler((0, math.radians(3 * math.sin(phase)), math.radians(4 * math.sin(phase * 0.5))), "XYZ"),
-                loc=Vector((0, 0, 0.01 * abs(math.sin(phase)))),
-            )
-
-        # Spine present lean
+            key_rot(hips, f, rx=2, ry=3 * math.sin(t * 1.2), rz=2 * math.sin(t * 0.9))
         if spine:
-            key_pose_bone(spine, f, Euler((math.radians(4 + 2 * math.sin(t * 1.3)), 0, 0), "XYZ"))
+            key_rot(spine, f, rx=6 + 2 * math.sin(t * 1.4), ry=0, rz=0)
         if spine1:
-            key_pose_bone(spine1, f, Euler((math.radians(3 * math.sin(t * 1.1)), 0, 0), "XYZ"))
+            key_rot(spine1, f, rx=3 * math.sin(t * 1.1), ry=0, rz=0)
 
-        # Right arm idle, left arm WAVE
-        wave = 0.5 + 0.5 * math.sin(t * 2.5 * math.pi)  # ~1.25 Hz wave
+        # Legs neutral slight bend (standing)
+        if luleg:
+            key_rot(luleg, f, rx=4, ry=0, rz=0)
+        if ruleg:
+            key_rot(ruleg, f, rx=4, ry=0, rz=0)
+
+        # LEFT ARM — big clear wave (Mixamo: raise + flap)
+        # Try multiple axis combinations exaggerated so motion is obvious
         if larm:
-            key_pose_bone(
+            # Raise arm high + swing
+            key_rot(
                 larm,
                 f,
-                Euler(
-                    (
-                        math.radians(-40 - 25 * wave),
-                        math.radians(-20),
-                        math.radians(70 + 30 * wave),
-                    ),
-                    "XYZ",
-                ),
+                rx=-80 - 25 * wave,
+                ry=-10,
+                rz=55 + 40 * wave,
             )
         if lfore:
-            key_pose_bone(lfore, f, Euler((0, 0, math.radians(-20 - 40 * wave)), "XYZ"))
+            key_rot(lfore, f, rx=0, ry=0, rz=-35 - 50 * wave)
         if lhand:
-            key_pose_bone(lhand, f, Euler((0, 0, math.radians(-10 * wave)), "XYZ"))
+            key_rot(lhand, f, rx=0, ry=15 * wave, rz=-20 * wave)
+
+        # Right arm relaxed open gesture
         if rarm:
-            key_pose_bone(rarm, f, Euler((math.radians(-15), math.radians(10), math.radians(-25)), "XYZ"))
+            key_rot(rarm, f, rx=-25, ry=15, rz=-35)
         if rfore:
-            key_pose_bone(rfore, f, Euler((0, 0, math.radians(15)), "XYZ"))
+            key_rot(rfore, f, rx=0, ry=0, rz=20)
 
-        # Head / neck talk nod
-        talk = 0.5 + 0.5 * math.sin(t * 5.5)  # ~ speech-ish rate
+        # Head talk
+        talk = 0.5 + 0.5 * math.sin(t * 5.0)
         if neck:
-            key_pose_bone(neck, f, Euler((math.radians(4 * talk), math.radians(3 * math.sin(t * 1.7)), 0), "XYZ"))
+            key_rot(neck, f, rx=5 * talk, ry=6 * math.sin(t * 1.8), rz=0)
         if head:
-            key_pose_bone(head, f, Euler((math.radians(6 * talk), math.radians(4 * math.sin(t * 2.1)), 0), "XYZ"))
+            key_rot(head, f, rx=8 * talk, ry=5 * math.sin(t * 2.0), rz=0)
 
-        # Facial shape keys
+        # Face
         if body and body.data.shape_keys:
             kb = body.data.shape_keys.key_blocks
             if "mouth_open" in kb:
-                # open on talk peaks
-                kb["mouth_open"].value = 0.15 + 0.85 * max(0.0, math.sin(t * 6.0))
+                # Very readable open/close
+                kb["mouth_open"].value = 0.25 + 0.75 * max(0.0, math.sin(t * 5.5))
                 kb["mouth_open"].keyframe_insert(data_path="value", frame=f)
             if "blink" in kb:
-                # blink every ~2.5s for 2 frames
-                blink_v = 1.0 if (int(t * 10) % 25 in (0, 1)) else 0.0
-                kb["blink"].value = blink_v
+                # Blink every ~2s, 3 frames closed
+                step = int(t * 12) % 24
+                kb["blink"].value = 1.0 if step in (0, 1, 2) else 0.0
                 kb["blink"].keyframe_insert(data_path="value", frame=f)
 
     try:
         bpy.ops.object.mode_set(mode="OBJECT")
     except Exception:
         pass
-    print("ANIM_RIG walk+wave+talk+face frames", total_frames)
+    print("ANIM_RIG idle+wave+talk+face frames", total_frames)
 
 
 def setup_camera_lights():
-    bpy.ops.object.light_add(type="SUN", location=(3, -4, 7))
+    """Close medium shot — character fills frame, even lighting."""
+    bpy.ops.object.light_add(type="SUN", location=(2, -3, 6))
     sun = bpy.context.active_object
-    sun.data.energy = 2.8
-    sun.rotation_euler = (math.radians(50), math.radians(12), 0)
+    sun.data.energy = 3.2
+    sun.rotation_euler = (math.radians(48), math.radians(8), 0)
 
-    bpy.ops.object.light_add(type="AREA", location=(-2.5, -2, 3.5))
+    bpy.ops.object.light_add(type="AREA", location=(-2, -1.5, 2.8))
     fill = bpy.context.active_object
-    fill.data.energy = 60
-    fill.data.size = 3
+    fill.data.energy = 80
+    fill.data.size = 3.5
 
-    bpy.ops.object.light_add(type="AREA", location=(4, 1, 3))
+    bpy.ops.object.light_add(type="AREA", location=(2.5, 0.5, 2.5))
     rim = bpy.context.active_object
-    rim.data.energy = 40
+    rim.data.energy = 50
     rim.data.size = 2
 
-    bpy.ops.object.camera_add(location=(0, -3.6, 1.35))
+    # Front-facing medium shot (chest/head), vertical 9:16
+    bpy.ops.object.camera_add(location=(0, -2.05, 1.15))
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(86), 0, 0)
-    cam.data.lens = 35
+    cam.rotation_euler = (math.radians(88), 0, 0)
+    cam.data.lens = 45
+    cam.data.clip_start = 0.05
     bpy.context.scene.camera = cam
 
     world = bpy.data.worlds.new("World")
@@ -433,7 +388,7 @@ def setup_camera_lights():
         world.use_nodes = False
     except Exception:
         pass
-    world.color = (0.58, 0.70, 0.80)
+    world.color = (0.62, 0.72, 0.82)
 
 
 def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
@@ -501,11 +456,10 @@ def main():
 
     clear_scene()
     build_room()
-    root, arm, body, morphs = import_mike_glb(glb)
+    root, arm, body = import_mike_glb(glb)
     setup_camera_lights()
-
-    mouth_key, blink_key = add_facial_shape_keys(body)
-    animate_rig(arm, body, mouth_key, blink_key, fps, total_frames)
+    add_facial_shape_keys(body)
+    animate_rig(arm, body, fps, total_frames)
 
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -513,7 +467,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         frame_dir = Path(tmp)
         setup_render_png(frame_dir, fps, total_frames, width, height)
-        print(f"Render Mike3D rigged {total_frames}f {width}x{height}")
+        print(f"Render Mike3D {total_frames}f {width}x{height}")
         bpy.ops.render.render(animation=True)
         n = len(list(frame_dir.glob("frame_*.png")))
         print(f"frames={n}")
@@ -524,7 +478,6 @@ def main():
     if not (out.exists() and out.stat().st_size > 0):
         raise SystemExit("No video written")
     print("OK", out, out.stat().st_size)
-    print("NOTE: body=Mixamo bones; face=procedural shape keys (no native face morphs in GLB)")
 
 
 if __name__ == "__main__":
