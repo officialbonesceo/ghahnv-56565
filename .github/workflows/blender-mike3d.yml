@@ -23,8 +23,19 @@ jobs:
       - name: install-blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender xvfb ffmpeg python3 || true
+          sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy python3-pip || true
+          # Blender 5 glTF importer needs numpy on the Python it embeds/uses
           blender --version || true
+          blender -b --python-expr "import sys; print('BLENDER_PY', sys.executable); print(sys.path[:5])" || true
+          # Install numpy into paths Blender can see
+          python3 -m pip install --user numpy || pip3 install --user numpy || true
+          # Also try blender's own python if distinct
+          BL_PY=$(blender -b --python-expr "import sys; print(sys.executable)" 2>/dev/null | tail -1 || true)
+          if [ -n "$BL_PY" ] && [ -x "$BL_PY" ]; then
+            "$BL_PY" -m pip install numpy 2>/dev/null || true
+          fi
+          # Debian/Ubuntu dist-packages often work when PYTHONPATH is set
+          echo "PYTHONPATH=/usr/lib/python3/dist-packages:$HOME/.local/lib/python3.12/site-packages" >> $GITHUB_ENV
 
       - name: assemble-mike-glb
         run: |
@@ -47,9 +58,14 @@ jobs:
           PY
 
       - name: render-glb-mike3d
+        env:
+          PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
           mkdir -p assets/blender
-          xvfb-run -a blender -b -noaudio -P scripts/blender_mike3d.py -- \
+          # Ensure numpy visible to blender python
+          export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${HOME}/.local/lib/python3.13/site-packages:${PYTHONPATH}"
+          python3 -c "import numpy; print('host numpy', numpy.__version__)" || true
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/blender_mike3d.py -- \
             --glb assets/mike/Mike.glb \
             --out assets/blender/mike3d_test.mp4 \
             --seconds 6 \
