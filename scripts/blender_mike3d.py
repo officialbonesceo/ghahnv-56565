@@ -1,6 +1,6 @@
 """
 Blender 3D Mike — play baked clips from Mikeanim.glb in sequence.
-Short vertical test with transitions between multiple actions.
+Bright studio look closer to Tripo viewer (color + energy).
 """
 from __future__ import annotations
 
@@ -70,9 +70,9 @@ def mat(name, color, emit=0.0):
         pass
     r, g, b = color
     if emit > 0:
-        r = min(1.0, r + emit * 0.3)
-        g = min(1.0, g + emit * 0.3)
-        b = min(1.0, b + emit * 0.35)
+        r = min(1.0, r + emit * 0.25)
+        g = min(1.0, g + emit * 0.25)
+        b = min(1.0, b + emit * 0.25)
     m.diffuse_color = (r, g, b, 1.0)
     return m
 
@@ -88,36 +88,18 @@ def mesh(op, **kw):
 
 
 def build_room():
-    floor = mesh("primitive_plane_add", size=16, location=(0, 0, 0))
-    floor.data.materials.append(mat("Floor", (0.42, 0.28, 0.16)))
+    """Neutral studio backdrop like Tripo viewer — no dark desk bands."""
+    # Seamless dark-gray cyclorama (Tripo-like)
+    back = mesh("primitive_plane_add", size=20, location=(0, 2.8, 1.6))
+    back.rotation_euler = (math.radians(90), 0, 0)
+    back.data.materials.append(mat("Back", (0.22, 0.22, 0.24)))
 
-    wall = mesh("primitive_cube_add", size=1, location=(0, 3.2, 2.2))
-    wall.scale = (6, 0.12, 2.5)
-    wall.data.materials.append(mat("Wall", (0.82, 0.88, 0.92)))
+    floor = mesh("primitive_plane_add", size=20, location=(0, 0.5, 0))
+    floor.data.materials.append(mat("Floor", (0.18, 0.18, 0.20)))
 
-    for x in (-5.5, 5.5):
-        sw = mesh("primitive_cube_add", size=1, location=(x, 0.8, 2.0))
-        sw.scale = (0.1, 4.0, 2.3)
-        sw.data.materials.append(mat("Side", (0.76, 0.84, 0.90)))
-
-    ceil = mesh("primitive_plane_add", size=16, location=(0, 0.5, 4.4))
-    ceil.rotation_euler = (math.radians(180), 0, 0)
-    ceil.data.materials.append(mat("Ceil", (0.94, 0.96, 0.98)))
-
-    for x in (-1.5, 1.5):
-        lamp = mesh("primitive_cube_add", size=1, location=(x, 1.0, 4.25))
-        lamp.scale = (0.9, 0.35, 0.04)
-        lamp.data.materials.append(mat("Lamp", (1.0, 0.97, 0.88), emit=0.7))
-
-    frame = mesh("primitive_cube_add", size=1, location=(0, 3.05, 2.35))
-    frame.scale = (3.2, 0.08, 1.7)
-    frame.data.materials.append(mat("Frame", (0.28, 0.16, 0.08)))
-    board = mesh("primitive_cube_add", size=1, location=(0, 2.98, 2.35))
-    board.scale = (2.95, 0.04, 1.5)
-    board.data.materials.append(mat("Board", (0.14, 0.38, 0.26)))
-
-    rug = mesh("primitive_cylinder_add", radius=0.9, depth=0.02, location=(0, 0.5, 0.015))
-    rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.40)))
+    # Soft ground disc under feet (subtle)
+    disc = mesh("primitive_cylinder_add", radius=1.1, depth=0.02, location=(0, 0.55, 0.01))
+    disc.data.materials.append(mat("Disc", (0.12, 0.12, 0.14)))
 
 
 def find_armature_and_mesh(objects):
@@ -138,23 +120,22 @@ def find_armature_and_mesh(objects):
 
 
 def action_duration_frames(action, fps):
-    """Return length of action in frames (at least 1)."""
     if action is None:
         return 1
-    # Blender 5: frame_range on action
     fr = getattr(action, "frame_range", None)
     if fr is not None and len(fr) >= 2:
         span = float(fr[1]) - float(fr[0])
         if span > 0.5:
             return max(1, int(round(span)))
-    # Fallback: scan fcurves / layered
     mn, mx = None, None
+
     def consider(fc):
         nonlocal mn, mx
         for kp in fc.keyframe_points:
             f = kp.co[0]
             mn = f if mn is None else min(mn, f)
             mx = f if mx is None else max(mx, f)
+
     fcurves = getattr(action, "fcurves", None)
     if fcurves is not None:
         for fc in fcurves:
@@ -172,7 +153,7 @@ def action_duration_frames(action, fps):
                     for fc in getattr(bag, "fcurves", []) or []:
                         consider(fc)
     if mn is None or mx is None:
-        return max(1, fps)  # 1s default
+        return max(1, fps)
     return max(1, int(round(mx - mn)))
 
 
@@ -181,13 +162,11 @@ def list_actions():
 
 
 def pick_clip_sequence(actions):
-    """Prefer teaching uuid, Agree_Gesture, Alert — short multi-clip demo."""
     by_name = {a.name: a for a in actions}
     names = list(by_name.keys())
     print("ACTIONS_AVAILABLE", names)
 
     preferred = []
-    # teaching gesture (unnamed uuid from Tripo/Meshy)
     for n in names:
         if n.startswith("_"):
             preferred.append(n)
@@ -197,14 +176,46 @@ def pick_clip_sequence(actions):
             preferred.append(key)
     if not preferred:
         preferred = names[:3]
-    # max 3 clips for short video
     preferred = preferred[:3]
     return [by_name[n] for n in preferred if n in by_name]
 
 
+def boost_imported_materials(meshes):
+    """Nudge glTF materials brighter so Workbench matches Tripo saturation."""
+    for obj in meshes or []:
+        for slot in obj.material_slots:
+            m = slot.material
+            if m is None:
+                continue
+            try:
+                # Prefer textured look; bump base color slightly if plain
+                if m.use_nodes:
+                    for node in m.node_tree.nodes:
+                        if node.type == "BSDF_PRINCIPLED":
+                            # slight emission for pop in workbench-adjacent engines
+                            if "Emission Strength" in node.inputs:
+                                node.inputs["Emission Strength"].default_value = max(
+                                    node.inputs["Emission Strength"].default_value, 0.05
+                                )
+                            if "Base Color" in node.inputs:
+                                col = node.inputs["Base Color"].default_value
+                                # don't wash textures; only default color
+                                pass
+                            if "Specular IOR Level" in node.inputs:
+                                node.inputs["Specular IOR Level"].default_value = 0.15
+                            if "Roughness" in node.inputs:
+                                node.inputs["Roughness"].default_value = min(
+                                    0.85, max(0.35, node.inputs["Roughness"].default_value)
+                                )
+                else:
+                    r, g, b, a = m.diffuse_color
+                    m.diffuse_color = (min(1, r * 1.15), min(1, g * 1.15), min(1, b * 1.15), a)
+            except Exception as e:
+                print("mat_boost_skip", e)
+
+
 def import_mike_glb(glb_path: Path):
     if not glb_path.exists():
-        # fall back to older Mike.glb
         alt = glb_path.parent / "Mike.glb"
         if alt.exists():
             print("FALLBACK", alt)
@@ -262,12 +273,12 @@ def import_mike_glb(glb_path: Path):
                 except Exception:
                     pass
 
+    boost_imported_materials(meshes)
     print("MIKE_GLB height", round(height, 3), "scale", round(scale, 3))
     return root, arm, body, new_actions or list_actions()
 
 
 def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
-    """Place clips back-to-back on NLA so render plays transitions."""
     if arm is None:
         print("NO_ARMATURE")
         return 1
@@ -279,7 +290,6 @@ def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
 
     if not arm.animation_data:
         arm.animation_data_create()
-    # clear old NLA
     while arm.animation_data.nla_tracks:
         arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
     arm.animation_data.action = None
@@ -291,16 +301,13 @@ def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
     used = []
     for action in clips:
         dur = action_duration_frames(action, fps)
-        # Cap each clip so total stays short (~12s)
         max_each = max(fps, max_total_frames // max(1, len(clips)))
         use = min(dur, max_each)
-        # NLA strip: start at `frame`, action frame range
         fr = getattr(action, "frame_range", None)
         act_start = float(fr[0]) if fr is not None and len(fr) >= 2 else 0.0
         try:
             strip = track.strips.new(action.name, int(frame), action)
         except TypeError:
-            # older API
             strip = track.strips.new(int(frame), action)
             strip.name = action.name
         strip.action = action
@@ -328,25 +335,40 @@ def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
 
 
 def setup_camera_lights():
-    bpy.ops.object.light_add(type="SUN", location=(2, -3, 6))
+    # Strong key — Tripo-like even studio
+    bpy.ops.object.light_add(type="SUN", location=(1.5, -2.5, 7))
     sun = bpy.context.active_object
-    sun.data.energy = 3.2
-    sun.rotation_euler = (math.radians(48), math.radians(8), 0)
+    sun.data.energy = 6.5
+    sun.rotation_euler = (math.radians(40), math.radians(12), 0)
+    try:
+        sun.data.angle = math.radians(15)
+    except Exception:
+        pass
 
-    bpy.ops.object.light_add(type="AREA", location=(-2, -1.5, 2.8))
+    # Front fill (bright)
+    bpy.ops.object.light_add(type="AREA", location=(0, -2.2, 2.2))
     fill = bpy.context.active_object
-    fill.data.energy = 80
-    fill.data.size = 3.5
+    fill.data.energy = 350
+    fill.data.size = 5.0
+    fill.rotation_euler = (math.radians(75), 0, 0)
 
-    bpy.ops.object.light_add(type="AREA", location=(2.5, 0.5, 2.5))
+    # Soft left
+    bpy.ops.object.light_add(type="AREA", location=(-2.5, -0.5, 2.5))
+    left = bpy.context.active_object
+    left.data.energy = 180
+    left.data.size = 3.5
+
+    # Soft right rim
+    bpy.ops.object.light_add(type="AREA", location=(2.8, 0.2, 2.8))
     rim = bpy.context.active_object
-    rim.data.energy = 50
-    rim.data.size = 2
+    rim.data.energy = 120
+    rim.data.size = 2.5
 
-    bpy.ops.object.camera_add(location=(0, -2.05, 1.15))
+    # Camera: full-body, slight down
+    bpy.ops.object.camera_add(location=(0, -2.35, 1.05))
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(88), 0, 0)
-    cam.data.lens = 45
+    cam.rotation_euler = (math.radians(86), 0, 0)
+    cam.data.lens = 50
     cam.data.clip_start = 0.05
     bpy.context.scene.camera = cam
 
@@ -356,21 +378,33 @@ def setup_camera_lights():
         world.use_nodes = False
     except Exception:
         pass
-    world.color = (0.62, 0.72, 0.82)
+    # Neutral gray ambient (Tripo studio)
+    world.color = (0.35, 0.35, 0.38)
 
 
 def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_WORKBENCH"
     try:
-        scene.display.shading.light = "STUDIO"
+        # Flat + texture = closest to Tripo "clean" look in Workbench
+        scene.display.shading.light = "FLAT"
         scene.display.shading.color_type = "TEXTURE"
-        scene.display.shading.show_shadows = True
+        scene.display.shading.show_shadows = False
+        scene.display.shading.show_specular_highlight = True
     except Exception:
         try:
-            scene.display.shading.color_type = "MATERIAL"
+            scene.display.shading.light = "STUDIO"
+            scene.display.shading.color_type = "TEXTURE"
+            scene.display.shading.show_shadows = False
         except Exception:
             pass
+    try:
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "None"
+        scene.view_settings.exposure = 0.35
+        scene.view_settings.gamma = 1.0
+    except Exception:
+        pass
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
@@ -379,6 +413,7 @@ def setup_render_png(frame_dir: Path, fps, total_frames, width, height):
     scene.frame_end = total_frames
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
+    scene.render.image_settings.color_depth = "8"
     scene.render.filepath = str(frame_dir / "frame_")
 
 
@@ -405,7 +440,7 @@ def frames_to_mp4(frame_dir: Path, out: Path, fps: int) -> None:
             "-pix_fmt",
             "yuv420p",
             "-crf",
-            "20",
+            "18",
             "-movflags",
             "+faststart",
             str(out),
