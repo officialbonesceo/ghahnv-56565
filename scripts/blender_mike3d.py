@@ -1,6 +1,6 @@
 """
 Blender 3D Mike — Mixamo-rigged GLB, close teaching shot.
-Cleaner poses: real raised-arm wave, calm head, less rubber stretch.
+Cleaner poses: raised-arm wave, calm head. Blender 5 compatible.
 """
 from __future__ import annotations
 
@@ -191,9 +191,8 @@ def import_mike_glb(glb_path: Path):
     root.location = (0, 0.55, -min_c.z * scale)
     root.rotation_euler = (0, 0, 0)
 
-    # Soften extreme mesh stretch from skinning
-    if arm:
-        for mod in list(getattr(body, "modifiers", []) if body else []):
+    if arm and body:
+        for mod in body.modifiers:
             if mod.type == "ARMATURE":
                 try:
                     mod.use_deform_preserve_volume = True
@@ -252,18 +251,50 @@ def key_rot(pb, frame, rx=0.0, ry=0.0, rz=0.0):
     pb.keyframe_insert(data_path="rotation_euler", frame=frame)
 
 
-def smooth_action(arm):
-    if not arm.animation_data or not arm.animation_data.action:
+def iter_fcurves(action):
+    """Blender 5 layered actions no longer expose action.fcurves directly."""
+    if action is None:
         return
-    for fc in arm.animation_data.action.fcurves:
-        for kp in fc.keyframe_points:
-            kp.interpolation = "BEZIER"
-            kp.handle_left_type = "AUTO_CLAMPED"
-            kp.handle_right_type = "AUTO_CLAMPED"
+    # Legacy
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is not None:
+        for fc in fcurves:
+            yield fc
+        return
+    # Blender 4.4+ / 5.0 layered API
+    layers = getattr(action, "layers", None)
+    if not layers:
+        return
+    for layer in layers:
+        strips = getattr(layer, "strips", None) or []
+        for strip in strips:
+            bags = getattr(strip, "channelbags", None)
+            if bags is None:
+                # older experimental names
+                bag = getattr(strip, "channelbag", None)
+                bags = [bag] if bag else []
+            for bag in bags:
+                if bag is None:
+                    continue
+                for fc in getattr(bag, "fcurves", []) or []:
+                    yield fc
+
+
+def smooth_action(arm):
+    try:
+        if not arm.animation_data or not arm.animation_data.action:
+            return
+        action = arm.animation_data.action
+        for fc in iter_fcurves(action):
+            for kp in fc.keyframe_points:
+                kp.interpolation = "BEZIER"
+                kp.handle_left_type = "AUTO_CLAMPED"
+                kp.handle_right_type = "AUTO_CLAMPED"
+    except Exception as e:
+        print("smooth_action skip:", type(e).__name__, e)
 
 
 def animate_rig(arm, body, fps, total_frames):
-    """Calm idle + clear wave. Minimal head motion. No rubber stretch poses."""
     if arm is None:
         print("NO_ARMATURE")
         return
@@ -295,11 +326,7 @@ def animate_rig(arm, body, fps, total_frames):
     except Exception:
         pass
 
-    # Key only a few poses (not every frame) → smoother, less rubber jitter
-    # Wave pattern: rest → raise → side flap → raise → rest
-    # frames at 0%, 20%, 40%, 60%, 80%, 100%
     keys = [
-        # t_frac, wave_phase 0=down 1=up/side
         (0.00, 0.0),
         (0.18, 1.0),
         (0.35, 0.55),
@@ -313,7 +340,6 @@ def animate_rig(arm, body, fps, total_frames):
         f = max(1, int(round(t_frac * (total_frames - 1))) + 1)
         f = min(total_frames, f)
 
-        # Body: almost still (stops rubber sway)
         if hips:
             key_rot(hips, f, rx=1, ry=0, rz=0)
         if spine:
@@ -324,42 +350,29 @@ def animate_rig(arm, body, fps, total_frames):
             key_rot(luleg, f, rx=3, ry=0, rz=0)
         if ruleg:
             key_rot(ruleg, f, rx=3, ry=0, rz=0)
-
-        # Head/neck: tiny nod only (no shake)
         if neck:
             key_rot(neck, f, rx=2, ry=0, rz=0)
         if head:
             key_rot(head, f, rx=3 + 2 * wave, ry=0, rz=0)
 
-        # LEFT ARM — clear wave: raise high, forearm flaps
         if larm:
-            # down → up beside head
-            key_rot(
-                larm,
-                f,
-                rx=-35 - 55 * wave,
-                ry=-5,
-                rz=25 + 55 * wave,
-            )
+            key_rot(larm, f, rx=-35 - 55 * wave, ry=-5, rz=25 + 55 * wave)
         if lfore:
             key_rot(lfore, f, rx=0, ry=0, rz=-10 - 55 * wave)
         if lhand:
             key_rot(lhand, f, rx=0, ry=10 * wave, rz=-15 * wave)
 
-        # RIGHT ARM — stable open present (almost static)
         if rarm:
             key_rot(rarm, f, rx=-20, ry=12, rz=-30)
         if rfore:
             key_rot(rfore, f, rx=0, ry=0, rz=15)
 
-        # Face
         if body and body.data.shape_keys:
             kb = body.data.shape_keys.key_blocks
             if "mouth_open" in kb:
                 kb["mouth_open"].value = 0.2 + 0.55 * wave
                 kb["mouth_open"].keyframe_insert(data_path="value", frame=f)
             if "blink" in kb:
-                # one blink near middle
                 kb["blink"].value = 1.0 if 0.45 < t_frac < 0.52 else 0.0
                 kb["blink"].keyframe_insert(data_path="value", frame=f)
 
