@@ -1,6 +1,6 @@
 """
-Blender 3D Mike — Mixamo-rigged GLB, close teaching shot.
-Cleaner poses: raised-arm wave, calm head. Blender 5 compatible.
+Blender 3D Mike — play baked clips from Mikeanim.glb in sequence.
+Short vertical test with transitions between multiple actions.
 """
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ import tempfile
 from pathlib import Path
 
 import bpy
-from mathutils import Euler, Vector
+from mathutils import Vector
 
 
 def parse_args(argv):
     args = {
         "out": "assets/blender/mike3d_test.mp4",
         "fps": 24,
-        "seconds": 6.0,
+        "seconds": 12.0,
         "width": 720,
         "height": 1280,
-        "glb": "assets/mike/Mike.glb",
+        "glb": "assets/mike/Mikeanim.glb",
     }
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
@@ -120,17 +120,6 @@ def build_room():
     rug.data.materials.append(mat("Rug", (0.12, 0.22, 0.40)))
 
 
-def bone_map(arm_obj):
-    m = {}
-    for pb in arm_obj.pose.bones:
-        n = pb.name
-        m[n] = pb
-        if ":" in n:
-            m[n.split(":", 1)[1]] = pb
-        m[n.replace("mixamorig:", "")] = pb
-    return m
-
-
 def find_armature_and_mesh(objects):
     arms = [o for o in objects if o.type == "ARMATURE"]
     meshes = [o for o in objects if o.type == "MESH"]
@@ -148,13 +137,86 @@ def find_armature_and_mesh(objects):
     return arm, body, meshes
 
 
+def action_duration_frames(action, fps):
+    """Return length of action in frames (at least 1)."""
+    if action is None:
+        return 1
+    # Blender 5: frame_range on action
+    fr = getattr(action, "frame_range", None)
+    if fr is not None and len(fr) >= 2:
+        span = float(fr[1]) - float(fr[0])
+        if span > 0.5:
+            return max(1, int(round(span)))
+    # Fallback: scan fcurves / layered
+    mn, mx = None, None
+    def consider(fc):
+        nonlocal mn, mx
+        for kp in fc.keyframe_points:
+            f = kp.co[0]
+            mn = f if mn is None else min(mn, f)
+            mx = f if mx is None else max(mx, f)
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is not None:
+        for fc in fcurves:
+            consider(fc)
+    else:
+        for layer in getattr(action, "layers", []) or []:
+            for strip in getattr(layer, "strips", []) or []:
+                bags = getattr(strip, "channelbags", None)
+                if bags is None:
+                    bag = getattr(strip, "channelbag", None)
+                    bags = [bag] if bag else []
+                for bag in bags or []:
+                    if bag is None:
+                        continue
+                    for fc in getattr(bag, "fcurves", []) or []:
+                        consider(fc)
+    if mn is None or mx is None:
+        return max(1, fps)  # 1s default
+    return max(1, int(round(mx - mn)))
+
+
+def list_actions():
+    return list(bpy.data.actions)
+
+
+def pick_clip_sequence(actions):
+    """Prefer teaching uuid, Agree_Gesture, Alert — short multi-clip demo."""
+    by_name = {a.name: a for a in actions}
+    names = list(by_name.keys())
+    print("ACTIONS_AVAILABLE", names)
+
+    preferred = []
+    # teaching gesture (unnamed uuid from Tripo/Meshy)
+    for n in names:
+        if n.startswith("_"):
+            preferred.append(n)
+            break
+    for key in ("Agree_Gesture", "Alert", "Casual_Walk", "Walking"):
+        if key in by_name and key not in preferred:
+            preferred.append(key)
+    if not preferred:
+        preferred = names[:3]
+    # max 3 clips for short video
+    preferred = preferred[:3]
+    return [by_name[n] for n in preferred if n in by_name]
+
+
 def import_mike_glb(glb_path: Path):
     if not glb_path.exists():
-        raise SystemExit(f"Missing GLB: {glb_path}")
+        # fall back to older Mike.glb
+        alt = glb_path.parent / "Mike.glb"
+        if alt.exists():
+            print("FALLBACK", alt)
+            glb_path = alt
+        else:
+            raise SystemExit(f"Missing GLB: {glb_path}")
 
-    before = set(bpy.data.objects.keys())
+    before_objs = set(bpy.data.objects.keys())
+    before_actions = set(bpy.data.actions.keys())
     bpy.ops.import_scene.gltf(filepath=str(glb_path))
-    after = [o for o in bpy.data.objects if o.name not in before]
+    after = [o for o in bpy.data.objects if o.name not in before_objs]
+    new_actions = [a for a in bpy.data.actions if a.name not in before_actions]
     if not after:
         raise SystemExit("GLB import produced no objects")
 
@@ -164,6 +226,7 @@ def import_mike_glb(glb_path: Path):
         "armature=" + str(bool(arm)),
         "meshes=" + str(len(meshes)),
         "bones=" + str(len(arm.pose.bones) if arm else 0),
+        "new_actions=" + str(len(new_actions)),
     )
 
     bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.5, 0))
@@ -200,188 +263,68 @@ def import_mike_glb(glb_path: Path):
                     pass
 
     print("MIKE_GLB height", round(height, 3), "scale", round(scale, 3))
-    return root, arm, body
+    return root, arm, body, new_actions or list_actions()
 
 
-def add_facial_shape_keys(body):
-    if body is None or body.type != "MESH":
-        return
-
-    me = body.data
-    if me.shape_keys is None:
-        body.shape_key_add(name="Basis", from_mix=False)
-
-    coords = [v.co.copy() for v in me.vertices]
-    if not coords:
-        return
-    zs = [c.z for c in coords]
-    ys = [c.y for c in coords]
-    xs = [c.x for c in coords]
-    zmin, zmax = min(zs), max(zs)
-    ymin, ymax = min(ys), max(ys)
-    xmin, xmax = min(xs), max(xs)
-    zspan = max(1e-6, zmax - zmin)
-    yspan = max(1e-6, ymax - ymin)
-
-    mouth = body.shape_key_add(name="mouth_open", from_mix=False)
-    blink = body.shape_key_add(name="blink", from_mix=False)
-
-    for i, _v in enumerate(me.vertices):
-        c = coords[i]
-        zn = (c.z - zmin) / zspan
-        yn = (c.y - ymin) / yspan
-        xn = (c.x - xmin) / max(1e-6, xmax - xmin)
-
-        if 0.70 < zn < 0.92 and 0.28 < xn < 0.72 and yn > 0.40:
-            w = (1.0 - abs(xn - 0.5) * 1.6) * max(0.0, min(1.0, (0.92 - zn) / 0.20))
-            mouth.data[i].co.z -= 0.040 * w * zspan
-            mouth.data[i].co.y -= 0.015 * w * yspan
-
-        if 0.80 < zn < 0.94 and yn > 0.45 and (xn < 0.45 or xn > 0.55):
-            w = max(0.0, 1.0 - abs(zn - 0.87) / 0.08)
-            blink.data[i].co.z -= 0.025 * w * zspan
-            blink.data[i].co.y -= 0.010 * w * yspan
-
-    print("FACIAL_SHAPEKEYS on", body.name)
-
-
-def key_rot(pb, frame, rx=0.0, ry=0.0, rz=0.0):
-    pb.rotation_mode = "XYZ"
-    pb.rotation_euler = Euler((math.radians(rx), math.radians(ry), math.radians(rz)), "XYZ")
-    pb.keyframe_insert(data_path="rotation_euler", frame=frame)
-
-
-def iter_fcurves(action):
-    """Blender 5 layered actions no longer expose action.fcurves directly."""
-    if action is None:
-        return
-    # Legacy
-    fcurves = getattr(action, "fcurves", None)
-    if fcurves is not None:
-        for fc in fcurves:
-            yield fc
-        return
-    # Blender 4.4+ / 5.0 layered API
-    layers = getattr(action, "layers", None)
-    if not layers:
-        return
-    for layer in layers:
-        strips = getattr(layer, "strips", None) or []
-        for strip in strips:
-            bags = getattr(strip, "channelbags", None)
-            if bags is None:
-                # older experimental names
-                bag = getattr(strip, "channelbag", None)
-                bags = [bag] if bag else []
-            for bag in bags:
-                if bag is None:
-                    continue
-                for fc in getattr(bag, "fcurves", []) or []:
-                    yield fc
-
-
-def smooth_action(arm):
-    try:
-        if not arm.animation_data or not arm.animation_data.action:
-            return
-        action = arm.animation_data.action
-        for fc in iter_fcurves(action):
-            for kp in fc.keyframe_points:
-                kp.interpolation = "BEZIER"
-                kp.handle_left_type = "AUTO_CLAMPED"
-                kp.handle_right_type = "AUTO_CLAMPED"
-    except Exception as e:
-        print("smooth_action skip:", type(e).__name__, e)
-
-
-def animate_rig(arm, body, fps, total_frames):
+def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
+    """Place clips back-to-back on NLA so render plays transitions."""
     if arm is None:
         print("NO_ARMATURE")
-        return
+        return 1
 
-    bm = bone_map(arm)
+    clips = pick_clip_sequence(actions)
+    if not clips:
+        print("NO_CLIPS")
+        return 1
 
-    def B(*names):
-        for n in names:
-            if n in bm:
-                return bm[n]
-        return None
+    if not arm.animation_data:
+        arm.animation_data_create()
+    # clear old NLA
+    while arm.animation_data.nla_tracks:
+        arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
+    arm.animation_data.action = None
 
-    hips = B("Hips")
-    spine = B("Spine")
-    spine1 = B("Spine1")
-    neck = B("Neck")
-    head = B("Head")
-    larm = B("LeftArm")
-    lfore = B("LeftForeArm")
-    lhand = B("LeftHand")
-    rarm = B("RightArm")
-    rfore = B("RightForeArm")
-    luleg = B("LeftUpLeg")
-    ruleg = B("RightUpLeg")
+    track = arm.animation_data.nla_tracks.new()
+    track.name = "MikeClips"
 
-    bpy.context.view_layer.objects.active = arm
-    try:
-        bpy.ops.object.mode_set(mode="POSE")
-    except Exception:
-        pass
+    frame = 1
+    used = []
+    for action in clips:
+        dur = action_duration_frames(action, fps)
+        # Cap each clip so total stays short (~12s)
+        max_each = max(fps, max_total_frames // max(1, len(clips)))
+        use = min(dur, max_each)
+        # NLA strip: start at `frame`, action frame range
+        fr = getattr(action, "frame_range", None)
+        act_start = float(fr[0]) if fr is not None and len(fr) >= 2 else 0.0
+        try:
+            strip = track.strips.new(action.name, int(frame), action)
+        except TypeError:
+            # older API
+            strip = track.strips.new(int(frame), action)
+            strip.name = action.name
+        strip.action = action
+        try:
+            strip.action_frame_start = act_start
+            strip.action_frame_end = act_start + use
+        except Exception:
+            pass
+        strip.frame_start = frame
+        strip.frame_end = frame + use
+        try:
+            strip.blend_type = "REPLACE"
+            strip.extrapolation = "NOTHING"
+        except Exception:
+            pass
+        used.append((action.name, frame, frame + use, use))
+        print(f"NLA_STRIP {action.name!r} frames {frame}-{frame+use} (len {use})")
+        frame += use
 
-    keys = [
-        (0.00, 0.0),
-        (0.18, 1.0),
-        (0.35, 0.55),
-        (0.52, 1.0),
-        (0.70, 0.55),
-        (0.88, 1.0),
-        (1.00, 0.2),
-    ]
-
-    for t_frac, wave in keys:
-        f = max(1, int(round(t_frac * (total_frames - 1))) + 1)
-        f = min(total_frames, f)
-
-        if hips:
-            key_rot(hips, f, rx=1, ry=0, rz=0)
-        if spine:
-            key_rot(spine, f, rx=4, ry=0, rz=0)
-        if spine1:
-            key_rot(spine1, f, rx=2, ry=0, rz=0)
-        if luleg:
-            key_rot(luleg, f, rx=3, ry=0, rz=0)
-        if ruleg:
-            key_rot(ruleg, f, rx=3, ry=0, rz=0)
-        if neck:
-            key_rot(neck, f, rx=2, ry=0, rz=0)
-        if head:
-            key_rot(head, f, rx=3 + 2 * wave, ry=0, rz=0)
-
-        if larm:
-            key_rot(larm, f, rx=-35 - 55 * wave, ry=-5, rz=25 + 55 * wave)
-        if lfore:
-            key_rot(lfore, f, rx=0, ry=0, rz=-10 - 55 * wave)
-        if lhand:
-            key_rot(lhand, f, rx=0, ry=10 * wave, rz=-15 * wave)
-
-        if rarm:
-            key_rot(rarm, f, rx=-20, ry=12, rz=-30)
-        if rfore:
-            key_rot(rfore, f, rx=0, ry=0, rz=15)
-
-        if body and body.data.shape_keys:
-            kb = body.data.shape_keys.key_blocks
-            if "mouth_open" in kb:
-                kb["mouth_open"].value = 0.2 + 0.55 * wave
-                kb["mouth_open"].keyframe_insert(data_path="value", frame=f)
-            if "blink" in kb:
-                kb["blink"].value = 1.0 if 0.45 < t_frac < 0.52 else 0.0
-                kb["blink"].keyframe_insert(data_path="value", frame=f)
-
-    smooth_action(arm)
-    try:
-        bpy.ops.object.mode_set(mode="OBJECT")
-    except Exception:
-        pass
-    print("ANIM_RIG sparse-keys wave frames", total_frames)
+    total = max(1, frame - 1)
+    if total > max_total_frames:
+        total = max_total_frames
+    print("CLIP_SEQUENCE", used, "total_frames", total)
+    return total
 
 
 def setup_camera_lights():
@@ -473,18 +416,17 @@ def frames_to_mp4(frame_dir: Path, out: Path, fps: int) -> None:
 def main():
     args = parse_args(sys.argv)
     fps = int(args.get("fps", 24))
-    seconds = min(max(float(args["seconds"]), 1.0), 12.0)
-    total_frames = max(fps, int(round(seconds * fps)))
+    seconds = min(max(float(args["seconds"]), 1.0), 20.0)
+    max_frames = max(fps, int(round(seconds * fps)))
     width = int(args.get("width", 720))
     height = int(args.get("height", 1280))
     glb = Path(args["glb"]).resolve()
 
     clear_scene()
     build_room()
-    root, arm, body = import_mike_glb(glb)
+    root, arm, body, actions = import_mike_glb(glb)
     setup_camera_lights()
-    add_facial_shape_keys(body)
-    animate_rig(arm, body, fps, total_frames)
+    total_frames = sequence_clips_on_armature(arm, actions, fps, max_frames)
 
     out = Path(args["out"]).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -24,35 +24,48 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy python3-pip || true
-          # Blender 5 glTF importer needs numpy on the Python it embeds/uses
           blender --version || true
-          blender -b --python-expr "import sys; print('BLENDER_PY', sys.executable); print(sys.path[:5])" || true
-          # Install numpy into paths Blender can see
           python3 -m pip install --user numpy || pip3 install --user numpy || true
-          # Also try blender's own python if distinct
           BL_PY=$(blender -b --python-expr "import sys; print(sys.executable)" 2>/dev/null | tail -1 || true)
           if [ -n "$BL_PY" ] && [ -x "$BL_PY" ]; then
             "$BL_PY" -m pip install numpy 2>/dev/null || true
           fi
-          # Debian/Ubuntu dist-packages often work when PYTHONPATH is set
           echo "PYTHONPATH=/usr/lib/python3/dist-packages:$HOME/.local/lib/python3.12/site-packages" >> $GITHUB_ENV
 
       - name: assemble-mike-glb
         run: |
-          python3 scripts/assemble_mike_glb.py
-          ls -lh assets/mike/Mike.glb
+          python3 scripts/assemble_mike_glb.py || true
+          # Prefer Mikeanim.glb (baked clips) when present
+          if [ -f assets/mike/Mikeanim.glb ]; then
+            echo "USING Mikeanim.glb"
+            ls -lh assets/mike/Mikeanim.glb
+            GLB=assets/mike/Mikeanim.glb
+          elif [ -f assets/mike/Mike.glb ]; then
+            echo "USING Mike.glb (no anim file)"
+            ls -lh assets/mike/Mike.glb
+            GLB=assets/mike/Mike.glb
+          else
+            echo "NO GLB FOUND" >&2
+            exit 1
+          fi
+          echo "GLB=$GLB" >> $GITHUB_ENV
           python3 - <<'PY'
           from pathlib import Path
-          import struct, json
-          p = Path("assets/mike/Mike.glb")
+          import struct, json, os
+          p = Path(os.environ.get("GLB", "assets/mike/Mikeanim.glb"))
+          if not p.exists():
+              p = Path("assets/mike/Mike.glb")
           data = p.read_bytes()
           assert data[:4] == b"glTF"
           offset = 12
           clen, ctype = struct.unpack_from("<I4s", data, offset)
           js = json.loads(data[offset+8:offset+8+clen].decode().rstrip(" \0"))
+          print("file", p)
           print("skins", len(js.get("skins", [])))
           print("nodes", len(js.get("nodes", [])))
           print("anims", len(js.get("animations", [])))
+          for i, a in enumerate(js.get("animations", [])[:12]):
+              print(" anim", i, a.get("name"))
           if js.get("skins"):
               print("joints", len(js["skins"][0].get("joints", [])))
           PY
@@ -62,13 +75,17 @@ jobs:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
           mkdir -p assets/blender
-          # Ensure numpy visible to blender python
           export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${HOME}/.local/lib/python3.13/site-packages:${PYTHONPATH}"
-          python3 -c "import numpy; print('host numpy', numpy.__version__)" || true
+          if [ -f assets/mike/Mikeanim.glb ]; then
+            GLB=assets/mike/Mikeanim.glb
+          else
+            GLB=assets/mike/Mike.glb
+          fi
+          echo "Rendering $GLB"
           xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/blender_mike3d.py -- \
-            --glb assets/mike/Mike.glb \
+            --glb "$GLB" \
             --out assets/blender/mike3d_test.mp4 \
-            --seconds 6 \
+            --seconds 12 \
             --width 720 \
             --height 1280
           ls -lh assets/blender/mike3d_test.mp4
