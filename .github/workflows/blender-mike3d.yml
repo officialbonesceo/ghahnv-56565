@@ -6,6 +6,7 @@ on:
     paths:
       - "data/force_blender3d.tick"
       - "scripts/blender_mike3d.py"
+      - "scripts/blender_mike3d_facial.py"
       - "scripts/assemble_mike_glb.py"
       - "assets/mike/**"
       - ".github/workflows/blender-mike3d.yml"
@@ -70,7 +71,7 @@ jobs:
               print("joints", len(js["skins"][0].get("joints", [])))
           PY
 
-      - name: render-glb-mike3d
+      - name: render-glb-mike3d-facial
         env:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
@@ -81,8 +82,13 @@ jobs:
           else
             GLB=assets/mike/Mike.glb
           fi
-          echo "Rendering $GLB"
-          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/blender_mike3d.py -- \
+          echo "Rendering FACIAL $GLB"
+          # Prefer facial script; fall back to original if missing
+          SCRIPT=scripts/blender_mike3d_facial.py
+          if [ ! -f "$SCRIPT" ]; then
+            SCRIPT=scripts/blender_mike3d.py
+          fi
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P "$SCRIPT" -- \
             --glb "$GLB" \
             --out assets/blender/mike3d_test.mp4 \
             --seconds 12 \
