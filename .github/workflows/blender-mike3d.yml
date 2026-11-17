@@ -36,13 +36,12 @@ jobs:
       - name: assemble-mike-glb
         run: |
           python3 scripts/assemble_mike_glb.py || true
-          # Prefer Mikeanim.glb (baked clips) when present
           if [ -f assets/mike/Mikeanim.glb ]; then
             echo "USING Mikeanim.glb"
             ls -lh assets/mike/Mikeanim.glb
             GLB=assets/mike/Mikeanim.glb
           elif [ -f assets/mike/Mike.glb ]; then
-            echo "USING Mike.glb (no anim file)"
+            echo "USING Mike.glb"
             ls -lh assets/mike/Mike.glb
             GLB=assets/mike/Mike.glb
           else
@@ -50,28 +49,8 @@ jobs:
             exit 1
           fi
           echo "GLB=$GLB" >> $GITHUB_ENV
-          python3 - <<'PY'
-          from pathlib import Path
-          import struct, json, os
-          p = Path(os.environ.get("GLB", "assets/mike/Mikeanim.glb"))
-          if not p.exists():
-              p = Path("assets/mike/Mike.glb")
-          data = p.read_bytes()
-          assert data[:4] == b"glTF"
-          offset = 12
-          clen, ctype = struct.unpack_from("<I4s", data, offset)
-          js = json.loads(data[offset+8:offset+8+clen].decode().rstrip(" \0"))
-          print("file", p)
-          print("skins", len(js.get("skins", [])))
-          print("nodes", len(js.get("nodes", [])))
-          print("anims", len(js.get("animations", [])))
-          for i, a in enumerate(js.get("animations", [])[:12]):
-              print(" anim", i, a.get("name"))
-          if js.get("skins"):
-              print("joints", len(js["skins"][0].get("joints", [])))
-          PY
 
-      - name: render-glb-mike3d-facial
+      - name: render-glb-mike3d
         env:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
@@ -82,12 +61,9 @@ jobs:
           else
             GLB=assets/mike/Mike.glb
           fi
-          echo "Rendering FACIAL $GLB"
-          # Prefer facial script; fall back to original if missing
-          SCRIPT=scripts/blender_mike3d_facial.py
-          if [ ! -f "$SCRIPT" ]; then
-            SCRIPT=scripts/blender_mike3d.py
-          fi
+          echo "Rendering stable body clips $GLB"
+          # Use stable body-only script (no root bounce)
+          SCRIPT=scripts/blender_mike3d.py
           xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P "$SCRIPT" -- \
             --glb "$GLB" \
             --out assets/blender/mike3d_test.mp4 \
