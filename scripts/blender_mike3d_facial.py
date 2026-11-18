@@ -1,13 +1,7 @@
 """
-Blender 3D Mike — body clips (Mikeanim.glb) + procedural facial animation.
-Creates usable mouth_open / blink shape keys from mesh bounds when the
-Tripo export has none. Never moves the root (avoids bounce).
-
-Usage:
-  blender -b -noaudio -P scripts/blender_mike3d_facial.py -- \
-    --out assets/blender/mike3d_test.mp4 \
-    --glb assets/mike/Mikeanim.glb \
-    --seconds 12 --width 720 --height 1280
+Blender 3D Mike — body clips + STRONG procedural facial animation.
+Creates large mouth_open / blink shape keys from mesh bounds.
+Closer face camera so motion is visible. Never moves root (no bounce).
 """
 from __future__ import annotations
 
@@ -24,12 +18,13 @@ from mathutils import Vector
 
 def parse_args(argv):
     args = {
-        "out": "assets/blender/mike_facial.mp4",
+        "out": "assets/blender/mike3d_test.mp4",
         "fps": 24,
         "seconds": 12.0,
         "width": 720,
         "height": 1280,
         "glb": "assets/mike/Mikeanim.glb",
+        "face_close": "1",
     }
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
@@ -99,10 +94,8 @@ def build_bright_studio():
     back = mesh("primitive_plane_add", size=20, location=(0, 2.8, 1.6))
     back.rotation_euler = (math.radians(90), 0, 0)
     back.data.materials.append(mat("Back", (0.22, 0.22, 0.24)))
-
     floor = mesh("primitive_plane_add", size=20, location=(0, 0.5, 0))
     floor.data.materials.append(mat("Floor", (0.18, 0.18, 0.20)))
-
     disc = mesh("primitive_cylinder_add", radius=1.1, depth=0.02, location=(0, 0.55, 0.01))
     disc.data.materials.append(mat("Disc", (0.12, 0.12, 0.14)))
 
@@ -228,7 +221,6 @@ def import_mike_glb(glb_path: Path):
 
 
 def _mesh_bounds_local(mesh_obj):
-    """Axis-aligned bounds in object-local space."""
     me = mesh_obj.data
     if not me.vertices:
         return Vector((0, 0, 0)), Vector((0, 0, 0))
@@ -239,10 +231,6 @@ def _mesh_bounds_local(mesh_obj):
 
 
 def ensure_shape_keys(mesh_obj):
-    """
-    Create geometric mouth_open and blink shape keys from mesh bounds.
-    Works on Tripo / arbitrary humanoid topology that has no keys.
-    """
     if mesh_obj is None:
         return {}
     me = mesh_obj.data
@@ -257,12 +245,12 @@ def ensure_shape_keys(mesh_obj):
     if size.z < 1e-6:
         size.z = 1.0
     h = size.z
-    mouth_z0 = mn.z + h * 0.42
-    mouth_z1 = mn.z + h * 0.58
-    eye_z0 = mn.z + h * 0.62
-    eye_z1 = mn.z + h * 0.78
-    mouth_x_half = size.x * 0.22
-    eye_x_half = size.x * 0.28
+    mouth_z0 = mn.z + h * 0.38
+    mouth_z1 = mn.z + h * 0.60
+    eye_z0 = mn.z + h * 0.60
+    eye_z1 = mn.z + h * 0.80
+    mouth_x_half = size.x * 0.28
+    eye_x_half = size.x * 0.32
     cx = (mn.x + mx.x) * 0.5
     y_mid = (mn.y + mx.y) * 0.5
 
@@ -271,72 +259,75 @@ def ensure_shape_keys(mesh_obj):
             return 0.0
         if abs(v.co.x - cx) > mouth_x_half:
             return 0.0
-        if v.co.y < y_mid - size.y * 0.05:
+        if v.co.y < y_mid - size.y * 0.08:
             return 0.0
         tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
-        lip = 1.0 - abs(tz - 0.35) * 1.6
+        lip = 1.0 - abs(tz - 0.42) * 1.5
         lip = max(0.0, min(1.0, lip))
         tx = 1.0 - abs(v.co.x - cx) / mouth_x_half
-        return lip * max(0.0, tx) ** 0.7
+        return lip * max(0.0, tx) ** 0.55
 
     def falloff_blink(v):
         if not (eye_z0 <= v.co.z <= eye_z1):
             return 0.0
         if abs(v.co.x - cx) > eye_x_half:
             return 0.0
-        if v.co.y < y_mid - size.y * 0.02:
+        if v.co.y < y_mid - size.y * 0.03:
             return 0.0
         tz = (v.co.z - eye_z0) / max(1e-6, eye_z1 - eye_z0)
-        lid = 1.0 - abs(tz - 0.55) * 2.2
+        lid = 1.0 - abs(tz - 0.50) * 2.0
         lid = max(0.0, min(1.0, lid))
         tx = 1.0 - abs(v.co.x - cx) / eye_x_half
-        return lid * max(0.0, tx) ** 0.8
+        return lid * max(0.0, tx) ** 0.7
 
-    if "mouth_open" not in existing and "mouthopen" not in existing and "jawopen" not in existing:
+    for name in ("mouth_open", "blink"):
+        if name in existing:
+            try:
+                mesh_obj.shape_key_remove(key=existing[name])
+            except Exception:
+                pass
+    existing = {kb.name.lower(): kb for kb in me.shape_keys.key_blocks}
+
+    if "mouth_open" not in existing:
         kb = mesh_obj.shape_key_add(name="mouth_open", from_mix=False)
-        open_down = h * 0.028
-        open_fwd = h * 0.012
+        open_down = h * 0.085
+        open_fwd = h * 0.035
+        open_side = h * 0.012
         for i, v in enumerate(me.vertices):
             w = falloff_mouth(v)
-            if w <= 0.01:
+            if w <= 0.008:
                 continue
             tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
-            down = open_down * w * (1.15 - 0.7 * tz)
-            fwd = open_fwd * w * (0.6 + 0.4 * (1.0 - tz))
+            down = open_down * w * (0.35 + 1.1 * (1.0 - tz))
+            up = open_down * w * 0.25 * max(0.0, tz - 0.55)
+            fwd = open_fwd * w * (0.5 + 0.5 * (1.0 - tz))
+            side = open_side * w * (1.0 if v.co.x >= cx else -1.0) * (1.0 - abs(tz - 0.45))
             kb.data[i].co.z -= down
+            kb.data[i].co.z += up
             kb.data[i].co.y += fwd
+            kb.data[i].co.x += side
         keys["mouth_open"] = kb
-        print("SHAPEKEY_CREATED mouth_open")
+        print("SHAPEKEY_CREATED mouth_open STRONG")
     else:
-        keys["mouth_open"] = (
-            existing.get("mouth_open")
-            or existing.get("mouthopen")
-            or existing.get("jawopen")
-        )
+        keys["mouth_open"] = existing.get("mouth_open")
 
-    if "blink" not in existing and "eyeblink" not in existing and "eyeblinkleft" not in existing:
+    if "blink" not in existing:
         kb = mesh_obj.shape_key_add(name="blink", from_mix=False)
-        close = h * 0.014
+        close = h * 0.032
         for i, v in enumerate(me.vertices):
             w = falloff_blink(v)
             if w <= 0.01:
                 continue
             kb.data[i].co.z -= close * w
         keys["blink"] = kb
-        print("SHAPEKEY_CREATED blink")
+        print("SHAPEKEY_CREATED blink STRONG")
     else:
-        keys["blink"] = (
-            existing.get("blink")
-            or existing.get("eyeblink")
-            or existing.get("eyeblinkleft")
-        )
+        keys["blink"] = existing.get("blink")
 
-    if "mouth_open" in keys and keys["mouth_open"] is not None:
+    if keys.get("mouth_open") is not None:
         kb = keys["mouth_open"]
         moved = sum(
-            1
-            for i, v in enumerate(me.vertices)
-            if (kb.data[i].co - v.co).length > 1e-5
+            1 for i, v in enumerate(me.vertices) if (kb.data[i].co - v.co).length > 1e-5
         )
         print("SHAPEKEY_MOUTH_MOVED", moved, "of", len(me.vertices))
 
@@ -344,41 +335,38 @@ def ensure_shape_keys(mesh_obj):
 
 
 def animate_face(root, body, jaw_bone, head_bone, eye_l, eye_r, fps, total_frames):
-    """Subtle face only. Never keyframe root — body NLA owns body motion."""
     random.seed(42)
     sk_map = ensure_shape_keys(body)
-
-    speech_windows = [(0.8, 3.5), (4.2, 7.0), (8.0, 11.2)]
+    speech_windows = [(0.6, 3.8), (4.0, 7.2), (7.6, 11.4)]
 
     def in_speech(t):
         return any(a <= t <= b for a, b in speech_windows)
 
     blink_times = []
-    t = 1.2
-    while t < (total_frames / fps) - 0.4:
+    t = 1.0
+    while t < (total_frames / fps) - 0.3:
         blink_times.append(t)
-        t += random.uniform(2.4, 4.2)
+        t += random.uniform(2.0, 3.6)
 
     for f in range(1, total_frames + 1):
         t = f / float(fps)
-
         if head_bone is not None:
             try:
                 head_bone.rotation_euler = (
-                    math.radians(0.7 * math.sin(t * 0.9)),
-                    math.radians(0.5 * math.sin(t * 1.3)),
-                    math.radians(0.9 * math.sin(t * 1.1)),
+                    math.radians(1.2 * math.sin(t * 0.9)),
+                    math.radians(0.8 * math.sin(t * 1.3)),
+                    math.radians(1.1 * math.sin(t * 1.1)),
                 )
                 head_bone.keyframe_insert(data_path="rotation_euler", frame=f)
             except Exception:
                 pass
 
-        mouth_amt = 0.0
         if in_speech(t):
-            mouth_amt = 0.28 + 0.48 * abs(math.sin(t * 9.5))
-            mouth_amt *= 0.65 + 0.35 * abs(math.sin(t * 3.2))
+            mouth_amt = 0.45 + 0.55 * abs(math.sin(t * 11.0))
+            mouth_amt *= 0.75 + 0.25 * abs(math.sin(t * 4.1))
+            mouth_amt = min(1.0, mouth_amt)
         else:
-            mouth_amt = 0.03 * abs(math.sin(t * 1.8))
+            mouth_amt = 0.05 * abs(math.sin(t * 1.6))
 
         if sk_map.get("mouth_open") is not None:
             try:
@@ -389,17 +377,17 @@ def animate_face(root, body, jaw_bone, head_bone, eye_l, eye_r, fps, total_frame
 
         if jaw_bone is not None:
             try:
-                jaw_bone.rotation_euler = (math.radians(10.0 * mouth_amt), 0, 0)
+                jaw_bone.rotation_euler = (math.radians(18.0 * mouth_amt), 0, 0)
                 jaw_bone.keyframe_insert(data_path="rotation_euler", frame=f)
             except Exception:
                 pass
 
         blink_val = 0.0
         for bt in blink_times:
-            if abs(t - bt) < 0.06:
+            if abs(t - bt) < 0.05:
                 blink_val = 1.0
-            elif abs(t - bt) < 0.12:
-                blink_val = 0.4
+            elif abs(t - bt) < 0.10:
+                blink_val = 0.55
 
         if sk_map.get("blink") is not None:
             try:
@@ -411,8 +399,8 @@ def animate_face(root, body, jaw_bone, head_bone, eye_l, eye_r, fps, total_frame
         if eye_l is not None:
             try:
                 eye_l.rotation_euler = (
-                    math.radians(1.0 * math.sin(t * 0.7)),
-                    math.radians(1.5 * math.sin(t * 0.55)),
+                    math.radians(1.2 * math.sin(t * 0.7)),
+                    math.radians(1.8 * math.sin(t * 0.55)),
                     0,
                 )
                 eye_l.keyframe_insert(data_path="rotation_euler", frame=f)
@@ -421,8 +409,8 @@ def animate_face(root, body, jaw_bone, head_bone, eye_l, eye_r, fps, total_frame
         if eye_r is not None:
             try:
                 eye_r.rotation_euler = (
-                    math.radians(1.0 * math.sin(t * 0.7 + 0.3)),
-                    math.radians(1.5 * math.sin(t * 0.55 + 0.2)),
+                    math.radians(1.2 * math.sin(t * 0.7 + 0.3)),
+                    math.radians(1.8 * math.sin(t * 0.55 + 0.2)),
                     0,
                 )
                 eye_r.keyframe_insert(data_path="rotation_euler", frame=f)
@@ -463,16 +451,13 @@ def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
     clips = pick_clip_sequence(actions)
     if not clips:
         return 1
-
     if not arm.animation_data:
         arm.animation_data_create()
     while arm.animation_data.nla_tracks:
         arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
     arm.animation_data.action = None
-
     track = arm.animation_data.nla_tracks.new()
     track.name = "MikeClips"
-
     frame = 1
     for action in clips:
         dur = action_duration_frames(action, fps)
@@ -499,37 +484,37 @@ def sequence_clips_on_armature(arm, actions, fps, max_total_frames):
         except Exception:
             pass
         frame += use
-
     return max(1, min(frame - 1, max_total_frames))
 
 
-def setup_camera_lights():
+def setup_camera_lights(face_close=True):
     bpy.ops.object.light_add(type="SUN", location=(1.5, -2.5, 7))
     sun = bpy.context.active_object
     sun.data.energy = 6.5
     sun.rotation_euler = (math.radians(40), math.radians(12), 0)
-
     bpy.ops.object.light_add(type="AREA", location=(0, -2.2, 2.2))
     fill = bpy.context.active_object
-    fill.data.energy = 350
+    fill.data.energy = 380
     fill.data.size = 5.0
-
     bpy.ops.object.light_add(type="AREA", location=(-2.5, -0.5, 2.5))
     left = bpy.context.active_object
-    left.data.energy = 180
+    left.data.energy = 200
     left.data.size = 3.5
-
     bpy.ops.object.light_add(type="AREA", location=(2.8, 0.2, 2.8))
     rim = bpy.context.active_object
-    rim.data.energy = 120
+    rim.data.energy = 140
     rim.data.size = 2.5
-
-    bpy.ops.object.camera_add(location=(0, -2.35, 1.05))
-    cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(86), 0, 0)
-    cam.data.lens = 50
+    if face_close:
+        bpy.ops.object.camera_add(location=(0, -1.55, 1.45))
+        cam = bpy.context.active_object
+        cam.rotation_euler = (math.radians(82), 0, 0)
+        cam.data.lens = 55
+    else:
+        bpy.ops.object.camera_add(location=(0, -2.35, 1.05))
+        cam = bpy.context.active_object
+        cam.rotation_euler = (math.radians(86), 0, 0)
+        cam.data.lens = 50
     bpy.context.scene.camera = cam
-
     world = bpy.data.worlds.new("World")
     bpy.context.scene.world = world
     try:
@@ -587,13 +572,13 @@ def main():
     width = int(args.get("width", 720))
     height = int(args.get("height", 1280))
     glb = Path(args["glb"]).resolve()
+    face_close = str(args.get("face_close", "1")).lower() not in ("0", "false", "no")
 
     clear_scene()
     build_bright_studio()
     root, arm, body, actions, jaw, head, eye_l, eye_r = import_mike_glb(glb)
-    setup_camera_lights()
+    setup_camera_lights(face_close=face_close)
     total_frames = sequence_clips_on_armature(arm, actions, fps, max_frames)
-
     animate_face(root, body, jaw, head, eye_l, eye_r, fps, total_frames)
 
     out = Path(args["out"]).resolve()
@@ -602,7 +587,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         frame_dir = Path(tmp)
         setup_render_png(frame_dir, fps, total_frames, width, height)
-        print(f"Render Mike3D+Face {total_frames}f {width}x{height}")
+        print(f"Render Mike3D+Face STRONG {total_frames}f {width}x{height} face_close={face_close}")
         bpy.ops.render.render(animation=True)
         n = len(list(frame_dir.glob("frame_*.png")))
         print(f"frames={n}")
