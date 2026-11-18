@@ -7,6 +7,7 @@ on:
       - "data/force_blender3d.tick"
       - "scripts/blender_mike3d.py"
       - "scripts/blender_mike3d_facial.py"
+      - "scripts/face_overlay_composite.py"
       - "scripts/assemble_mike_glb.py"
       - "assets/mike/**"
       - ".github/workflows/blender-mike3d.yml"
@@ -50,36 +51,45 @@ jobs:
           fi
           echo "GLB=$GLB" >> $GITHUB_ENV
 
-      - name: render-glb-mike3d-facial
+      - name: render-strong-3d-face
         env:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
           mkdir -p assets/blender
           export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${HOME}/.local/lib/python3.13/site-packages:${PYTHONPATH}"
-          if [ -f assets/mike/Mikeanim.glb ]; then
-            GLB=assets/mike/Mikeanim.glb
-          else
-            GLB=assets/mike/Mike.glb
-          fi
-          echo "Rendering FACIAL geometric shape keys $GLB"
-          SCRIPT=scripts/blender_mike3d_facial.py
-          if [ ! -f "$SCRIPT" ]; then
-            SCRIPT=scripts/blender_mike3d.py
-          fi
-          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P "$SCRIPT" -- \
+          if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
+          echo "Rendering STRONG geometric face $GLB"
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/blender_mike3d_facial.py -- \
             --glb "$GLB" \
-            --out assets/blender/mike3d_test.mp4 \
+            --out assets/blender/mike3d_strong_face.mp4 \
             --seconds 12 \
             --width 720 \
-            --height 1280
-          ls -lh assets/blender/mike3d_test.mp4
-          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default assets/blender/mike3d_test.mp4
+            --height 1280 \
+            --face_close 1
+          ls -lh assets/blender/mike3d_strong_face.mp4
+          # also keep legacy name for old consumers
+          cp assets/blender/mike3d_strong_face.mp4 assets/blender/mike3d_test.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default assets/blender/mike3d_strong_face.mp4
+
+      - name: composite-2d-mouth-eye-overlay
+        run: |
+          python3 scripts/face_overlay_composite.py \
+            --base assets/blender/mike3d_strong_face.mp4 \
+            --out assets/blender/mike3d_overlay.mp4 \
+            --seconds 12 \
+            --width 720 \
+            --height 1280 \
+            --fps 24
+          ls -lh assets/blender/mike3d_overlay.mp4
+          ffprobe -v error -show_entries format=duration,size -of default assets/blender/mike3d_overlay.mp4
 
       - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: mike3d-test
+          name: mike3d-face-compare
           path: |
+            assets/blender/mike3d_strong_face.mp4
+            assets/blender/mike3d_overlay.mp4
             assets/blender/mike3d_test.mp4
           if-no-files-found: error
           retention-days: 5
