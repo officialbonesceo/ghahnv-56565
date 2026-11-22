@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Full 3D Mike teaching / tutorial video.
-- Body: Mixamo teaching gestures (Agree_Gesture, Alert, etc.) via NLA
-- Face: jaw + eyelid + brow bones only (never root/hips)
-- Camera: waist-up teaching framing (full face + torso), NOT neck-only closeup
+Full 3D Mike teaching video — fixed face attach + framing.
+- Face meshes parented in bone LOCAL space (no floating eyes)
+- Character scaled once under MikeRoot
+- Camera tracks head, waist-up fill of frame
+- Body NLA gestures + face jaw/blink only (never root)
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 
 def parse_args(argv):
@@ -72,18 +73,18 @@ def mat_simple(name, color):
 
 
 def build_studio():
-    bpy.ops.mesh.primitive_plane_add(size=24, location=(0, 3.2, 1.4))
+    bpy.ops.mesh.primitive_plane_add(size=30, location=(0, 4.0, 1.5))
     back = bpy.context.active_object
     back.rotation_euler = (math.radians(90), 0, 0)
-    back.data.materials.append(mat_simple("Back", (0.20, 0.22, 0.28)))
+    back.data.materials.append(mat_simple("Back", (0.18, 0.20, 0.26)))
 
-    bpy.ops.mesh.primitive_plane_add(size=24, location=(0, 0.6, 0))
+    bpy.ops.mesh.primitive_plane_add(size=30, location=(0, 0.8, 0))
     floor = bpy.context.active_object
-    floor.data.materials.append(mat_simple("Floor", (0.14, 0.14, 0.16)))
+    floor.data.materials.append(mat_simple("Floor", (0.12, 0.12, 0.14)))
 
-    bpy.ops.mesh.primitive_cylinder_add(radius=1.0, depth=0.03, location=(0, 0.55, 0.02))
+    bpy.ops.mesh.primitive_cylinder_add(radius=1.2, depth=0.04, location=(0, 0.7, 0.02))
     disc = bpy.context.active_object
-    disc.data.materials.append(mat_simple("Disc", (0.10, 0.12, 0.16)))
+    disc.data.materials.append(mat_simple("Disc", (0.08, 0.10, 0.14)))
 
 
 def find_armature_and_body():
@@ -98,14 +99,22 @@ def find_armature_and_body():
     if arm is None and arms:
         arm = arms[0]
     body = None
+    skinned = []
     if arm and meshes:
         for m in meshes:
             if any(mod.type == "ARMATURE" and mod.object == arm for mod in m.modifiers):
-                body = m
-                break
-        if body is None:
+                skinned.append(m)
+        if skinned:
+            body = max(skinned, key=lambda o: len(o.data.vertices))
+        else:
             body = max(meshes, key=lambda o: len(o.data.vertices))
     return arm, body, meshes
+
+
+def update_scene():
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    dg.update()
 
 
 def bone_world(arm, bone_name):
@@ -124,14 +133,15 @@ def ensure_facial_bones(arm):
     if head_name is None:
         raise SystemExit("No Head bone")
 
+    # Local offsets in Head bone space (Mixamo: +Y toward skull top roughly)
     face_defs = {
-        "face_jaw": (Vector((0.0, -0.04, 0.02)), Vector((0.0, -0.12, 0.08))),
-        "face_eye_L": (Vector((-0.05, 0.09, 0.08)), Vector((-0.05, 0.09, 0.12))),
-        "face_eye_R": (Vector((0.05, 0.09, 0.08)), Vector((0.05, 0.09, 0.12))),
-        "face_eyelid_L": (Vector((-0.05, 0.11, 0.09)), Vector((-0.05, 0.08, 0.09))),
-        "face_eyelid_R": (Vector((0.05, 0.11, 0.09)), Vector((0.05, 0.08, 0.09))),
-        "face_brow_L": (Vector((-0.05, 0.14, 0.08)), Vector((-0.05, 0.15, 0.10))),
-        "face_brow_R": (Vector((0.05, 0.14, 0.08)), Vector((0.05, 0.15, 0.10))),
+        "face_jaw": (Vector((0.0, -0.03, 0.02)), Vector((0.0, -0.08, 0.05))),
+        "face_eye_L": (Vector((-0.035, 0.06, 0.05)), Vector((-0.035, 0.06, 0.08))),
+        "face_eye_R": (Vector((0.035, 0.06, 0.05)), Vector((0.035, 0.06, 0.08))),
+        "face_eyelid_L": (Vector((-0.035, 0.075, 0.055)), Vector((-0.035, 0.055, 0.055))),
+        "face_eyelid_R": (Vector((0.035, 0.075, 0.055)), Vector((0.035, 0.055, 0.055))),
+        "face_brow_L": (Vector((-0.035, 0.10, 0.05)), Vector((-0.035, 0.11, 0.07))),
+        "face_brow_R": (Vector((0.035, 0.10, 0.05)), Vector((0.035, 0.11, 0.07))),
     }
 
     bpy.context.view_layer.objects.active = arm
@@ -146,7 +156,7 @@ def ensure_facial_bones(arm):
         eb.head = hm @ hoff
         eb.tail = hm @ toff
         if (eb.tail - eb.head).length < 1e-4:
-            eb.tail = eb.head + Vector((0, 0.02, 0))
+            eb.tail = eb.head + Vector((0, 0.015, 0))
         eb.parent = head_eb
         eb.use_connect = False
         created[bname] = bname
@@ -156,11 +166,12 @@ def ensure_facial_bones(arm):
         db = arm.data.bones.get(bname)
         if db:
             db.use_deform = False
+    update_scene()
     return created, head_name
 
 
-def make_sphere(name, radius, location, mat):
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, location=location, segments=16, ring_count=10)
+def make_sphere(name, radius, mat):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, location=(0, 0, 0), segments=16, ring_count=10)
     obj = bpy.context.active_object
     obj.name = name
     obj.data.materials.append(mat)
@@ -171,32 +182,57 @@ def make_sphere(name, radius, location, mat):
     return obj
 
 
-def make_cube(name, scale, location, mat):
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=location)
+def make_cube(name, dims, mat):
+    """dims = (sx, sy, sz) full size."""
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0, 0, 0))
     obj = bpy.context.active_object
     obj.name = name
-    obj.scale = scale
+    obj.scale = Vector(dims)
     bpy.ops.object.transform_apply(scale=True)
     obj.data.materials.append(mat)
     return obj
 
 
-def parent_to_bone(mesh_obj, arm, bone_name):
+def parent_mesh_bone_local(mesh_obj, arm, bone_name, local_xyz):
+    """
+    Parent mesh to bone and set location in BONE local space.
+    This keeps eyes on the head after armature/root scale.
+    """
     mesh_obj.parent = arm
     mesh_obj.parent_type = "BONE"
     mesh_obj.parent_bone = bone_name
-    mesh_obj.matrix_parent_inverse = (
-        arm.matrix_world @ arm.pose.bones[bone_name].matrix
-    ).inverted()
+    # Clear inverse so local = bone space
+    mesh_obj.matrix_parent_inverse = Matrix.Identity(4)
+    mesh_obj.location = Vector(local_xyz)
+    mesh_obj.rotation_euler = (0, 0, 0)
+    mesh_obj.scale = (1, 1, 1)
 
 
 def add_face_meshes(arm, bone_map, head_name):
-    head_w = bone_world(arm, head_name) or Vector((0, 1.1, 0))
-    eye_L = head_w + Vector((-0.055, 0.10, 0.11))
-    eye_R = head_w + Vector((0.055, 0.10, 0.11))
-    mouth = head_w + Vector((0.0, 0.015, 0.13))
-    brow_L = head_w + Vector((-0.055, 0.15, 0.10))
-    brow_R = head_w + Vector((0.055, 0.15, 0.10))
+    """
+    Face parts sized from measured head span AFTER character scale.
+    Parent in bone-local space so they stick to the head.
+    """
+    update_scene()
+    head_w = bone_world(arm, head_name)
+    top_w = bone_world(arm, "mixamorig:HeadTop_End")
+    if head_w is None:
+        raise SystemExit("Head world missing")
+
+    head_h = 0.35
+    if top_w is not None:
+        head_h = max(0.15, (top_w - head_w).length)
+
+    # Feature sizes proportional to head
+    eye_r = head_h * 0.07
+    pupil_r = eye_r * 0.40
+    lid_w = head_h * 0.16
+    lid_h = head_h * 0.04
+    lid_d = head_h * 0.10
+    brow_w = head_h * 0.15
+    lip_w = head_h * 0.20
+
+    print("HEAD_WORLD", tuple(round(x, 3) for x in head_w), "head_h", round(head_h, 3))
 
     mat_eye = mat_simple("FaceEye", (0.97, 0.97, 1.0))
     mat_pupil = mat_simple("FacePupil", (0.03, 0.03, 0.06))
@@ -205,64 +241,83 @@ def add_face_meshes(arm, bone_map, head_name):
     mat_lip = mat_simple("FaceLip", (0.78, 0.24, 0.28))
     mat_teeth = mat_simple("FaceTeeth", (0.94, 0.92, 0.87))
 
-    for side, pos, bk in (("L", eye_L, "face_eye_L"), ("R", eye_R, "face_eye_R")):
-        eye = make_sphere(f"FaceEye_{side}", 0.028, pos, mat_eye)
-        pupil = make_sphere(f"FacePupil_{side}", 0.011, pos + Vector((0, 0, 0.022)), mat_pupil)
-        parent_to_bone(eye, arm, bone_map[bk])
-        parent_to_bone(pupil, arm, bone_map[bk])
+    # Bone-local offsets (same space as face bone defs)
+    # Eyes sit slightly forward of eye bones
+    for side, bk, x in (("L", "face_eye_L", -1), ("R", "face_eye_R", 1)):
+        eye = make_sphere(f"FaceEye_{side}", eye_r, mat_eye)
+        parent_mesh_bone_local(eye, arm, bone_map[bk], (0, 0, eye_r * 0.3))
+        pupil = make_sphere(f"FacePupil_{side}", pupil_r, mat_pupil)
+        parent_mesh_bone_local(pupil, arm, bone_map[bk], (0, 0, eye_r * 0.9))
 
-    for side, pos, bk in (
-        ("L", eye_L + Vector((0, 0.016, 0.008)), "face_eyelid_L"),
-        ("R", eye_R + Vector((0, 0.016, 0.008)), "face_eyelid_R"),
-    ):
-        lid = make_cube(f"FaceEyelid_{side}", Vector((0.036, 0.009, 0.026)), pos, mat_lid)
-        parent_to_bone(lid, arm, bone_map[bk])
+    for side, bk in (("L", "face_eyelid_L"), ("R", "face_eyelid_R")):
+        lid = make_cube(f"FaceEyelid_{side}", (lid_w, lid_h, lid_d), mat_lid)
+        parent_mesh_bone_local(lid, arm, bone_map[bk], (0, 0, 0))
 
-    for side, pos, bk in (("L", brow_L, "face_brow_L"), ("R", brow_R, "face_brow_R")):
-        brow = make_cube(f"FaceBrow_{side}", Vector((0.038, 0.007, 0.012)), pos, mat_brow)
-        parent_to_bone(brow, arm, bone_map[bk])
+    for side, bk in (("L", "face_brow_L"), ("R", "face_brow_R")):
+        brow = make_cube(f"FaceBrow_{side}", (brow_w, head_h * 0.03, head_h * 0.05), mat_brow)
+        parent_mesh_bone_local(brow, arm, bone_map[bk], (0, 0, 0))
 
-    upper = make_cube("FaceUpperLip", Vector((0.050, 0.009, 0.016)), mouth + Vector((0, 0.016, 0)), mat_lip)
-    lower = make_cube("FaceLowerLip", Vector((0.048, 0.011, 0.016)), mouth + Vector((0, -0.012, 0.006)), mat_lip)
-    teeth = make_cube("FaceTeeth", Vector((0.040, 0.012, 0.010)), mouth + Vector((0, 0.0, -0.004)), mat_teeth)
-    parent_to_bone(upper, arm, head_name)
-    parent_to_bone(lower, arm, bone_map["face_jaw"])
-    parent_to_bone(teeth, arm, bone_map["face_jaw"])
+    upper = make_cube("FaceUpperLip", (lip_w, head_h * 0.035, head_h * 0.06), mat_lip)
+    parent_mesh_bone_local(upper, arm, head_name, (0, head_h * 0.02, head_h * 0.18))
+
+    lower = make_cube("FaceLowerLip", (lip_w * 0.95, head_h * 0.04, head_h * 0.06), mat_lip)
+    parent_mesh_bone_local(lower, arm, bone_map["face_jaw"], (0, 0, head_h * 0.05))
+
+    teeth = make_cube("FaceTeeth", (lip_w * 0.8, head_h * 0.04, head_h * 0.04), mat_teeth)
+    parent_mesh_bone_local(teeth, arm, bone_map["face_jaw"], (0, 0, head_h * 0.02))
+
+    update_scene()
+    # Sanity: eye world should be near head
+    eye_obj = bpy.data.objects.get("FaceEye_L")
+    if eye_obj:
+        ew = eye_obj.matrix_world.translation
+        dist = (ew - head_w).length
+        print("EYE_L_WORLD", tuple(round(x, 3) for x in ew), "dist_to_head", round(dist, 3))
+        if dist > head_h * 3:
+            print("WARN face still far from head")
     print("FACE_MESHES_OK")
 
 
 def place_character(arm, body, meshes):
-    """Scale character so height ~1.85 and feet on floor. Never animate root for face."""
-    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0.55, 0))
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
     root = bpy.context.active_object
     root.name = "MikeRoot"
 
+    # Bounds of body mesh only (ignore later face props)
     min_c = Vector((1e9, 1e9, 1e9))
     max_c = Vector((-1e9, -1e9, -1e9))
-    for o in meshes or []:
+    targets = [body] if body else [m for m in (meshes or []) if m.type == "MESH"]
+    for o in targets:
+        if o is None:
+            continue
         for corner in o.bound_box:
             w = o.matrix_world @ Vector(corner)
             min_c = Vector((min(min_c.x, w.x), min(min_c.y, w.y), min(min_c.z, w.z)))
             max_c = Vector((max(max_c.x, w.x), max(max_c.y, w.y), max(max_c.z, w.z)))
 
     height = max(0.01, max_c.z - min_c.z)
-    scale = 1.85 / height
+    # Target ~1.7m tall in Blender units
+    scale = 1.70 / height
 
     if arm and arm.parent is None:
         arm.parent = root
-    for o in bpy.data.objects:
+    for o in list(bpy.data.objects):
         if o.type in ("MESH", "ARMATURE") and o.parent is None and o != root:
+            # don't parent studio planes
+            if o.name in ("Back", "Floor", "Disc") or (o.data and o.data.name.startswith("Plane")):
+                continue
             o.parent = root
 
     root.scale = (scale, scale, scale)
-    root.location = (0, 0.55, -min_c.z * scale)
+    # Feet on z=0
+    root.location = (0.0, 0.70, -min_c.z * scale)
     root.rotation_euler = (0, 0, 0)
-    print("ROOT_PLACE height", round(height, 3), "scale", round(scale, 3))
+    update_scene()
+    print("ROOT_PLACE height", round(height, 3), "scale", round(scale, 3), "root_z", round(root.location.z, 3))
     return root
 
 
 def sequence_body_clips(arm, fps, total_frames):
-    """NLA body teaching gestures. Prefer Agree_Gesture / Alert."""
     if not arm.animation_data:
         arm.animation_data_create()
 
@@ -271,7 +326,6 @@ def sequence_body_clips(arm, fps, total_frames):
     for key in ("Agree_Gesture", "Alert", "Casual_Walk"):
         if key in by_name:
             preferred.append(by_name[key])
-    # also unnamed teaching clip if present
     for a in bpy.data.actions:
         if a.name.startswith("_") and a not in preferred:
             preferred.insert(0, a)
@@ -279,7 +333,6 @@ def sequence_body_clips(arm, fps, total_frames):
     if not preferred:
         preferred = list(bpy.data.actions)[:2]
 
-    # clear NLA
     while arm.animation_data.nla_tracks:
         arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
     arm.animation_data.action = None
@@ -306,10 +359,9 @@ def sequence_body_clips(arm, fps, total_frames):
             strip.extrapolation = "HOLD"
         except Exception:
             pass
-        print("BODY_STRIP", action.name, "frames", frame, "->", frame + use)
+        print("BODY_STRIP", action.name, frame, "->", frame + use)
         frame += use
 
-    # hold last pose if short
     if frame < total_frames and preferred:
         action = preferred[-1]
         try:
@@ -327,13 +379,11 @@ def sequence_body_clips(arm, fps, total_frames):
 
 
 def animate_face_talk(arm, bone_map, fps, total_frames):
-    """FaceTalk action — jaw/eyelids/brows only."""
     act = bpy.data.actions.get("FaceTalk")
     if act:
         bpy.data.actions.remove(act)
     act = bpy.data.actions.new("FaceTalk")
 
-    # temporarily assign to keyframe
     if not arm.animation_data:
         arm.animation_data_create()
     prev = arm.animation_data.action
@@ -350,8 +400,6 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
     jaw_cycle = max(6, int(fps * 0.38))
     blink_period = max(20, int(fps * 2.4))
     blink_len = max(6, int(fps * 0.32))
-
-    # Speech windows (teaching beats)
     speech = [(0.4, 3.5), (4.0, 7.5), (8.0, 11.5)]
 
     def in_speech(t):
@@ -361,9 +409,9 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
         t = f / float(fps)
         if in_speech(t):
             phase = ((f - 1) % jaw_cycle) / float(jaw_cycle)
-            ang = 32.0 * (math.sin(phase * math.pi))  # open then close
+            ang = 28.0 * math.sin(phase * math.pi)
         else:
-            ang = 3.0 * abs(math.sin(t * 1.5))
+            ang = 2.0 * abs(math.sin(t * 1.5))
         jaw.rotation_euler = (math.radians(ang), 0, 0)
         jaw.keyframe_insert(data_path="rotation_euler", frame=f)
 
@@ -371,7 +419,7 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
         if cycle_pos < blink_len:
             mid = blink_len / 2.0
             tblink = cycle_pos / mid if cycle_pos <= mid else 1.0 - (cycle_pos - mid) / mid
-            bang = -35.0 * tblink
+            bang = -30.0 * tblink
         else:
             bang = 0.0
         lid_L.rotation_euler = (math.radians(bang), 0, 0)
@@ -379,7 +427,7 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
         lid_L.keyframe_insert(data_path="rotation_euler", frame=f)
         lid_R.keyframe_insert(data_path="rotation_euler", frame=f)
 
-        raise_amt = 6.0 if in_speech(t) and ang > 12 else 0.0
+        raise_amt = 5.0 if in_speech(t) and ang > 10 else 0.0
         brow_L.rotation_euler = (math.radians(-raise_amt), 0, 0)
         brow_R.rotation_euler = (math.radians(-raise_amt), 0, 0)
         brow_L.keyframe_insert(data_path="rotation_euler", frame=f)
@@ -387,7 +435,6 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
 
     arm.animation_data.action = prev
 
-    # Put FaceTalk on its own NLA track (COMBINE with body)
     face_track = arm.animation_data.nla_tracks.new()
     face_track.name = "Face"
     strip = face_track.strips.new("FaceTalk", 1, act)
@@ -402,29 +449,44 @@ def animate_face_talk(arm, bone_map, fps, total_frames):
     return act
 
 
-def setup_camera_lights():
-    """Waist-up teaching shot: full face + chest/arms visible."""
-    # Character stands ~y=0.55, height ~1.85, head ~1.7
-    bpy.ops.object.camera_add(location=(0.0, -2.55, 1.15))
+def setup_camera_lights(arm, head_name):
+    """Frame head + upper torso filling the vertical video."""
+    update_scene()
+    head_w = bone_world(arm, head_name) or Vector((0, 0.7, 1.4))
+    hips_w = bone_world(arm, "mixamorig:Hips") or Vector((0, 0.7, 0.7))
+
+    # Aim point: between chest and face
+    aim = Vector((
+        head_w.x,
+        head_w.y,
+        (head_w.z + hips_w.z) * 0.55 + head_w.z * 0.15,
+    ))
+    # Camera in front, close enough that character is large
+    dist = 2.0
+    cam_loc = Vector((aim.x, aim.y - dist, aim.z + 0.05))
+
+    bpy.ops.object.camera_add(location=cam_loc)
     cam = bpy.context.active_object
-    cam.rotation_euler = (math.radians(88), 0, 0)
-    cam.data.lens = 42
+    direction = aim - cam_loc
+    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    cam.data.lens = 40
     bpy.context.scene.camera = cam
+    print("CAMERA aim", tuple(round(x, 3) for x in aim), "loc", tuple(round(x, 3) for x in cam_loc))
 
-    bpy.ops.object.light_add(type="SUN", location=(1.8, -2.8, 6.5))
+    bpy.ops.object.light_add(type="SUN", location=(2.0, -3.0, 6.0))
     sun = bpy.context.active_object
-    sun.data.energy = 6.0
-    sun.rotation_euler = (math.radians(42), math.radians(10), 0)
+    sun.data.energy = 5.5
+    sun.rotation_euler = (math.radians(40), math.radians(12), 0)
 
-    bpy.ops.object.light_add(type="AREA", location=(0, -2.0, 2.0))
+    bpy.ops.object.light_add(type="AREA", location=(0, -1.5, aim.z))
     fill = bpy.context.active_object
-    fill.data.energy = 320
-    fill.data.size = 4.5
+    fill.data.energy = 280
+    fill.data.size = 3.5
 
-    bpy.ops.object.light_add(type="AREA", location=(-2.2, -0.4, 2.4))
+    bpy.ops.object.light_add(type="AREA", location=(-2.0, 0.0, aim.z + 0.5))
     left = bpy.context.active_object
-    left.data.energy = 160
-    left.data.size = 3.0
+    left.data.energy = 140
+    left.data.size = 2.5
 
     world = bpy.data.worlds.new("World")
     bpy.context.scene.world = world
@@ -432,8 +494,7 @@ def setup_camera_lights():
         world.use_nodes = False
     except Exception:
         pass
-    world.color = (0.28, 0.28, 0.32)
-    print("CAMERA waist-up teaching")
+    world.color = (0.22, 0.22, 0.26)
     return cam
 
 
@@ -522,6 +583,7 @@ def main():
         raise SystemExit("No armature")
     print("ARMATURE", arm.name, "bones", len(arm.data.bones))
 
+    # Order matters: scale body first, THEN face bones/meshes in bone-local space
     place_character(arm, body, meshes)
     bone_map, head_name = ensure_facial_bones(arm)
     add_face_meshes(arm, bone_map, head_name)
@@ -529,10 +591,9 @@ def main():
     sequence_body_clips(arm, fps, total)
     animate_face_talk(arm, bone_map, fps, total)
 
-    setup_camera_lights()
+    setup_camera_lights(arm, head_name)
     render_video(out, fps, width, height, total)
 
-    # rest face before export
     for pb in arm.pose.bones:
         if pb.name.startswith("face_"):
             pb.rotation_euler = (0, 0, 0)
