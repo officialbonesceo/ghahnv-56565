@@ -19,7 +19,7 @@ permissions:
 jobs:
   render3d:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -54,14 +54,15 @@ jobs:
           mkdir -p assets/blender assets/mike
           export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${PYTHONPATH}"
           if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
-          echo "Adding Head-parented face bones+meshes to $GLB"
+          echo "Adding Head-parented face bones+meshes to $GLB (10s full talk)"
           xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/add_mike_face_rig.py -- \
             --glb "$GLB" \
             --out-glb assets/mike/Mike_face.glb \
             --out-mp4 assets/blender/mike_face_proof.mp4 \
             --width 720 \
             --height 1280 \
-            --fps 24
+            --fps 24 \
+            --seconds 10
           ls -lh assets/mike/Mike_face.glb assets/blender/mike_face_proof.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height -of default assets/blender/mike_face_proof.mp4 || true
 
@@ -73,7 +74,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Add Mike_face.glb (Head-parented face rig) + proof video"
+            git commit -m "Add Mike_face.glb + 10s face talk proof video"
             git push
           fi
 
