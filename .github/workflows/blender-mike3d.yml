@@ -8,6 +8,7 @@ on:
       - "scripts/blender_mike3d.py"
       - "scripts/blender_mike3d_facial.py"
       - "scripts/add_mike_face_rig.py"
+      - "scripts/mike_teach_video.py"
       - "scripts/face_overlay_composite.py"
       - "scripts/assemble_mike_glb.py"
       - "assets/mike/**"
@@ -19,7 +20,7 @@ permissions:
 jobs:
   render3d:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -36,54 +37,51 @@ jobs:
           if [ -f assets/mike/Mikeanim.glb ]; then
             echo "USING Mikeanim.glb"
             ls -lh assets/mike/Mikeanim.glb
-            GLB=assets/mike/Mikeanim.glb
           elif [ -f assets/mike/Mike.glb ]; then
             echo "USING Mike.glb"
             ls -lh assets/mike/Mike.glb
-            GLB=assets/mike/Mike.glb
           else
             echo "NO GLB FOUND" >&2
             exit 1
           fi
-          echo "GLB=$GLB" >> $GITHUB_ENV
 
-      - name: add-face-rig-export-proof
+      - name: render-mike-teach-video
         env:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
           mkdir -p assets/blender assets/mike
           export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${PYTHONPATH}"
           if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
-          echo "Adding Head-parented face bones+meshes to $GLB (10s full talk)"
-          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/add_mike_face_rig.py -- \
+          echo "Full teaching video (body + face, waist-up) $GLB"
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/mike_teach_video.py -- \
             --glb "$GLB" \
+            --out assets/blender/mike_teach.mp4 \
             --out-glb assets/mike/Mike_face.glb \
-            --out-mp4 assets/blender/mike_face_proof.mp4 \
             --width 720 \
             --height 1280 \
             --fps 24 \
-            --seconds 10
-          ls -lh assets/mike/Mike_face.glb assets/blender/mike_face_proof.mp4
-          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height -of default assets/blender/mike_face_proof.mp4 || true
+            --seconds 12
+          ls -lh assets/blender/mike_teach.mp4 assets/mike/Mike_face.glb
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height -of default assets/blender/mike_teach.mp4 || true
 
-      - name: commit-mike-face-glb
+      - name: commit-outputs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/mike/Mike_face.glb assets/blender/mike_face_proof.mp4 || true
+          git add assets/mike/Mike_face.glb assets/blender/mike_teach.mp4 || true
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Add Mike_face.glb + 10s face talk proof video"
+            git commit -m "Mike teaching video (body + face) + Mike_face.glb"
             git push
           fi
 
       - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: mike-face-rig
+          name: mike-teach
           path: |
+            assets/blender/mike_teach.mp4
             assets/mike/Mike_face.glb
-            assets/blender/mike_face_proof.mp4
           if-no-files-found: error
           retention-days: 7
