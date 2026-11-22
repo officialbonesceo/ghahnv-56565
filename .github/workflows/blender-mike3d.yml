@@ -7,6 +7,7 @@ on:
       - "data/force_blender3d.tick"
       - "scripts/blender_mike3d.py"
       - "scripts/blender_mike3d_facial.py"
+      - "scripts/add_mike_face_rig.py"
       - "scripts/face_overlay_composite.py"
       - "scripts/assemble_mike_glb.py"
       - "assets/mike/**"
@@ -28,10 +29,6 @@ jobs:
           sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy python3-pip || true
           blender --version || true
           python3 -m pip install --user numpy || pip3 install --user numpy || true
-          BL_PY=$(blender -b --python-expr "import sys; print(sys.executable)" 2>/dev/null | tail -1 || true)
-          if [ -n "$BL_PY" ] && [ -x "$BL_PY" ]; then
-            "$BL_PY" -m pip install numpy 2>/dev/null || true
-          fi
           echo "PYTHONPATH=/usr/lib/python3/dist-packages:$HOME/.local/lib/python3.12/site-packages" >> $GITHUB_ENV
 
       - name: assemble-mike-glb
@@ -51,45 +48,30 @@ jobs:
           fi
           echo "GLB=$GLB" >> $GITHUB_ENV
 
-      - name: render-strong-3d-face
+      - name: add-face-rig-export-proof
         env:
           PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
-          mkdir -p assets/blender
-          export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${HOME}/.local/lib/python3.13/site-packages:${PYTHONPATH}"
+          mkdir -p assets/blender assets/mike
+          export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${PYTHONPATH}"
           if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
-          echo "Rendering STRONG geometric face $GLB"
-          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/blender_mike3d_facial.py -- \
+          echo "Adding Head-parented face bones+meshes to $GLB"
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/add_mike_face_rig.py -- \
             --glb "$GLB" \
-            --out assets/blender/mike3d_strong_face.mp4 \
-            --seconds 12 \
-            --width 720 \
-            --height 1280 \
-            --face_close 1
-          ls -lh assets/blender/mike3d_strong_face.mp4
-          # also keep legacy name for old consumers
-          cp assets/blender/mike3d_strong_face.mp4 assets/blender/mike3d_test.mp4
-          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default assets/blender/mike3d_strong_face.mp4
-
-      - name: composite-2d-mouth-eye-overlay
-        run: |
-          python3 scripts/face_overlay_composite.py \
-            --base assets/blender/mike3d_strong_face.mp4 \
-            --out assets/blender/mike3d_overlay.mp4 \
-            --seconds 12 \
+            --out-glb assets/mike/Mike_face.glb \
+            --out-mp4 assets/blender/mike_face_proof.mp4 \
             --width 720 \
             --height 1280 \
             --fps 24
-          ls -lh assets/blender/mike3d_overlay.mp4
-          ffprobe -v error -show_entries format=duration,size -of default assets/blender/mike3d_overlay.mp4
+          ls -lh assets/mike/Mike_face.glb assets/blender/mike_face_proof.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height -of default assets/blender/mike_face_proof.mp4 || true
 
       - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: mike3d-face-compare
+          name: mike-face-rig
           path: |
-            assets/blender/mike3d_strong_face.mp4
-            assets/blender/mike3d_overlay.mp4
-            assets/blender/mike3d_test.mp4
+            assets/mike/Mike_face.glb
+            assets/blender/mike_face_proof.mp4
           if-no-files-found: error
-          retention-days: 5
+          retention-days: 7
