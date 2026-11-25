@@ -5,12 +5,10 @@ on:
   push:
     paths:
       - "data/force_blender3d.tick"
-      - "scripts/blender_mike3d.py"
-      - "scripts/blender_mike3d_facial.py"
-      - "scripts/add_mike_face_rig.py"
+      - "scripts/mike_mouth_talk.py"
       - "scripts/mike_teach_video.py"
-      - "scripts/face_overlay_composite.py"
-      - "scripts/assemble_mike_glb.py"
+      - "scripts/add_mike_face_rig.py"
+      - "scripts/blender_mike3d_facial.py"
       - "assets/mike/**"
       - ".github/workflows/blender-mike3d.yml"
 
@@ -20,68 +18,53 @@ permissions:
 jobs:
   render3d:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: install-blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy python3-pip || true
+          sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy || true
           blender --version || true
-          echo "PYTHONPATH=/usr/lib/python3/dist-packages:$HOME/.local/lib/python3.12/site-packages" >> $GITHUB_ENV
 
       - name: assemble-mike-glb
         run: |
           python3 scripts/assemble_mike_glb.py || true
           if [ -f assets/mike/Mikeanim.glb ]; then
-            echo "USING Mikeanim.glb"
             ls -lh assets/mike/Mikeanim.glb
           elif [ -f assets/mike/Mike.glb ]; then
-            echo "USING Mike.glb"
             ls -lh assets/mike/Mike.glb
           else
-            echo "NO GLB FOUND" >&2
-            exit 1
+            echo "NO GLB" >&2; exit 1
           fi
 
-      - name: render-mike-teach-video
-        env:
-          PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
+      - name: render-mouth-talk
         run: |
-          mkdir -p assets/blender assets/mike
-          export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${PYTHONPATH}"
+          mkdir -p assets/blender
           if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
-          echo "Full teaching video (body + face, waist-up) $GLB"
-          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/mike_teach_video.py -- \
+          echo "MOUTH shape-key talk on $GLB"
+          xvfb-run -a blender -b -noaudio -P scripts/mike_mouth_talk.py -- \
             --glb "$GLB" \
-            --out assets/blender/mike_teach.mp4 \
-            --out-glb assets/mike/Mike_face.glb \
-            --width 720 \
-            --height 1280 \
-            --fps 24 \
-            --seconds 12
-          ls -lh assets/blender/mike_teach.mp4 assets/mike/Mike_face.glb
-          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height -of default assets/blender/mike_teach.mp4 || true
+            --out assets/blender/mike_mouth_talk.mp4 \
+            --width 720 --height 1280 --fps 24 --seconds 10
+          ls -lh assets/blender/mike_mouth_talk.mp4
+          ffprobe -v error -show_entries format=duration,size -of default assets/blender/mike_mouth_talk.mp4 || true
 
-      - name: commit-outputs
+      - name: commit-output
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/mike/Mike_face.glb assets/blender/mike_teach.mp4 || true
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Mike teaching video (body + face) + Mike_face.glb"
+          git add assets/blender/mike_mouth_talk.mp4 || true
+          if git diff --cached --quiet; then echo "No changes"; else
+            git commit -m "Mike mouth talk video (shape key on real mesh)"
             git push
           fi
 
       - name: pack
         uses: actions/upload-artifact@v4
         with:
-          name: mike-teach
-          path: |
-            assets/blender/mike_teach.mp4
-            assets/mike/Mike_face.glb
+          name: mike-mouth-talk
+          path: assets/blender/mike_mouth_talk.mp4
           if-no-files-found: error
           retention-days: 7
