@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """
-Mike MOUTH TALK — deform the REAL mesh mouth (no floating cubes).
-
-The character GLB has 0 morph targets. We build a strong 'mouth_open'
-shape key by moving lower-face vertices, then drive it while body
-plays a teaching gesture. Camera frames the face so motion is obvious.
-
-Never animates Root/Hips for face (no bounce).
+Mike mouth talk with REAL mesh deformation + textures.
+- Shape key mouth_open: lower lip/chin down, slight upper lift, corners out (jaw-like)
+- Show basecolor texture (model has Mike_basecolor jpeg + normal)
+- Never animate Root/Hips for face
 """
 from __future__ import annotations
 
@@ -53,7 +50,7 @@ def clear_scene():
     bpy.ops.object.delete(use_global=False)
     for coll in (
         bpy.data.meshes, bpy.data.materials, bpy.data.cameras,
-        bpy.data.lights, bpy.data.armatures, bpy.data.actions,
+        bpy.data.lights, bpy.data.armatures, bpy.data.actions, bpy.data.images,
     ):
         for block in list(coll):
             try:
@@ -125,11 +122,43 @@ def place_character(arm, body, meshes):
     return root
 
 
+def ensure_textures_visible(body):
+    """Force materials to show basecolor texture; log what we found."""
+    if body is None:
+        return
+    for slot in body.material_slots:
+        mat = slot.material
+        if mat is None:
+            continue
+        print("MATERIAL", mat.name, "nodes", mat.use_nodes)
+        try:
+            mat.use_nodes = True
+        except Exception:
+            pass
+        if not mat.node_tree:
+            continue
+        for node in mat.node_tree.nodes:
+            if node.type == "TEX_IMAGE" and node.image:
+                print("  TEX", node.image.name, node.image.size[:]
+                      if hasattr(node.image, "size") else "?")
+            if node.type == "BSDF_PRINCIPLED":
+                # Keep textured look readable under workbench/eevee
+                if "Roughness" in node.inputs:
+                    node.inputs["Roughness"].default_value = min(
+                        0.85, max(0.35, node.inputs["Roughness"].default_value)
+                    )
+    # Ensure UV map exists name
+    if body.data.uv_layers:
+        print("UV_LAYERS", [u.name for u in body.data.uv_layers])
+
+
 def ensure_mouth_shape_key(body):
     """
-    Build a VERY visible mouth_open shape key on the real mesh.
-    Uses local mesh bounds (Y-up in original GLB becomes Z-up in Blender).
-    After glTF import Blender is Z-up: height is Z.
+    Jaw-like mouth_open (not a face bubble):
+    - Lower mouth band: strong downward + slight forward
+    - Upper lip band: small upward only near lip line
+    - Corners: mild outward
+    - Weight falls off fast outside lip region
     """
     if body is None:
         raise SystemExit("No body mesh")
@@ -138,7 +167,6 @@ def ensure_mouth_shape_key(body):
     if me.shape_keys is None:
         body.shape_key_add(name="Basis", from_mix=False)
 
-    # Remove old mouth keys
     for kb in list(me.shape_keys.key_blocks):
         if kb.name.lower() in ("mouth_open", "mouth", "jaw_open"):
             try:
@@ -154,91 +182,86 @@ def ensure_mouth_shape_key(body):
     size = mx - mn
     h = size.z if size.z > 1e-6 else 1.0
     cx = (mn.x + mx.x) * 0.5
-    # Front of face: in Mixamo/glTF after import, character often faces -Y or +Y
-    # Use the half of depth that has more "face" — try both by picking max |y| center band
-    cy = (mn.y + mx.y) * 0.5
 
-    print("MESH_BOUNDS", tuple(round(v, 3) for v in mn), "->", tuple(round(v, 3) for v in mx), "h", round(h, 3))
+    print("MESH_BOUNDS h", round(h, 3))
 
-    # Head is upper ~40% of height. Mouth is lower third of head.
-    head_z0 = mn.z + h * 0.58
-    head_z1 = mx.z
-    mouth_z0 = mn.z + h * 0.62
-    mouth_z1 = mn.z + h * 0.78
-    mouth_x_half = size.x * 0.22
+    # Tighter lip band (lower face only)
+    mouth_z0 = mn.z + h * 0.64
+    mouth_z1 = mn.z + h * 0.76
+    mouth_x_half = size.x * 0.18
 
-    # Prefer front-facing verts: take the side with greater average |projection|
-    # After typical Mixamo import, character faces -Y (camera looks +Y toward them)
-    # So mouth verts tend to have y toward the front (lower y if facing -Y)
-    front_sign = -1.0  # open mouth slightly forward toward camera
+    # Displacements as fraction of height — visible but local
+    lower_down = h * 0.048
+    upper_up = h * 0.012
+    fwd = h * 0.016
+    corner = h * 0.010
 
     kb = body.shape_key_add(name="mouth_open", from_mix=False)
-
-    # Strong displacements relative to head height
-    open_down = h * 0.055   # lower lip / chin drop
-    open_up = h * 0.018     # upper lip slight raise
-    open_fwd = h * 0.025    # lips push forward
-    open_side = h * 0.012   # corners pull out
-
     moved = 0
+
     for i, v in enumerate(me.vertices):
         if not (mouth_z0 <= v.co.z <= mouth_z1):
             continue
-        if abs(v.co.x - cx) > mouth_x_half:
+        dx = abs(v.co.x - cx)
+        if dx > mouth_x_half:
             continue
-        # Prefer front half of head depth
+        # Front of head only (model typically faces -Y after import)
         depth = (v.co.y - mn.y) / max(1e-6, size.y)
-        # If model faces -Y, front is small y (depth near 0). Keep verts in front 55%.
-        if depth > 0.55:
+        if depth > 0.50:
             continue
 
-        tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)  # 0=bottom mouth, 1=top
-        tx = 1.0 - abs(v.co.x - cx) / mouth_x_half
-        w = max(0.0, tx) ** 0.5
-        # Center of mouth opens more
-        lip = 1.0 - abs(tz - 0.40) * 1.6
-        lip = max(0.0, min(1.0, lip))
-        w *= lip
-        if w < 0.05:
-            continue
+        tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)  # 0 bottom .. 1 top
+        tx = 1.0 - dx / mouth_x_half
+        # Soft falloff at sides
+        w = max(0.0, tx) ** 0.65
 
-        # Lower part of mouth band goes down; upper goes slightly up
-        if tz < 0.55:
-            kb.data[i].co.z -= open_down * w * (1.1 - tz)
+        # Lip line ~ tz 0.45: below = lower lip/chin, above = upper lip
+        if tz < 0.48:
+            # Lower: strongest at center bottom
+            lip_w = w * (1.0 - abs(tz - 0.25) * 1.2)
+            lip_w = max(0.0, min(1.0, lip_w))
+            if lip_w < 0.08:
+                continue
+            kb.data[i].co.z -= lower_down * lip_w * (1.15 - tz)
+            kb.data[i].co.y -= fwd * lip_w  # toward camera if facing -Y
+            kb.data[i].co.x += corner * lip_w * (0.6 if v.co.x >= cx else -0.6)
+            moved += 1
         else:
-            kb.data[i].co.z += open_up * w * (tz - 0.45)
-
-        kb.data[i].co.y += front_sign * open_fwd * w
-        kb.data[i].co.x += open_side * w * (1.0 if v.co.x >= cx else -1.0)
-        moved += 1
+            # Upper lip: only a thin band near the line, small up
+            lip_w = w * max(0.0, 1.0 - abs(tz - 0.55) * 3.0)
+            if lip_w < 0.12:
+                continue
+            kb.data[i].co.z += upper_up * lip_w
+            kb.data[i].co.y -= fwd * 0.35 * lip_w
+            moved += 1
 
     print("SHAPEKEY_MOUTH_MOVED", moved, "of", len(me.vertices))
-    if moved < 50:
-        # Fallback: wider band, no front filter
-        print("FALLBACK wider mouth band")
-        mouth_z0 = mn.z + h * 0.58
-        mouth_z1 = mn.z + h * 0.82
-        mouth_x_half = size.x * 0.30
+
+    if moved < 80:
+        print("WIDEN fallback")
+        mouth_z0 = mn.z + h * 0.60
+        mouth_z1 = mn.z + h * 0.80
+        mouth_x_half = size.x * 0.26
         for i, v in enumerate(me.vertices):
             if not (mouth_z0 <= v.co.z <= mouth_z1):
                 continue
             if abs(v.co.x - cx) > mouth_x_half:
                 continue
-            tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
-            tx = 1.0 - abs(v.co.x - cx) / mouth_x_half
-            w = max(0.0, tx) ** 0.5
-            if w < 0.05:
+            depth = (v.co.y - mn.y) / max(1e-6, size.y)
+            if depth > 0.60:
                 continue
+            tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
+            w = max(0.0, 1.0 - abs(v.co.x - cx) / mouth_x_half) ** 0.5
             if tz < 0.5:
-                kb.data[i].co.z -= open_down * 1.3 * w
+                kb.data[i].co.z -= lower_down * 1.2 * w
+                kb.data[i].co.y -= fwd * w
             else:
-                kb.data[i].co.z += open_up * 1.2 * w
-            kb.data[i].co.y += front_sign * open_fwd * w
+                kb.data[i].co.z += upper_up * w
             moved += 1
-        print("SHAPEKEY_MOUTH_MOVED_FALLBACK", moved)
+        print("SHAPEKEY_MOUTH_MOVED_AFTER", moved)
 
-    if moved < 20:
-        raise SystemExit("Mouth shape key moved too few verts — abort")
+    if moved < 30:
+        raise SystemExit("Too few mouth verts")
 
     kb.value = 0.0
     return kb
@@ -284,9 +307,8 @@ def sequence_body(arm, fps, total):
 
 
 def animate_mouth(kb, fps, total):
-    """Drive mouth_open 0→1→0 in speech pulses."""
     speech = [(0.3, 3.2), (3.6, 6.8), (7.2, 9.7)]
-    cycle = max(5, int(fps * 0.28))
+    cycle = max(5, int(fps * 0.30))
 
     def in_speech(t):
         return any(a <= t <= b for a, b in speech)
@@ -295,18 +317,21 @@ def animate_mouth(kb, fps, total):
         t = f / float(fps)
         if in_speech(t):
             phase = ((f - 1) % cycle) / float(cycle)
-            # sharp open/close
-            val = abs(math.sin(phase * math.pi))
-            val = min(1.0, val * 1.15)
+            # open fast, close a bit slower
+            if phase < 0.45:
+                val = phase / 0.45
+            else:
+                val = 1.0 - (phase - 0.45) / 0.55
+            val = max(0.0, min(1.0, val))
+            val = val ** 0.85  # slightly hold open
         else:
-            val = 0.04 * abs(math.sin(t * 2.0))
+            val = 0.03 * abs(math.sin(t * 2.0))
         kb.value = val
         kb.keyframe_insert(data_path="value", frame=f)
     print("MOUTH_KEYS frames", total)
 
 
 def setup_camera_face(arm, body):
-    """Close enough to clearly see the mouth."""
     bpy.context.view_layer.update()
     head = None
     if arm:
@@ -322,8 +347,8 @@ def setup_camera_face(arm, body):
         xs = [c.x for c in corners]
         head = Vector((sum(xs) / len(xs), sum(ys) / len(ys), max(zs) * 0.85))
 
-    aim = head + Vector((0, 0, -0.05))
-    cam_loc = Vector((aim.x, aim.y - 1.15, aim.z))
+    aim = head + Vector((0, 0, -0.06))
+    cam_loc = Vector((aim.x, aim.y - 1.20, aim.z))
     bpy.ops.object.camera_add(location=cam_loc)
     cam = bpy.context.active_object
     cam.rotation_euler = (aim - cam_loc).to_track_quat("-Z", "Y").to_euler()
@@ -331,10 +356,10 @@ def setup_camera_face(arm, body):
     bpy.context.scene.camera = cam
 
     bpy.ops.object.light_add(type="SUN", location=(1.5, -2.5, 5))
-    bpy.context.active_object.data.energy = 5.5
-    bpy.ops.object.light_add(type="AREA", location=(0, -1.2, aim.z))
+    bpy.context.active_object.data.energy = 4.5
+    bpy.ops.object.light_add(type="AREA", location=(0.3, -1.2, aim.z + 0.2))
     fill = bpy.context.active_object
-    fill.data.energy = 300
+    fill.data.energy = 250
     fill.data.size = 2.5
 
     world = bpy.data.worlds.new("World")
@@ -343,30 +368,67 @@ def setup_camera_face(arm, body):
         world.use_nodes = False
     except Exception:
         pass
-    world.color = (0.25, 0.25, 0.28)
+    world.color = (0.20, 0.20, 0.24)
     print("CAMERA face", tuple(round(x, 3) for x in cam_loc))
 
 
 def build_bg():
     bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 2.5, 1.2))
     bpy.context.active_object.rotation_euler = (math.radians(90), 0, 0)
-    bpy.context.active_object.data.materials.append(mat_simple("Back", (0.22, 0.22, 0.26)))
+    bpy.context.active_object.data.materials.append(mat_simple("Back", (0.18, 0.18, 0.22)))
     bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 0.5, 0))
-    bpy.context.active_object.data.materials.append(mat_simple("Floor", (0.14, 0.14, 0.16)))
+    bpy.context.active_object.data.materials.append(mat_simple("Floor", (0.12, 0.12, 0.14)))
+
+
+def setup_render_engine(scene):
+    """Prefer EEVEE for textures; fall back to Workbench TEXTURE."""
+    engines = []
+    try:
+        engines = list(bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys())
+    except Exception:
+        pass
+    # Blender 4/5 names vary
+    for name in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "EEVEE"):
+        try:
+            scene.render.engine = name
+            print("ENGINE", name)
+            try:
+                scene.eevee.taa_render_samples = 16
+            except Exception:
+                pass
+            return "EEVEE"
+        except Exception:
+            continue
+
+    scene.render.engine = "BLENDER_WORKBENCH"
+    try:
+        scene.display.shading.light = "STUDIO"
+        scene.display.shading.color_type = "TEXTURE"
+        scene.display.shading.show_shadows = False
+        scene.display.shading.show_specular_highlight = True
+    except Exception as e:
+        print("WORKBENCH_SHADE_ERR", e)
+        try:
+            scene.display.shading.color_type = "MATERIAL"
+        except Exception:
+            pass
+    print("ENGINE WORKBENCH TEXTURE")
+    return "WORKBENCH"
 
 
 def render_video(out: Path, fps, width, height, total):
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_WORKBENCH"
+    setup_render_engine(scene)
     try:
-        scene.display.shading.light = "STUDIO"
-        scene.display.shading.color_type = "MATERIAL"
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "None"
     except Exception:
         pass
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.fps = fps
     scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGB"
 
     with tempfile.TemporaryDirectory() as tmp:
         frame_dir = Path(tmp)
@@ -419,12 +481,13 @@ def main():
     print("BODY verts", len(body.data.vertices))
 
     place_character(arm, body, meshes)
+    ensure_textures_visible(body)
     kb = ensure_mouth_shape_key(body)
     sequence_body(arm, fps, total)
     animate_mouth(kb, fps, total)
     setup_camera_face(arm, body)
     render_video(out, fps, width, height, total)
-    print("DONE mouth talk")
+    print("DONE mouth talk textured")
 
 
 if __name__ == "__main__":
