@@ -24,8 +24,18 @@ jobs:
       - name: install-blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender xvfb ffmpeg python3 fonts-dejavu-core || true
+          sudo apt-get install -y blender xvfb ffmpeg python3 python3-numpy python3-pip fonts-dejavu-core || true
           blender --version || true
+          # Blender's own Python needs numpy for glTF import
+          BL_PY=$(blender -b --python-expr "import sys; print(sys.executable)" 2>/dev/null | tail -1 || true)
+          echo "BLENDER_PYTHON=$BL_PY"
+          if [ -n "$BL_PY" ] && [ -x "$BL_PY" ]; then
+            "$BL_PY" -m pip install --user numpy 2>/dev/null || "$BL_PY" -m ensurepip --user 2>/dev/null || true
+            "$BL_PY" -m pip install --user numpy || true
+          fi
+          python3 -m pip install --user numpy || pip3 install --user numpy || true
+          # Make system numpy visible if Blender uses system paths
+          echo "PYTHONPATH=/usr/lib/python3/dist-packages:${HOME}/.local/lib/python3.12/site-packages:${PYTHONPATH}" >> $GITHUB_ENV
 
       - name: assemble-mike-glb
         run: |
@@ -35,11 +45,19 @@ jobs:
           else echo "NO GLB" >&2; exit 1; fi
 
       - name: render-teach-topic
+        env:
+          PYTHONPATH: /usr/lib/python3/dist-packages:/usr/lib/python3/site-packages
         run: |
           mkdir -p assets/blender
           if [ -f assets/mike/Mikeanim.glb ]; then GLB=assets/mike/Mikeanim.glb; else GLB=assets/mike/Mike.glb; fi
           echo "Teach topic video $GLB"
-          xvfb-run -a blender -b -noaudio -P scripts/mike_teach_topic.py -- \
+          export PYTHONPATH="/usr/lib/python3/dist-packages:/usr/lib/python3/site-packages:${HOME}/.local/lib/python3.12/site-packages:${HOME}/.local/lib/python3.13/site-packages:${PYTHONPATH}"
+          # Also inject into Blender if needed
+          BL_PY=$(blender -b --python-expr "import sys; print(sys.executable)" 2>/dev/null | tail -1 || true)
+          if [ -n "$BL_PY" ] && [ -x "$BL_PY" ]; then
+            "$BL_PY" -m pip install numpy 2>/dev/null || true
+          fi
+          xvfb-run -a env PYTHONPATH="$PYTHONPATH" blender -b -noaudio -P scripts/mike_teach_topic.py -- \
             --glb "$GLB" \
             --out assets/blender/mike_teach_topic.mp4 \
             --width 720 --height 1280 --fps 24 --seconds 14 \
