@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Mike teaches a seeded topic:
-- Tripo-style soft studio lighting + Workbench TEXTURE (colors)
-- Body: walk then explain gestures (NLA)
-- Mouth: jaw-like shape key while explaining
-- Never moves Root/Hips for face
-- Topic burned in via ffmpeg after render
+Mike 15s teach episode:
+- Tripo-style soft studio lighting + Workbench TEXTURE
+- Camera: far walk-in -> zoom -> side -> face close-up
+- Body walk then explain; mouth shape key while talking
+- Voice WAV muxed after render (Kokoro / edge)
 """
 from __future__ import annotations
 
@@ -16,19 +15,19 @@ import tempfile
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Euler
 
-# Seed topic (student-friendly)
 TOPIC_TITLE = "What is Coding?"
-TOPIC_LINE = "Coding is how we give computers step-by-step instructions."
+TOPIC_LINE = "Step-by-step instructions for computers."
 
 
 def parse_args(argv):
     args = {
         "glb": "assets/mike/Mikeanim.glb",
         "out": "assets/blender/mike_teach_topic.mp4",
+        "voice": "assets/blender/mike_voice.wav",
         "fps": 24,
-        "seconds": 14,
+        "seconds": 15,
         "width": 720,
         "height": 1280,
         "topic": TOPIC_TITLE,
@@ -124,7 +123,7 @@ def place_character(arm, body, meshes):
             o.parent = root
 
     root.scale = (scale, scale, scale)
-    root.location = (0.0, 0.75, -min_c.z * scale)
+    root.location = (0.0, 0.80, -min_c.z * scale)
     bpy.context.view_layer.update()
     print("PLACE height", round(height, 3), "scale", round(scale, 3))
     return root
@@ -137,20 +136,14 @@ def ensure_textures_visible(body):
         mat = slot.material
         if mat is None:
             continue
-        print("MATERIAL", mat.name)
         try:
             mat.use_nodes = True
         except Exception:
             pass
-        if not mat.node_tree:
-            continue
-        for node in mat.node_tree.nodes:
-            if node.type == "TEX_IMAGE" and node.image:
-                print("  TEX", node.image.name)
-            if node.type == "BSDF_PRINCIPLED" and "Roughness" in node.inputs:
-                node.inputs["Roughness"].default_value = min(
-                    0.8, max(0.4, node.inputs["Roughness"].default_value)
-                )
+        if mat.node_tree:
+            for node in mat.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image:
+                    print("TEX", node.image.name)
 
 
 def ensure_mouth_shape_key(body):
@@ -181,7 +174,6 @@ def ensure_mouth_shape_key(body):
     lower_down = h * 0.055
     upper_up = h * 0.014
     fwd = h * 0.018
-    corner = h * 0.012
 
     kb = body.shape_key_add(name="mouth_open", from_mix=False)
     moved = 0
@@ -191,8 +183,7 @@ def ensure_mouth_shape_key(body):
         dx = abs(v.co.x - cx)
         if dx > mouth_x_half:
             continue
-        depth = (v.co.y - mn.y) / max(1e-6, size.y)
-        if depth > 0.50:
+        if (v.co.y - mn.y) / max(1e-6, size.y) > 0.50:
             continue
         tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
         w = max(0.0, 1.0 - dx / mouth_x_half) ** 0.65
@@ -202,17 +193,13 @@ def ensure_mouth_shape_key(body):
                 continue
             kb.data[i].co.z -= lower_down * lip_w * (1.15 - tz)
             kb.data[i].co.y -= fwd * lip_w
-            kb.data[i].co.x += corner * lip_w * (0.6 if v.co.x >= cx else -0.6)
             moved += 1
         else:
             lip_w = w * max(0.0, 1.0 - abs(tz - 0.55) * 3.0)
             if lip_w < 0.12:
                 continue
             kb.data[i].co.z += upper_up * lip_w
-            kb.data[i].co.y -= fwd * 0.35 * lip_w
             moved += 1
-
-    print("SHAPEKEY_MOUTH_MOVED", moved)
     if moved < 80:
         mouth_z0 = mn.z + h * 0.60
         mouth_z1 = mn.z + h * 0.80
@@ -228,35 +215,24 @@ def ensure_mouth_shape_key(body):
             w = max(0.0, 1.0 - abs(v.co.x - cx) / mouth_x_half) ** 0.5
             if tz < 0.5:
                 kb.data[i].co.z -= lower_down * 1.2 * w
-                kb.data[i].co.y -= fwd * w
             else:
                 kb.data[i].co.z += upper_up * w
             moved += 1
-        print("SHAPEKEY_MOUTH_MOVED_AFTER", moved)
+    print("SHAPEKEY_MOUTH_MOVED", moved)
     if moved < 30:
         raise SystemExit("Too few mouth verts")
     kb.value = 0.0
     return kb
 
 
-def sequence_walk_then_explain(arm, fps, total):
-    """Walk first third, then explain/agree for the rest."""
+def sequence_body(arm, fps, total):
     if arm is None:
         return
     if not arm.animation_data:
         arm.animation_data_create()
-
     by_name = {a.name: a for a in bpy.data.actions}
-    walk = None
-    explain = None
-    for k in ("Casual_Walk", "Walking", "Running"):
-        if k in by_name:
-            walk = by_name[k]
-            break
-    for k in ("Agree_Gesture", "Alert"):
-        if k in by_name:
-            explain = by_name[k]
-            break
+    walk = by_name.get("Casual_Walk") or by_name.get("Walking")
+    explain = by_name.get("Agree_Gesture") or by_name.get("Alert")
     for a in bpy.data.actions:
         if a.name.startswith("_") and explain is None:
             explain = a
@@ -264,10 +240,9 @@ def sequence_walk_then_explain(arm, fps, total):
     while arm.animation_data.nla_tracks:
         arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
     arm.animation_data.action = None
-
     track = arm.animation_data.nla_tracks.new()
     track.name = "BodyTeach"
-    walk_end = max(fps * 3, total // 3)
+    walk_end = int(fps * 4)  # walk ~4s
 
     def add_strip(action, start, end, name):
         if action is None:
@@ -276,115 +251,78 @@ def sequence_walk_then_explain(arm, fps, total):
             strip = track.strips.new(name[:40], int(start), action)
         except TypeError:
             strip = track.strips.new(int(start), action)
-            strip.name = name[:40]
         strip.action = action
         strip.frame_start = start
         strip.frame_end = end
         try:
-            strip.blend_type = "REPLACE"
             strip.extrapolation = "HOLD"
         except Exception:
             pass
-        print("BODY_STRIP", name, start, "->", end)
+        print("BODY", name, start, end)
 
-    add_strip(walk or explain, 1, walk_end, (walk or explain).name if (walk or explain) else "walk")
-    add_strip(explain or walk, walk_end + 1, total, (explain or walk).name if (explain or walk) else "explain")
+    add_strip(walk or explain, 1, walk_end, "walk")
+    add_strip(explain or walk, walk_end + 1, total, "explain")
 
 
 def animate_mouth(kb, fps, total):
-    # Quiet during walk, talk during explain
-    walk_end_t = max(3.0, total / fps / 3.0)
-    speech = [(walk_end_t + 0.2, total / fps - 0.2)]
-    cycle = max(5, int(fps * 0.30))
-
-    def in_speech(t):
-        return any(a <= t <= b for a, b in speech)
-
+    talk_start = 4.0  # after walk-in
+    cycle = max(5, int(fps * 0.28))
     for f in range(1, total + 1):
         t = f / float(fps)
-        if in_speech(t):
+        if t >= talk_start:
             phase = ((f - 1) % cycle) / float(cycle)
-            if phase < 0.45:
-                val = phase / 0.45
-            else:
-                val = 1.0 - (phase - 0.45) / 0.55
-            val = max(0.0, min(1.0, val)) ** 0.85
+            val = abs(math.sin(phase * math.pi)) ** 0.85
         else:
             val = 0.02 * abs(math.sin(t * 1.5))
         kb.value = val
         kb.keyframe_insert(data_path="value", frame=f)
-    print("MOUTH_KEYS frames", total)
 
 
-def tripo_style_studio():
-    """Soft dark studio like Tripo viewer: gradient-ish floor+back, soft lights."""
-    # Dark gradient backdrop
-    bpy.ops.mesh.primitive_plane_add(size=28, location=(0, 3.5, 1.6))
+def bone_world(arm, name):
+    if arm is None:
+        return None
+    pb = arm.pose.bones.get(name)
+    if pb is None:
+        return None
+    return (arm.matrix_world @ pb.matrix) @ Vector((0, 0, 0))
+
+
+def tripo_studio():
+    """Match Tripo viewer: soft dark gray void, even soft lights."""
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 4.0, 1.5))
     back = bpy.context.active_object
     back.rotation_euler = (math.radians(90), 0, 0)
-    back.data.materials.append(mat_simple("Back", (0.12, 0.12, 0.14)))
+    back.data.materials.append(mat_simple("Back", (0.14, 0.14, 0.15)))
 
-    bpy.ops.mesh.primitive_plane_add(size=28, location=(0, 0.8, 0))
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 1.0, 0))
     floor = bpy.context.active_object
-    floor.data.materials.append(mat_simple("Floor", (0.10, 0.10, 0.11)))
-
-    # Soft disc under feet
-    bpy.ops.mesh.primitive_cylinder_add(radius=1.3, depth=0.02, location=(0, 0.75, 0.01))
-    disc = bpy.context.active_object
-    disc.data.materials.append(mat_simple("Disc", (0.08, 0.08, 0.09)))
+    floor.data.materials.append(mat_simple("Floor", (0.11, 0.11, 0.12)))
 
 
-def setup_camera_lights(arm, body):
-    bpy.context.view_layer.update()
-    head = None
-    hips = None
-    if arm:
-        for name in ("mixamorig:Head", "Head"):
-            pb = arm.pose.bones.get(name)
-            if pb:
-                head = (arm.matrix_world @ pb.matrix) @ Vector((0, 0, 0))
-                break
-        pb = arm.pose.bones.get("mixamorig:Hips")
-        if pb:
-            hips = (arm.matrix_world @ pb.matrix) @ Vector((0, 0, 0))
-
-    if head is None:
-        head = Vector((0, 0.75, 1.4))
-    if hips is None:
-        hips = Vector((0, 0.75, 0.7))
-
-    # Full body / slight low angle like Tripo hero shot
-    aim = Vector((0, hips.y, (head.z + hips.z) * 0.52))
-    cam_loc = Vector((0.15, aim.y - 3.1, aim.z + 0.15))
-    bpy.ops.object.camera_add(location=cam_loc)
-    cam = bpy.context.active_object
-    cam.rotation_euler = (aim - cam_loc).to_track_quat("-Z", "Y").to_euler()
-    cam.data.lens = 45
-    bpy.context.scene.camera = cam
-
-    # Key (soft front-right)
-    bpy.ops.object.light_add(type="AREA", location=(1.8, -2.2, 2.8))
+def setup_tripo_lights():
+    # Soft key
+    bpy.ops.object.light_add(type="AREA", location=(2.0, -2.5, 3.0))
     key = bpy.context.active_object
-    key.data.energy = 280
-    key.data.size = 3.5
+    key.data.energy = 320
+    key.data.size = 4.0
 
-    # Fill (front-left, weaker)
-    bpy.ops.object.light_add(type="AREA", location=(-1.6, -1.8, 2.0))
+    # Fill
+    bpy.ops.object.light_add(type="AREA", location=(-2.0, -2.0, 2.4))
     fill = bpy.context.active_object
-    fill.data.energy = 140
-    fill.data.size = 3.0
+    fill.data.energy = 180
+    fill.data.size = 3.5
 
-    # Rim / top
-    bpy.ops.object.light_add(type="AREA", location=(0.2, 1.2, 3.2))
-    rim = bpy.context.active_object
-    rim.data.energy = 100
-    rim.data.size = 2.5
+    # Top soft
+    bpy.ops.object.light_add(type="AREA", location=(0, 0.5, 4.0))
+    top = bpy.context.active_object
+    top.data.energy = 120
+    top.data.size = 5.0
 
-    # Soft sun
-    bpy.ops.object.light_add(type="SUN", location=(2, -3, 6))
+    # Gentle sun
+    bpy.ops.object.light_add(type="SUN", location=(1.5, -3, 5))
     sun = bpy.context.active_object
-    sun.data.energy = 2.2
-    sun.rotation_euler = (math.radians(45), math.radians(15), 0)
+    sun.data.energy = 1.8
+    sun.rotation_euler = (math.radians(50), math.radians(12), 0)
 
     world = bpy.data.worlds.new("World")
     bpy.context.scene.world = world
@@ -392,8 +330,58 @@ def setup_camera_lights(arm, body):
         world.use_nodes = False
     except Exception:
         pass
-    world.color = (0.08, 0.08, 0.09)
-    print("CAMERA full-body Tripo-style")
+    world.color = (0.10, 0.10, 0.11)
+
+
+def animate_camera(arm, body, fps, total):
+    """
+    Shot list (15s @ 24fps = 360 frames):
+      1-4s   far walk-in (camera pulls back, character approaches)
+      4-7s   zoom toward full body
+      7-10s  side three-quarter
+      10-13s face / head close-up
+      13-15s slight low hero / hold
+    """
+    bpy.context.view_layer.update()
+    head = bone_world(arm, "mixamorig:Head") or bone_world(arm, "Head") or Vector((0, 0.8, 1.45))
+    hips = bone_world(arm, "mixamorig:Hips") or Vector((0, 0.8, 0.75))
+    mid = Vector((0.0, hips.y, (head.z + hips.z) * 0.5))
+
+    bpy.ops.object.camera_add(location=(0, -5.5, mid.z + 0.2))
+    cam = bpy.context.active_object
+    cam.data.lens = 40
+    bpy.context.scene.camera = cam
+
+    # Key shots: (frame, location, aim_point, lens)
+    shots = [
+        (1, Vector((0.2, -5.8, mid.z + 0.25)), mid, 38),
+        (int(fps * 3.5), Vector((0.1, -4.2, mid.z + 0.15)), mid, 40),
+        (int(fps * 5.5), Vector((0.0, -3.0, mid.z + 0.05)), mid + Vector((0, 0, 0.05)), 42),
+        (int(fps * 8.0), Vector((2.4, -2.4, mid.z + 0.1)), mid, 45),
+        (int(fps * 11.0), Vector((0.15, -1.35, head.z)), head + Vector((0, 0, -0.02)), 50),
+        (int(fps * 13.5), Vector((-0.3, -2.6, mid.z + 0.2)), mid + Vector((0, 0, 0.08)), 40),
+        (total, Vector((0.0, -2.9, mid.z + 0.12)), mid, 42),
+    ]
+
+    for f, loc, aim, lens in shots:
+        cam.location = loc
+        direction = aim - loc
+        cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+        cam.data.lens = lens
+        cam.keyframe_insert(data_path="location", frame=f)
+        cam.keyframe_insert(data_path="rotation_euler", frame=f)
+        cam.data.keyframe_insert(data_path="lens", frame=f)
+
+    # Smooth interpolation
+    if cam.animation_data and cam.animation_data.action:
+        for fc in cam.animation_data.action.fcurves:
+            for kp in fc.keyframe_points:
+                kp.interpolation = "BEZIER"
+                kp.handle_left_type = "AUTO_CLAMPED"
+                kp.handle_right_type = "AUTO_CLAMPED"
+
+    print("CAMERA multi-shot animated")
+    return cam
 
 
 def setup_workbench(scene):
@@ -408,7 +396,6 @@ def setup_workbench(scene):
             scene.display.shading.color_type = "MATERIAL"
         except Exception:
             pass
-    print("ENGINE WORKBENCH TEXTURE")
 
 
 def render_frames(frame_dir: Path, fps, width, height, total):
@@ -423,6 +410,8 @@ def render_frames(frame_dir: Path, fps, width, height, total):
     scene.render.fps = fps
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
+    scene.frame_start = 1
+    scene.frame_end = total
 
     for f in range(1, total + 1):
         scene.frame_set(f)
@@ -433,13 +422,12 @@ def render_frames(frame_dir: Path, fps, width, height, total):
             print(f"RENDER {f}/{total}")
 
 
-def frames_to_mp4_with_topic(frame_dir: Path, out: Path, fps: int, topic: str, line: str):
+def mux_video(frame_dir: Path, out: Path, fps: int, topic: str, line: str, voice: Path | None):
     frames = sorted(frame_dir.glob("frame_*.png"))
     if not frames:
         raise SystemExit("No frames")
     list_file = frame_dir / "list.txt"
     list_file.write_text("".join(f"file '{p.resolve()}'\n" for p in frames))
-
     raw = frame_dir / "raw.mp4"
     subprocess.check_call([
         "ffmpeg", "-y", "-r", str(fps),
@@ -448,39 +436,39 @@ def frames_to_mp4_with_topic(frame_dir: Path, out: Path, fps: int, topic: str, l
         str(raw),
     ])
 
-    # Safe text for drawtext
     def esc(s):
-        return (
-            s.replace("\\", "\\\\")
-            .replace(":", "\\:")
-            .replace("'", "\\'")
-            .replace("%", "%%")
-        )
+        return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'").replace("%", "%%")
 
     title = esc(topic)
     subtitle = esc(line)
-    # Title top, one line tip bottom
     vf = (
-        f"drawtext=text='{title}':fontcolor=white:fontsize=36:"
-        f"x=(w-text_w)/2:y=48:box=1:boxcolor=black@0.45:boxborderw=12,"
-        f"drawtext=text='{subtitle}':fontcolor=white:fontsize=22:"
-        f"x=(w-text_w)/2:y=h-90:box=1:boxcolor=black@0.40:boxborderw=10"
+        f"drawtext=text='{title}':fontcolor=white:fontsize=34:"
+        f"x=(w-text_w)/2:y=42:box=1:boxcolor=black@0.40:boxborderw=10,"
+        f"drawtext=text='{subtitle}':fontcolor=white:fontsize=20:"
+        f"x=(w-text_w)/2:y=h-78:box=1:boxcolor=black@0.35:boxborderw=8"
     )
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg", "-y", "-i", str(raw),
-        "-vf", vf,
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
-        "-movflags", "+faststart",
-        str(out),
-    ]
+    cmd = ["ffmpeg", "-y", "-i", str(raw)]
+    if voice and voice.exists():
+        cmd += ["-i", str(voice)]
+        cmd += ["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                "-c:a", "aac", "-b:a", "128k", "-shortest",
+                "-movflags", "+faststart", str(out)]
+    else:
+        cmd += ["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                "-movflags", "+faststart", str(out)]
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError:
-        # Fallback without drawtext if font missing
-        print("DRAWTEXT failed — copying raw")
-        subprocess.check_call(["cp", str(raw), str(out)])
+        print("DRAWTEXT/MUX fail — raw copy")
+        if voice and voice.exists():
+            subprocess.check_call([
+                "ffmpeg", "-y", "-i", str(raw), "-i", str(voice),
+                "-c:v", "copy", "-c:a", "aac", "-shortest", str(out),
+            ])
+        else:
+            subprocess.check_call(["cp", str(raw), str(out)])
     print("OUT", out, out.stat().st_size)
 
 
@@ -488,6 +476,7 @@ def main():
     args = parse_args(sys.argv)
     glb = Path(args["glb"]).resolve()
     out = Path(args["out"]).resolve()
+    voice = Path(args["voice"]).resolve()
     fps = int(args["fps"])
     seconds = int(args["seconds"])
     width = int(args["width"])
@@ -504,10 +493,9 @@ def main():
             raise SystemExit(f"Missing {glb}")
 
     clear_scene()
-    tripo_style_studio()
+    tripo_studio()
     bpy.ops.import_scene.gltf(filepath=str(glb))
     print("IMPORTED", glb)
-    print("TOPIC", topic)
 
     arm, body, meshes = find_arm_body()
     if body is None:
@@ -516,16 +504,18 @@ def main():
     place_character(arm, body, meshes)
     ensure_textures_visible(body)
     kb = ensure_mouth_shape_key(body)
-    sequence_walk_then_explain(arm, fps, total)
+    sequence_body(arm, fps, total)
     animate_mouth(kb, fps, total)
-    setup_camera_lights(arm, body)
+    setup_tripo_lights()
+    animate_camera(arm, body, fps, total)
 
     with tempfile.TemporaryDirectory() as tmp:
         frame_dir = Path(tmp)
         render_frames(frame_dir, fps, width, height, total)
-        frames_to_mp4_with_topic(frame_dir, out, fps, topic, line)
+        vpath = voice if voice.exists() else None
+        mux_video(frame_dir, out, fps, topic, line, vpath)
 
-    print("DONE teach topic")
+    print("DONE multi-cam teach")
 
 
 if __name__ == "__main__":
