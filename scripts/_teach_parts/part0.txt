@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Mike teach: Tripo light, multi-cam, lip-sync from TTS WAV, audio muxed into MP4."""
+from __future__ import annotations
+import math, struct, subprocess, sys, tempfile, wave
+from pathlib import Path
+import bpy
+from mathutils import Vector
+
+TOPIC_TITLE = "What is Coding?"
+TOPIC_LINE = "Step-by-step instructions for computers."
+
+def parse_args(argv):
+    args = {"glb": "assets/mike/Mikeanim.glb", "out": "assets/blender/mike_teach_topic.mp4",
+            "voice": "assets/blender/mike_voice.wav", "fps": 24, "seconds": 15,
+            "width": 720, "height": 1280, "topic": TOPIC_TITLE, "line": TOPIC_LINE}
+    if "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    else:
+        argv = []
+    i = 0
+    while i < len(argv):
+        if argv[i].startswith("--") and i + 1 < len(argv):
+            key = argv[i][2:].replace("-", "_")
+            val = argv[i + 1]
+            args[key] = int(val) if key in ("fps", "width", "height", "seconds") else val
+            i += 2
+        else:
+            i += 1
+    return args
+
+def clear_scene():
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    for coll in (bpy.data.meshes, bpy.data.materials, bpy.data.cameras, bpy.data.lights,
+                 bpy.data.armatures, bpy.data.actions, bpy.data.images):
+        for block in list(coll):
+            try:
+                coll.remove(block)
+            except Exception:
+                pass
+
+def mat_simple(name, color):
+    m = bpy.data.materials.new(name=name)
+    try:
+        m.use_nodes = False
+    except Exception:
+        pass
+    m.diffuse_color = (*color, 1.0)
+    return m
+
+def find_arm_body():
+    arms = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+    arm = next((a for a in arms if any("Head" in b.name for b in a.data.bones)), arms[0] if arms else None)
+    body = None
+    if meshes:
+        for m in meshes:
+            if any(mod.type == "ARMATURE" for mod in m.modifiers):
+                body = m
+                break
+        if body is None:
+            body = max(meshes, key=lambda o: len(o.data.vertices))
+    return arm, body, meshes
+
+def place_character(arm, body, meshes):
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
+    root = bpy.context.active_object
+    root.name = "MikeRoot"
+    min_c = Vector((1e9, 1e9, 1e9))
+    max_c = Vector((-1e9, -1e9, -1e9))
+    for o in ([body] if body else meshes):
+        if o is None:
+            continue
+        for corner in o.bound_box:
+            w = o.matrix_world @ Vector(corner)
+            min_c = Vector(tuple(min(min_c[i], w[i]) for i in range(3)))
+            max_c = Vector(tuple(max(max_c[i], w[i]) for i in range(3)))
+    height = max(0.01, max_c.z - min_c.z)
+    scale = 1.70 / height
+    if arm and arm.parent is None:
+        arm.parent = root
+    for o in list(bpy.data.objects):
+        if o.type in ("MESH", "ARMATURE") and o.parent is None and o != root:
+            o.parent = root
+    root.scale = (scale, scale, scale)
+    root.location = (0.0, 0.80, -min_c.z * scale)
+    bpy.context.view_layer.update()
+    print("PLACE", round(height, 3), round(scale, 3))
+    return root
+
+def ensure_textures_visible(body):
+    if not body:
+        return
+    for slot in body.material_slots:
+        mat = slot.material
+        if not mat:
+            continue
+        try:
+            mat.use_nodes = True
+        except Exception:
+            pass
+        if mat.node_tree:
+            for node in mat.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image:
+                    print("TEX", node.image.name)
+
+def ensure_mouth_shape_key(body):
+    me = body.data
+    if me.shape_keys is None:
+        body.shape_key_add(name="Basis", from_mix=False)
+    for kb in list(me.shape_keys.key_blocks):
+        if kb.name.lower() in ("mouth_open", "mouth", "jaw_open"):
+            try:
+                body.shape_key_remove(key=kb)
+            except Exception:
+                pass
+    xs = [v.co.x for v in me.vertices]
+    ys = [v.co.y for v in me.vertices]
+    zs = [v.co.z for v in me.vertices]
+    mn = Vector((min(xs), min(ys), min(zs)))
+    mx = Vector((max(xs), max(ys), max(zs)))
+    size = mx - mn
+    h = size.z if size.z > 1e-6 else 1.0
+    cx = (mn.x + mx.x) * 0.5
+    mouth_z0 = mn.z + h * 0.64
+    mouth_z1 = mn.z + h * 0.76
+    mouth_x_half = size.x * 0.18
+    lower_down = h * 0.055
+    upper_up = h * 0.014
+    fwd = h * 0.018
+    kb = body.shape_key_add(name="mouth_open", from_mix=False)
+    moved = 0
+    for i, v in enumerate(me.vertices):
+        if not (mouth_z0 <= v.co.z <= mouth_z1):
+            continue
+        dx = abs(v.co.x - cx)
+        if dx > mouth_x_half:
+            continue
+        if (v.co.y - mn.y) / max(1e-6, size.y) > 0.50:
+            continue
+        tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
+        w = max(0.0, 1.0 - dx / mouth_x_half) ** 0.65
+        if tz < 0.48:
+            lip_w = max(0.0, min(1.0, w * (1.0 - abs(tz - 0.25) * 1.2)))
+            if lip_w < 0.08:
+                continue
+            kb.data[i].co.z -= lower_down * lip_w * (1.15 - tz)
+            kb.data[i].co.y -= fwd * lip_w
+            moved += 1
+        else:
+            lip_w = w * max(0.0, 1.0 - abs(tz - 0.55) * 3.0)
+            if lip_w < 0.12:
+                continue
+            kb.data[i].co.z += upper_up * lip_w
+            moved += 1
