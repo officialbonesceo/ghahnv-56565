@@ -1,0 +1,150 @@
+e
+            tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
+            w = max(0.0, 1.0 - abs(v.co.x - cx) / mouth_x_half) ** 0.5
+            if tz < 0.5:
+                kb.data[i].co.z -= lower_down * 1.2 * w
+            else:
+                kb.data[i].co.z += upper_up * w
+            moved += 1
+    print("SHAPEKEY_MOUTH_MOVED", moved)
+    if moved < 30:
+        raise SystemExit("Too few mouth verts")
+    kb.value = 0.0
+    return kb
+
+def sequence_body(arm, fps, total):
+    if arm is None:
+        return
+    if not arm.animation_data:
+        arm.animation_data_create()
+    by_name = {a.name: a for a in bpy.data.actions}
+    walk = by_name.get("Casual_Walk") or by_name.get("Walking")
+    explain = by_name.get("Agree_Gesture") or by_name.get("Alert")
+    for a in bpy.data.actions:
+        if a.name.startswith("_") and explain is None:
+            explain = a
+    while arm.animation_data.nla_tracks:
+        arm.animation_data.nla_tracks.remove(arm.animation_data.nla_tracks[0])
+    arm.animation_data.action = None
+    track = arm.animation_data.nla_tracks.new()
+    track.name = "BodyTeach"
+    walk_end = int(fps * 4)
+    def add_strip(action, start, end, name):
+        if action is None:
+            return
+        try:
+            strip = track.strips.new(name[:40], int(start), action)
+        except TypeError:
+            strip = track.strips.new(int(start), action)
+        strip.action = action
+        strip.frame_start = start
+        strip.frame_end = end
+        try:
+            strip.extrapolation = "HOLD"
+        except Exception:
+            pass
+        print("BODY", name, start, end)
+    add_strip(walk or explain, 1, walk_end, "walk")
+    add_strip(explain or walk, walk_end + 1, total, "explain")
+
+def wav_rms_envelope(path, fps, total_frames):
+    env = [0.0] * (total_frames + 1)
+    try:
+        with wave.open(str(path), "rb") as w:
+            nch, sw, rate, nframes = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+            raw = w.readframes(nframes)
+    except Exception as e:
+        print("WAV_READ_FAIL", e)
+        return env
+    if sw == 2:
+        samples = list(struct.unpack("<" + "h" * (len(raw) // 2), raw))
+    elif sw == 1:
+        samples = [b - 128 for b in raw]
+    else:
+        return env
+    if nch > 1:
+        samples = samples[0::nch]
+    spf = max(1, int(rate / fps))
+    peak = 1.0
+    rms_list = []
+    for f in range(1, total_frames + 1):
+        chunk = samples[(f - 1) * spf : f * spf]
+        if not chunk:
+            rms_list.append(0.0)
+            continue
+        rms = math.sqrt(sum(s * s for s in chunk) / len(chunk))
+        rms_list.append(rms)
+        if rms > peak:
+            peak = rms
+    for f, rms in enumerate(rms_list, start=1):
+        v = rms / peak if peak > 1e-6 else 0.0
+        if v < 0.08:
+            v = 0.0
+        else:
+            v = min(1.0, (v - 0.08) / 0.75) ** 0.7
+        env[f] = v
+    print("LIPSYNC", total_frames)
+    return env
+
+def animate_mouth_from_audio(kb, fps, total, voice_path):
+    if voice_path and voice_path.exists():
+        env = wav_rms_envelope(voice_path, fps, total)
+        for f in range(1, total + 1):
+            kb.value = env[f]
+            kb.keyframe_insert(data_path="value", frame=f)
+        print("MOUTH from audio")
+        return
+    cycle = max(5, int(fps * 0.28))
+    for f in range(1, total + 1):
+        t = f / float(fps)
+        val = abs(math.sin(((f - 1) % cycle) / float(cycle) * math.pi)) ** 0.85 if t >= 4.0 else 0.02
+        kb.value = val
+        kb.keyframe_insert(data_path="value", frame=f)
+
+def bone_world(arm, name):
+    if not arm:
+        return None
+    pb = arm.pose.bones.get(name)
+    return ((arm.matrix_world @ pb.matrix) @ Vector((0, 0, 0))) if pb else None
+
+def tripo_studio():
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 4.0, 1.5))
+    bpy.context.active_object.rotation_euler = (math.radians(90), 0, 0)
+    bpy.context.active_object.data.materials.append(mat_simple("Back", (0.16, 0.16, 0.17)))
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 1.0, 0))
+    bpy.context.active_object.data.materials.append(mat_simple("Floor", (0.12, 0.12, 0.13)))
+
+def setup_tripo_lights():
+    for loc, e, sz in [((2.2, -2.6, 3.2), 360, 4.5), ((-2.2, -2.0, 2.5), 200, 4.0), ((0, 0.3, 4.2), 140, 5.5)]:
+        bpy.ops.object.light_add(type="AREA", location=loc)
+        bpy.context.active_object.data.energy = e
+        bpy.context.active_object.data.size = sz
+    bpy.ops.object.light_add(type="SUN", location=(1.5, -3, 5))
+    bpy.context.active_object.data.energy = 2.0
+    bpy.context.active_object.rotation_euler = (math.radians(48), math.radians(10), 0)
+    world = bpy.data.worlds.new("World")
+    bpy.context.scene.world = world
+    try:
+        world.use_nodes = False
+    except Exception:
+        pass
+    world.color = (0.11, 0.11, 0.12)
+
+def animate_camera(arm, body, fps, total):
+    # Blender 5 safe: no Action.fcurves
+    bpy.context.view_layer.update()
+    head = bone_world(arm, "mixamorig:Head") or bone_world(arm, "Head") or Vector((0, 0.8, 1.45))
+    hips = bone_world(arm, "mixamorig:Hips") or Vector((0, 0.8, 0.75))
+    mid = Vector((0.0, hips.y, (head.z + hips.z) * 0.5))
+    bpy.ops.object.camera_add(location=(0, -5.5, mid.z + 0.2))
+    cam = bpy.context.active_object
+    cam.data.lens = 40
+    bpy.context.scene.camera = cam
+    shots = [
+        (1, Vector((0.2, -5.8, mid.z + 0.25)), mid, 38),
+        (int(fps * 3.5), Vector((0.1, -4.0, mid.z + 0.15)), mid, 40),
+        (int(fps * 5.5), Vector((0.0, -2.9, mid.z + 0.05)), mid, 42),
+        (int(fps * 8.0), Vector((2.3, -2.3, mid.z + 0.1)), mid, 45),
+        (int(fps * 11.0), Vector((0.12, -1.30, head.z)), head, 50),
+        (int(fps * 13.5), Vector((-0.25, -2.5, mid.z + 0.15)), mid + Vector((0, 0, 0.05)), 40),
+        (total, Vector((0.0, -2.8, 
