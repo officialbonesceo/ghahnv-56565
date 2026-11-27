@@ -1,0 +1,155 @@
+mid.z + 0.1)), mid, 42),
+    ]
+    for f, loc, aim, lens in shots:
+        cam.location = loc
+        cam.rotation_euler = (aim - loc).to_track_quat("-Z", "Y").to_euler()
+        cam.data.lens = lens
+        cam.keyframe_insert(data_path="location", frame=f)
+        cam.keyframe_insert(data_path="rotation_euler", frame=f)
+        try:
+            cam.data.keyframe_insert(data_path="lens", frame=f)
+        except Exception:
+            pass
+    print("CAMERA multi-shot ok")
+    return cam
+
+def setup_workbench(scene):
+    scene.render.engine = "BLENDER_WORKBENCH"
+    try:
+        scene.display.shading.light = "STUDIO"
+        scene.display.shading.color_type = "TEXTURE"
+        scene.display.shading.show_shadows = False
+    except Exception:
+        try:
+            scene.display.shading.color_type = "MATERIAL"
+        except Exception:
+            pass
+
+def render_frames(frame_dir, fps, width, height, total):
+    scene = bpy.context.scene
+    setup_workbench(scene)
+    try:
+        scene.view_settings.view_transform = "Standard"
+    except Exception:
+        pass
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.fps = fps
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGB"
+    scene.frame_start = 1
+    scene.frame_end = total
+    for f in range(1, total + 1):
+        scene.frame_set(f)
+        path = frame_dir / f"frame_{f:04d}.png"
+        scene.render.filepath = str(path)
+        bpy.ops.render.render(write_still=True)
+        if f % 24 == 0:
+            print(f"RENDER {f}/{total}")
+
+def mux_video(frame_dir, out, fps, topic, line, voice):
+    frames = sorted(frame_dir.glob("frame_*.png"))
+    if not frames:
+        raise SystemExit("No frames")
+    list_file = frame_dir / "list.txt"
+    list_file.write_text("".join(f"file '{p.resolve()}'\n" for p in frames))
+    raw = frame_dir / "raw.mp4"
+    subprocess.check_call([
+        "ffmpeg", "-y", "-r", str(fps), "-f", "concat", "-safe", "0", "-i", str(list_file),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(raw),
+    ])
+    def esc(s):
+        return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'").replace("%", "%%")
+    vf = (
+        f"drawtext=text='{esc(topic)}':fontcolor=white:fontsize=34:x=(w-text_w)/2:y=42:"
+        f"box=1:boxcolor=black@0.40:boxborderw=10,"
+        f"drawtext=text='{esc(line)}':fontcolor=white:fontsize=20:x=(w-text_w)/2:y=h-78:"
+        f"box=1:boxcolor=black@0.35:boxborderw=8"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    if voice and voice.exists():
+        try:
+            subprocess.check_call([
+                "ffmpeg", "-y", "-i", str(raw), "-i", str(voice), "-vf", vf,
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                "-c:a", "aac", "-b:a", "160k", "-shortest",
+                "-movflags", "+faststart", str(out),
+            ])
+        except subprocess.CalledProcessError:
+            subprocess.check_call([
+                "ffmpeg", "-y", "-i", str(raw), "-i", str(voice),
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                "-c:a", "aac", "-b:a", "160k", "-shortest",
+                "-movflags", "+faststart", str(out),
+            ])
+    else:
+        try:
+            subprocess.check_call([
+                "ffmpeg", "-y", "-i", str(raw), "-vf", vf,
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                "-movflags", "+faststart", str(out),
+            ])
+        except subprocess.CalledProcessError:
+            subprocess.check_call(["cp", str(raw), str(out)])
+    try:
+        probe = subprocess.check_output([
+            "ffprobe", "-v", "error", "-select_streams", "a",
+            "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(out),
+        ], text=True).strip()
+        print("AUDIO_STREAMS", probe or "NONE")
+    except Exception as e:
+        print("PROBE", e)
+    print("OUT", out, out.stat().st_size)
+
+def main():
+    args = parse_args(sys.argv)
+    glb = Path(args["glb"]).resolve()
+    out = Path(args["out"]).resolve()
+    voice = Path(args["voice"]).resolve()
+    fps = int(args["fps"])
+    seconds = int(args["seconds"])
+    width = int(args["width"])
+    height = int(args["height"])
+    topic = args.get("topic") or TOPIC_TITLE
+    line = args.get("line") or TOPIC_LINE
+    total = fps * seconds
+    if voice.exists():
+        try:
+            with wave.open(str(voice), "rb") as w:
+                vdur = w.getnframes() / float(w.getframerate())
+            total = max(total, int(math.ceil(vdur * fps)) + fps // 2)
+            print("VOICE_DUR", round(vdur, 2), "frames", total)
+        except Exception:
+            pass
+    if not glb.exists():
+        alt = glb.parent / "Mike.glb"
+        if alt.exists():
+            glb = alt
+        else:
+            raise SystemExit(f"Missing {glb}")
+    clear_scene()
+    tripo_studio()
+    bpy.ops.import_scene.gltf(filepath=str(glb))
+    print("IMPORTED", glb)
+    arm, body, meshes = find_arm_body()
+    if body is None:
+        raise SystemExit("No body")
+    place_character(arm, body, meshes)
+    ensure_textures_visible(body)
+    kb = ensure_mouth_shape_key(body)
+    sequence_body(arm, fps, total)
+    animate_mouth_from_audio(kb, fps, total, voice if voice.exists() else None)
+    setup_tripo_lights()
+    animate_camera(arm, body, fps, total)
+    with tempfile.TemporaryDirectory() as tmp:
+        frame_dir = Path(tmp)
+        render_frames(frame_dir, fps, width, height, total)
+        mux_video(frame_dir, out, fps, topic, line, voice if voice.exists() else None)
+    print("DONE with audio")
+
+if __name__ == "__main__":
+    main()
