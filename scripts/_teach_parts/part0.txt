@@ -153,3 +153,14 @@ def ensure_mouth_shape_key(body):
                 continue
             kb.data[i].co.z += upper_up * lip_w
             moved += 1
+    if moved < 80:
+        mouth_z0 = mn.z + h * 0.60
+        mouth_z1 = mn.z + h * 0.80
+        mouth_x_half = size.x * 0.26
+        for i, v in enumerate(me.vertices):
+            if not (mouth_z0 <= v.co.z <= mouth_z1):
+                continue
+            if abs(v.co.x - cx) > mouth_x_half:
+                continue
+            if (v.co.y - mn.y) / max(1e-6, size.y) > 0.60:
+                continu
