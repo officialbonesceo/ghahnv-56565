@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Mike mouth talk with REAL mesh deformation + textures.
-- Shape key mouth_open: lower lip/chin down, slight upper lift, corners out (jaw-like)
-- Show basecolor texture (model has Mike_basecolor jpeg + normal)
+- Shape key mouth_open: jaw-like (not face bubble)
+- Workbench TEXTURE only (EEVEE too slow on Actions CPU)
 - Never animate Root/Hips for face
 """
 from __future__ import annotations
@@ -123,7 +123,6 @@ def place_character(arm, body, meshes):
 
 
 def ensure_textures_visible(body):
-    """Force materials to show basecolor texture; log what we found."""
     if body is None:
         return
     for slot in body.material_slots:
@@ -139,27 +138,23 @@ def ensure_textures_visible(body):
             continue
         for node in mat.node_tree.nodes:
             if node.type == "TEX_IMAGE" and node.image:
-                print("  TEX", node.image.name, node.image.size[:]
-                      if hasattr(node.image, "size") else "?")
+                print("  TEX", node.image.name)
+                try:
+                    # Pack/keep image available for workbench
+                    if node.image.packed_file is None and node.image.filepath:
+                        pass
+                except Exception:
+                    pass
             if node.type == "BSDF_PRINCIPLED":
-                # Keep textured look readable under workbench/eevee
                 if "Roughness" in node.inputs:
                     node.inputs["Roughness"].default_value = min(
                         0.85, max(0.35, node.inputs["Roughness"].default_value)
                     )
-    # Ensure UV map exists name
     if body.data.uv_layers:
         print("UV_LAYERS", [u.name for u in body.data.uv_layers])
 
 
 def ensure_mouth_shape_key(body):
-    """
-    Jaw-like mouth_open (not a face bubble):
-    - Lower mouth band: strong downward + slight forward
-    - Upper lip band: small upward only near lip line
-    - Corners: mild outward
-    - Weight falls off fast outside lip region
-    """
     if body is None:
         raise SystemExit("No body mesh")
 
@@ -185,16 +180,14 @@ def ensure_mouth_shape_key(body):
 
     print("MESH_BOUNDS h", round(h, 3))
 
-    # Tighter lip band (lower face only)
     mouth_z0 = mn.z + h * 0.64
     mouth_z1 = mn.z + h * 0.76
     mouth_x_half = size.x * 0.18
 
-    # Displacements as fraction of height — visible but local
-    lower_down = h * 0.048
-    upper_up = h * 0.012
-    fwd = h * 0.016
-    corner = h * 0.010
+    lower_down = h * 0.055
+    upper_up = h * 0.014
+    fwd = h * 0.018
+    corner = h * 0.012
 
     kb = body.shape_key_add(name="mouth_open", from_mix=False)
     moved = 0
@@ -205,29 +198,24 @@ def ensure_mouth_shape_key(body):
         dx = abs(v.co.x - cx)
         if dx > mouth_x_half:
             continue
-        # Front of head only (model typically faces -Y after import)
         depth = (v.co.y - mn.y) / max(1e-6, size.y)
         if depth > 0.50:
             continue
 
-        tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)  # 0 bottom .. 1 top
+        tz = (v.co.z - mouth_z0) / max(1e-6, mouth_z1 - mouth_z0)
         tx = 1.0 - dx / mouth_x_half
-        # Soft falloff at sides
         w = max(0.0, tx) ** 0.65
 
-        # Lip line ~ tz 0.45: below = lower lip/chin, above = upper lip
         if tz < 0.48:
-            # Lower: strongest at center bottom
             lip_w = w * (1.0 - abs(tz - 0.25) * 1.2)
             lip_w = max(0.0, min(1.0, lip_w))
             if lip_w < 0.08:
                 continue
             kb.data[i].co.z -= lower_down * lip_w * (1.15 - tz)
-            kb.data[i].co.y -= fwd * lip_w  # toward camera if facing -Y
+            kb.data[i].co.y -= fwd * lip_w
             kb.data[i].co.x += corner * lip_w * (0.6 if v.co.x >= cx else -0.6)
             moved += 1
         else:
-            # Upper lip: only a thin band near the line, small up
             lip_w = w * max(0.0, 1.0 - abs(tz - 0.55) * 3.0)
             if lip_w < 0.12:
                 continue
@@ -317,13 +305,11 @@ def animate_mouth(kb, fps, total):
         t = f / float(fps)
         if in_speech(t):
             phase = ((f - 1) % cycle) / float(cycle)
-            # open fast, close a bit slower
             if phase < 0.45:
                 val = phase / 0.45
             else:
                 val = 1.0 - (phase - 0.45) / 0.55
-            val = max(0.0, min(1.0, val))
-            val = val ** 0.85  # slightly hold open
+            val = max(0.0, min(1.0, val)) ** 0.85
         else:
             val = 0.03 * abs(math.sin(t * 2.0))
         kb.value = val
@@ -381,25 +367,10 @@ def build_bg():
 
 
 def setup_render_engine(scene):
-    """Prefer EEVEE for textures; fall back to Workbench TEXTURE."""
-    engines = []
-    try:
-        engines = list(bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items.keys())
-    except Exception:
-        pass
-    # Blender 4/5 names vary
-    for name in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "EEVEE"):
-        try:
-            scene.render.engine = name
-            print("ENGINE", name)
-            try:
-                scene.eevee.taa_render_samples = 16
-            except Exception:
-                pass
-            return "EEVEE"
-        except Exception:
-            continue
-
+    """
+    NEVER use EEVEE on GitHub Actions — ~14s/frame, job gets cancelled.
+    Workbench TEXTURE is ~0.5s/frame and still shows basecolor.
+    """
     scene.render.engine = "BLENDER_WORKBENCH"
     try:
         scene.display.shading.light = "STUDIO"
@@ -412,7 +383,7 @@ def setup_render_engine(scene):
             scene.display.shading.color_type = "MATERIAL"
         except Exception:
             pass
-    print("ENGINE WORKBENCH TEXTURE")
+    print("ENGINE WORKBENCH TEXTURE (forced, no EEVEE)")
     return "WORKBENCH"
 
 
@@ -487,7 +458,7 @@ def main():
     animate_mouth(kb, fps, total)
     setup_camera_face(arm, body)
     render_video(out, fps, width, height, total)
-    print("DONE mouth talk textured")
+    print("DONE mouth talk textured workbench")
 
 
 if __name__ == "__main__":
